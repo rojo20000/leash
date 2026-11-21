@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Patient portal</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/portal.css">
+  <script src="/portal.js" defer></script>
+</head>
+<body class="portal">
+  <div class="topnote" role="note"><span>Prototype. Made-up patients only. Runs entirely on this computer.</span></div>
+  <p id="boot-error" class="error boot-error" role="alert"></p>
+
+  <div id="portal-view" hidden>
+    <header class="topbar">
+      <strong class="brand"><span id="clinic-name">Your clinic</span> <span class="ver">Patient portal</span></strong>
+      <nav id="tabs" aria-label="Sections">
+        <button type="button" data-tab="appointments">Appointments</button>
+        <button type="button" data-tab="chart">My health summary</button>
+        <button type="button" data-tab="messages">Messages</button>
+      </nav>
+      <div class="who"><span id="patient-name"></span></div>
+      <button type="button" id="logout" class="ghost">Sign out</button>
+    </header>
+
+    <main class="page">
+      <section id="tab-appointments" class="tab" aria-labelledby="h-appointments" hidden>
+        <header class="page-head">
+          <h1 id="h-appointments" class="page-title">Appointments</h1>
+          <p class="lede">See your visits, ask for a new one, or ask to cancel one. The front desk confirms every request. Nothing is booked or cancelled until they do.</p>
+          <p id="clinic-phone" class="muted" hidden></p>
+        </header>
+        <p id="appt-error" class="error" role="alert"></p>
+        <p id="appt-status" class="ok-line" role="status"></p>
+
+        <h2>Coming up</h2>
+        <div id="appt-upcoming" class="rows"></div>
+
+        <h2 class="sub-h">Request an appointment</h2>
+        <form id="req-form" class="entry">
+          <p class="muted">Tell us what you need. The front desk will find a time and confirm it with you. Sending this does not book anything.</p>
+          <label>Type of visit
+            <select id="req-type" required></select>
+          </label>
+          <label>Who you would like to see (optional)
+            <select id="req-clinician"></select>
+          </label>
+          <label>Days and times that suit you (optional)
+            <input id="req-preferred" maxlength="300" placeholder="For example: weekday mornings, not Tuesdays">
+          </label>
+          <label>Anything else the front desk should know (optional)
+            <textarea id="req-note" rows="3" maxlength="300"></textarea>
+          </label>
+          <div class="actions"><button type="submit" id="req-send">Send request</button></div>
+          <p id="req-error" class="error" role="alert"></p>
+          <p id="req-ok" class="ok-line" role="status"></p>
+        </form>
+
+        <h2 class="sub-h">Your requests</h2>
+        <div id="req-list" class="rows"></div>
+
+        <h2 class="sub-h">Past visits</h2>
+        <div id="appt-past" class="rows"></div>
+      </section>
+
+      <section id="tab-chart" class="tab" aria-labelledby="h-chart" hidden>
+        <header class="page-head">
+          <h1 id="h-chart" class="page-title">My health summary</h1>
+          <p class="lede">A summary of what your clinic has on record for you. If something looks wrong, send a message to your care team.</p>
+        </header>
+        <p id="chart-error" class="error" role="alert"></p>
+        <p id="chart-empty" class="empty-line" hidden><strong>Nothing to show yet.</strong> Your health summary appears here once your clinic shares it.</p>
+
+        <section id="chart-details-box" hidden>
+          <h2>About you</h2>
+          <dl id="chart-details" class="facts"></dl>
+        </section>
+        <div class="pt-grid">
+          <section id="chart-conditions-box" hidden><h3>Conditions</h3><ul id="chart-conditions"></ul></section>
+          <section id="chart-medications-box" hidden><h3>Medications</h3><ul id="chart-medications"></ul></section>
+          <section id="chart-allergies-box" hidden><h3>Allergies</h3><ul id="chart-allergies"></ul></section>
+        </div>
+        <section id="chart-results-box" hidden>
+          <h2 class="sub-h">Recent results</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th scope="col">Date</th><th scope="col">Test</th><th scope="col">Result</th><th scope="col">Usual range</th></tr></thead>
+              <tbody id="chart-results"></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="tab-messages" class="tab" aria-labelledby="h-messages" hidden>
+        <header class="page-head">
+          <h1 id="h-messages" class="page-title">Messages</h1>
+          <p class="lede">Write to your care team and read their replies here.</p>
+        </header>
+        <p id="emergency" class="notice" role="note">Messages are not for emergencies. If this is urgent, call the clinic or your local emergency number now.</p>
+        <div id="urgent-notice" class="notice urgent" role="alert" tabindex="-1" hidden>
+          <strong>Please do not wait for a reply.</strong>
+          <p id="urgent-text"></p>
+        </div>
+
+        <h2>Write a message</h2>
+        <form id="msg-form" class="entry">
+          <div id="reply-bar" class="picked" hidden>
+            <span id="reply-what"></span>
+            <button type="button" id="reply-cancel" class="ghost small-btn">Cancel reply</button>
+          </div>
+          <label>Subject
+            <input id="msg-subject" maxlength="120" required>
+          </label>
+          <label>Message
+            <textarea id="msg-body" rows="5" maxlength="2000" required></textarea>
+          </label>
+          <div class="actions"><button type="submit" id="msg-send">Send message</button></div>
+          <p id="msg-error" class="error" role="alert"></p>
+          <p id="msg-ok" class="ok-line" role="status"></p>
+        </form>
+
+        <h2 class="sub-h">Your messages</h2>
+        <p id="msg-load-error" class="error" role="alert"></p>
+        <div id="msg-list" class="msg-list"></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

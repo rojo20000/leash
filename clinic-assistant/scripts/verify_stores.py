@@ -60,7 +60,9 @@ def main() -> int:
         db.execute("UPDATE vectors SET text = text || ' (tampered)' WHERE seq = 3")
         db.commit()
         db.close()
-        tampered = open_store(copy).verify()
+        tampered_store = open_store(copy)
+        tampered = tampered_store.verify()
+        tampered_store.db.close()  # Windows cannot delete the temp copy while it is open
         print(f"tampered copy chain: {tampered}")
         failed |= tampered.get("ok", True)
 

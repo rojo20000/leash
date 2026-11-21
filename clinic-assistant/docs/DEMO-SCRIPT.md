@@ -27,6 +27,19 @@ Tip: use two browser windows side by side, one normal and one private, so the fr
 - `lead_ana`: **Needs review** holds anything stopped, including the poisoned referral letter (patient with high INR) that was kept away from the model.
 - `auditor_ray`: **Audit log** shows every sign-in, PIN reveal, wrong PIN, check-in, booking and chart addition, with the hash chain verified.
 
+## 4. Patient portal (2 minutes)
+Once, before the demo: `python3 setup_demo.py` (adds the patient account `pt_lena`, same password as the others), then `python3 scripts/seed_portal_demo.py` (a welcome message, and an upcoming appointment if she has none). Keep `pt_lena` in the private window and staff in the normal one.
+
+1. Sign in as `pt_lena` at `http://127.0.0.1:8642`. She lands on the patient portal, not the staff app. *Say: this account is linked to one patient, Lena Delacroix, and the server sends it to the portal; every staff route refuses it.*
+2. **Appointments** and **My health summary**: her own upcoming and past visits, then conditions, medicines, allergies and results. *Say: only the fields the clinic releases are here. There are no notes and no "things to check", and the page never sends a patient id, so there is no id to change.*
+3. **Messages**: the welcome message from the care team is there. Write a short question and send it. *Say: the notice that messages are not for emergencies is always on screen.*
+4. Back in **Appointments**, press the cancel button on an upcoming appointment. It shows as a request with status open. *Say: the portal never changes the schedule; it asks the front desk.*
+5. Sign in as `dr_lee`, open **Patient messages**, find Lena's message and reply. Refresh the portal: the reply shows as from "Care team". *Say: clinicians, nurses and leads share this inbox, and every time it is opened is in the audit log.*
+6. Still `dr_lee`: **Messages**, pick the group `patient-portal`, pick Lena Delacroix, describe a message and let the assistant draft it. Refresh the portal: nothing new. *Say: she cannot see a draft.*
+7. Fill in any [TAGS], press **Approve (with any edits)**, then **Send to patient portal**. Refresh the portal: the message has arrived. *Say: AI text reaches a patient only after a clinician approves it and a person presses send.*
+8. Sign in as `desk_sam`, **Schedule**: the cancel request is under **Portal requests**, with the front-desk view of the patient and no messages. Cancel the appointment the usual way, then mark the request done with a note. The portal shows the request as done. *Say: reception keeps control of the schedule.*
+9. In the Terminal: `python3 scripts/verify_db.py`. *Say: every portal message and request is in the same hash-chained change log as the rest, and it verifies.*
+
 ## If something goes wrong
 - **Top bar doesn't say v2.3**: close the black Terminal window and double-click *Start Clinic Assistant.command* again; it stops the old copy first.
 - **"Practice mode" banner**: Ollama isn't running. Open the Ollama app, then restart.

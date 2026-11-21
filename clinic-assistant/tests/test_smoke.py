@@ -131,7 +131,8 @@ class Smoke(unittest.TestCase):
     def test_message_needs_clinician_approval(self):
         nurse, doc = self.login("nurse_kim"), self.login("dr_lee")
         self.assertEqual(nurse.call("/api/outbox/draft", {"recipient_group": "the-internet", "instructions": "x"})[0], 400)
-        _, r = nurse.call("/api/outbox/draft", {"recipient_group": "patient-portal", "instructions": "Results normal."})
+        _, r = nurse.call("/api/outbox/draft", {"recipient_group": "patient-portal", "instructions": "Results normal.",
+                                                "patient_id": "syn-001"})
         item = r["item"]
         self.assertEqual(item["status"], "awaiting_approval"); self.assertEqual(item["tier"], "amber")
         self.assertEqual(nurse.call("/api/outbox/decide", {"id": item["id"], "decision": "approve"})[0], 403)

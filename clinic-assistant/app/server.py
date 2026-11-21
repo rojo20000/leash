@@ -22,7 +22,7 @@ from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import VERSION, llm, network, privacy
+from . import VERSION, llm, network, portal, privacy
 from . import leash_client
 from .audit import AuditLog
 from .db import ClinicDB
@@ -35,7 +35,8 @@ from .vectorstore import Embedder, VectorStore, index_all, reindex
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"),
-          "/app.css": ("app.css", "text/css")}
+          "/app.css": ("app.css", "text/css"), "/portal": ("portal.html", "text/html"),
+          "/portal.js": ("portal.js", "text/javascript"), "/portal.css": ("portal.css", "text/css")}
 SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'",
     "X-Content-Type-Options": "nosniff",
@@ -747,6 +748,16 @@ def make_handler(app: App):
             origin = self.headers.get("Origin")
             return origin is None or origin == f"http://{self.headers.get('Host')}"
 
+        def confined(self, s: dict, path: str) -> bool:
+            """A patient session may call /api/me, /api/logout and /api/portal/* only. True = refused (403 sent)."""
+            if not (s.get("patient_id") or s["role"] == app.policy.get("portal", {}).get("patient_role")):
+                return False
+            if path in ("/api/me", "/api/logout") or path.startswith("/api/portal/"):
+                return False
+            app.audit.write("portal_staff_route_refused", s["user"], path=path[:200])
+            self.send(403, {"error": "Patient accounts can use the patient portal only."})
+            return True
+
         # ---- routes ----------------------------------------------------
         def do_GET(self):
             path = self.path.split("?")[0]
@@ -758,7 +769,11 @@ def make_handler(app: App):
             s = self.session()
             if not s:
                 return self.send(401, {"error": "Not signed in."})
+            if self.confined(s, path):
+                return
             if path == "/api/me":
+                if s.get("patient_id"):
+                    return self.send(200, portal.me(app, s))
                 return self.send(200, {"user": s["user"], "role": s["role"],
                                        "permissions": app.policy["roles"][s["role"]],
                                        "recipient_groups": app.policy["communication"]["allowed_recipient_groups"],
@@ -766,6 +781,9 @@ def make_handler(app: App):
                                        "presidio": privacy.presidio_available(), "version": VERSION,
                                        "clinic": app.policy["clinic"]["name"],
                                        "mock": llm_is_mock(), "leash": app.leash_status()})
+            found = portal.handle_get(app, s, path, urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query))
+            if found:
+                return self.send(*found)
             if path == "/api/reviews":
                 return self.send(200, app.visible_reviews(s))
             if path == "/api/db/status":
@@ -889,8 +907,15 @@ def make_handler(app: App):
                 if not role:
                     app.audit.write("login_failed", user)
                     return self.send(401, {"error": "Wrong username or password."})
+                link = {}
+                if role == app.policy.get("portal", {}).get("patient_role"):
+                    pid = app.users.patient_id(user)
+                    if not pid or app.ehr.get(pid) is None:  # a patient account must point at one real record
+                        app.audit.write("login_refused_unlinked", user)
+                        return self.send(401, {"error": "Wrong username or password."})
+                    link = {"patient_id": pid}
                 tok = secrets.token_urlsafe(32)
-                app.sessions[tok] = {"user": user, "role": role, "history": [],
+                app.sessions[tok] = {"user": user, "role": role, "history": [], **link,
                                      "expires": time.time() + 60 * app.policy["server"]["session_minutes"]}
                 app.audit.write("login", user, role=role)
                 return self.send(200, {"ok": True}, extra={
@@ -899,6 +924,8 @@ def make_handler(app: App):
             s = self.session()
             if not s:
                 return self.send(401, {"error": "Not signed in."})
+            if self.confined(s, path):
+                return
             if not app.rate_ok(s["user"]):
                 app.audit.write("rate_limited", s["user"])
                 return self.send(429, {"error": "Too many requests. Wait a minute."})
@@ -907,6 +934,10 @@ def make_handler(app: App):
                 app.sessions = {k: v for k, v in app.sessions.items() if v is not s}
                 app.audit.write("logout", s["user"])
                 return self.send(200, {"ok": True}, extra={"Set-Cookie": "sid=; Max-Age=0; Path=/"})
+
+            found = portal.handle_post(app, s, path, data)  # patient portal, staff inbox, /api/outbox/send
+            if found:
+                return self.send(*found)
 
             if path == "/api/chat":
                 if not app.can(s, "chat"):
@@ -1053,6 +1084,11 @@ def make_handler(app: App):
                 instructions = str(data.get("instructions", "")).strip()
                 if not instructions:
                     return self.send(400, {"error": "Say what the message should cover."})
+                link = {}  # a patient-portal draft names its patient; the id is stored, never sent to the model
+                if group == portal.PORTAL_GROUP:
+                    link = {"patient_id": str(data.get("patient_id") or "")}
+                    if not app.ehr.patients.get(link["patient_id"]):
+                        return self.send(400, {"error": "Pick the patient this message is for."})
                 prompt = (f"{comm['draft_instructions']}\n\nRecipient group: {group} "
                           f"({comm['allowed_recipient_groups'][group]})\n\nWhat the message should say:\n"
                           f"{instructions}")
@@ -1066,7 +1102,7 @@ def make_handler(app: App):
                 item = app.outbox.add({"id": uuid.uuid4().hex[:10], "recipient_group": group,
                                        "draft": result["reply"], "tier": tier, "reasons": reasons,
                                        "status": "awaiting_approval", "drafted_by": s["user"],
-                                       "created": now(), "decided_by": None, "final_text": None})
+                                       "created": now(), "decided_by": None, "final_text": None, **link})
                 app.audit.write("draft_created", s["user"], draft_id=item["id"], recipient_group=group, tier=tier)
                 return self.send(200, {**result, "item": item})
 

@@ -642,3 +642,9 @@ tr.focus-row td { background: var(--accent-tint); }
 .leash-box.blocked { border-color: var(--red); background: var(--red-tint); }
 .leash-box.wait { border-color: var(--amber); background: var(--amber-tint); }
 #leash-error:not(:empty) { padding: 10px 12px; border: 1px solid var(--red); border-left-width: 4px; border-radius: 6px; background: var(--red-tint); font-weight: 600; }
+
+/* Patient portal, staff side (2.8) */
+.thread-name { margin: 0; }
+.review .quote.msg-out { background: var(--accent-tint); }
+.inbox-reply { margin-top: 12px; }
+.status.sent { color: var(--ok); }

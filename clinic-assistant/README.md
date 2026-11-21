@@ -1,6 +1,6 @@
 # Clinic Assistant: a restricted local medical AI (prototype)
 
-> **In the Leash repo:** this folder is Clinic Assistant v2.7, the human-facing front end for Leash. `data/clinic.db` and `data/vectors.sqlite` are committed synthetic snapshots; check them with `python3 scripts/verify_db.py` and `python3 scripts/verify_stores.py`. Planning and handoff docs are in `handoff/`.
+> **In the Leash repo:** this folder is Clinic Assistant v2.8, the human-facing front end for Leash. `data/clinic.db` and `data/vectors.sqlite` are committed synthetic snapshots; check them with `python3 scripts/verify_db.py` and `python3 scripts/verify_stores.py`. Planning and handoff docs are in `handoff/`.
 
 A small web app that puts a **gatekeeper** between people and a local AI model.
 Nobody talks to the model directly. Every request is signed in, masked, checked,
@@ -8,6 +8,27 @@ answered on this computer only, checked again, and written to a tamper-evident l
 
 **Prototype. Use synthetic (made-up) patient data only.** It is not a medical device
 and has not been validated for clinical use.
+
+## New in 2.8: patient portal
+
+- **A patient can sign in and see their own record, and nothing else.** A patient who signs in at the usual address lands on `/portal` (`static/portal.html`, `portal.js`, `portal.css`). They see their upcoming and past appointments with clinician, visit type and status (`GET /api/portal/appointments`), a health summary (`GET /api/portal/chart`), and their messages with the care team (`GET` and `POST /api/portal/messages`).
+- **Accounts are created by an admin and linked to one patient.** `python3 manage_users.py add <user> patient <patient_id>` checks that the id exists in `data/clinic.db` before it asks for a password, and `list` shows the link. There is no self sign-up. A patient account with a missing link, or a link to a patient who doesn't exist, cannot sign in.
+- **Confinement.** A patient session can call only `/api/me`, `/api/logout` and `/api/portal/*`. Every other `/api/*` route answers 403 and the attempt is written to the audit log (`portal_staff_route_refused`). Portal routes take no patient id from the URL or the request body: the server uses the id it stored in the session at sign-in, so there is nothing in the browser to change.
+- **Released fields only.** The health summary is built from the allow-list `portal.released_fields` in `config/policy.json`: name, age, sex, birth date, conditions, medications, allergies, results, preferred contact and language. Notes, "things to check", the record number, insurance and the scenario never reach the patient.
+- **Appointment requests go through the front desk.** A patient can ask for a new appointment (visit type, optional clinician, preferred times, a note) or ask to cancel one of their own upcoming booked appointments (`POST /api/portal/appointments/request` and `/cancel`). The portal never writes to the schedule. Requests appear under **Portal requests** on the front desk's Schedule tab (`GET /api/inbox/requests`); reception books or cancels with the tools it already has, then marks the request done or declined with a note (`POST /api/inbox/requests/decide`). The front desk sees the patient through its usual allow-list and never sees message bodies. The patient sees the status of each request and can have at most 5 open (`portal.max_open_requests`).
+- **Messages.** The patient writes to the care team; clinicians, nurses and clinical leads read and answer in the new **Patient messages** tab (`GET /api/inbox`, `POST /api/inbox/reply`). Messages are stored in `clinic.db` (`portal_messages`, append-only). The patient sees "You" and "Care team", never staff usernames. The portal always says that messages are not for emergencies, and a message with urgent words gets a notice to call the clinic or emergency services now.
+- **AI text reaches a patient only as an approved draft that a staff member sends.** A `patient-portal` draft on the Messages tab now names the patient it is for (the id is stored with the draft and never put in the model prompt). The patient cannot see it while it is drafted, approved or rejected. Once it is approved, a staff member with `send_portal` presses **Send to patient portal** (`POST /api/outbox/send`), which copies the approved text into the patient's messages, once. No portal route ever calls the model.
+- **Everything is logged.** Every portal read writes an audit entry (`portal_chart_viewed`, `portal_appointments_viewed`, `portal_messages_viewed`), and so does every staff inbox read. Every portal write saves its row and a `change_log` entry in one transaction (actions `portal_message`, `portal_request`, `portal_request_done`, `portal_request_declined`, filed under the patient) and writes an audit entry too. The entries are on the same hash chain as every other change, so `python3 scripts/verify_db.py` covers them.
+- **New permissions** in `config/policy.json`: `portal_inbox` and `send_portal` for clinician, nurse and clinical lead; `portal_requests` for receptionist. The new `patient` role has only `portal_chart`, `portal_appointments` and `portal_messages`.
+- **Demo account**: `pt_lena`, linked to the synthetic patient `syn-002` (Lena Delacroix). `python3 setup_demo.py` creates it with the same password as the other demo accounts. Run `python3 scripts/seed_portal_demo.py` once to give her a welcome message and, if she has none, an upcoming appointment.
+- **Left out on purpose**:
+  - Patient self-booking into open slots: it bypasses the front desk and needs slot locking for a second actor. Requests cover it.
+  - Patient-facing AI chat: model text would reach a patient without clinician approval.
+  - Self sign-up and password reset by email: accounts are admin-created, and email leaves the machine.
+  - Clinical notes and lab trends: notes can carry injected text (the poisoned referral) and are not released; results are shown as plain rows only.
+  - Proxy access for a parent or carer: it needs a many-to-many link and a consent model.
+  - Attachments: file uploads are a large new attack surface.
+  - Read receipts: messages are append-only, and an update path is not worth it.
 
 ## New in 2.5: grounded answers, conversation log, network view
 
@@ -40,11 +61,12 @@ See `docs/DEMO-SCRIPT.md` for an 8-minute walkthrough.
 | Model must be on this machine; any non-local model address is refused, and there is no cloud fallback | `app/llm.py` |
 | The web app only listens on `127.0.0.1` (not reachable from the network) | `config/policy.json`, `app/server.py` |
 | Accounts are created by an admin on the command line; no self sign-up | `manage_users.py` |
-| Roles: clinician, nurse, clinical lead, auditor, admin, receptionist, network engineer, each with a fixed permission list | `config/policy.json` → `roles` |
+| Roles: clinician, nurse, clinical lead, auditor, admin, receptionist, network engineer, patient, each with a fixed permission list | `config/policy.json` → `roles` |
 | Names, dates, phone numbers, MRNs, emails, addresses masked before the model or the log sees them | `app/privacy.py` |
 | Prompt-injection and off-topic requests blocked; urgent words add an emergency notice | `app/guardrails.py` + `scope` in policy |
 | Every answer is marked as a draft for clinician review; overconfident wording is flagged | `app/guardrails.py` |
 | **The AI never contacts anyone.** It drafts messages for allow-listed recipient groups only, a clinician approves or rejects, and a person sends the approved text | `communication` in policy, Messages tab |
+| **A patient account sees one patient only.** It is confined to `/api/me`, `/api/logout` and `/api/portal/*`, the browser never supplies a patient id, only released fields are shown, and AI text arrives only as an approved draft that a staff member sends | `portal` in policy, `app/portal.py`, `app/server.py` |
 | Hash-chained audit log; any edited or deleted line is detected | `app/audit.py`, Audit tab |
 | Local vector store: append-only (SQLite triggers refuse edits and deletes) and hash-chained, holding masked text only | `app/vectorstore.py`, Audit tab |
 | Sessions expire after 30 minutes; 20 requests per minute per user; strict browser security headers | `app/server.py` |

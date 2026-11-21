@@ -44,6 +44,7 @@
         <button data-tab="conversations" data-perm="chat,frontdesk_chat,view_all_conversations">Conversations</button>
         <button data-tab="review" data-perm="chat,review_red,qa_review">Needs review <span id="review-count" class="count" hidden></span></button>
         <button data-tab="outbox" data-perm="draft_message,approve_message">Messages</button>
+        <button data-tab="inbox" data-perm="portal_inbox">Patient messages</button>
         <button data-tab="audit" data-perm="view_audit">Audit log</button>
         <button data-tab="network" data-perm="view_network">Network</button>
       </nav>
@@ -157,6 +158,12 @@
               <button id="book-btn" type="submit" disabled>Book</button>
               <p id="book-msg" class="error" role="alert"></p>
             </form>
+          </section>
+          <section id="portal-req-box" data-perm="portal_requests">
+            <h2>Portal requests <span id="portal-req-n" class="n"></span></h2>
+            <p class="muted">Sent by patients from the patient portal. Book or cancel with the normal tools above first, then mark the request done.</p>
+            <p id="portal-req-error" class="error" role="alert"></p>
+            <div id="portal-req-list"></div>
           </section>
           <section id="desk-ai" data-perm="frontdesk_chat">
             <h2>Front desk assistant</h2>
@@ -350,11 +357,26 @@
       </ol>
       <form id="draft-form" class="draft-form" data-perm="draft_message">
         <label>Recipient group <select id="draft-group" required></select></label>
+        <div id="draft-patient-box" hidden>
+          <label>Patient <input id="draft-patient-q" type="search" placeholder="Search name or condition" autocomplete="off"></label>
+          <div id="draft-patient-results" class="pick-list"></div>
+          <div id="draft-picked" class="picked" hidden></div>
+        </div>
         <label>What should the message say? (plain notes are fine) <textarea id="draft-instructions" rows="3" required placeholder="e.g. Lab results are normal; no follow-up needed unless symptoms return."></textarea></label>
-        <button type="submit">Ask the assistant for a draft</button>
+        <button id="draft-btn" type="submit">Ask the assistant for a draft</button>
         <p id="draft-error" class="error" role="alert"></p>
       </form>
       <div id="outbox-list"></div>
+    </section>
+
+    <section id="tab-inbox" class="tab page" hidden>
+      <div class="row-between">
+        <h2 class="page-title">Patient messages</h2>
+        <button id="inbox-refresh" class="ghost">Refresh</button>
+      </div>
+      <p class="muted">Messages patients sent from the patient portal, with the care team's replies. A reply goes straight to the patient's portal and can't be taken back.</p>
+      <p id="inbox-error" class="error" role="alert"></p>
+      <div id="inbox-list"></div>
     </section>
 
     <section id="tab-audit" class="tab page" hidden>

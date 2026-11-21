@@ -72,7 +72,9 @@
       "room_patient",
       "register_patient",
       "edit_chart",
-      "view_history"
+      "view_history",
+      "portal_inbox",
+      "send_portal"
     ],
     "nurse": [
       "view_patients",
@@ -82,7 +84,9 @@
       "room_patient",
       "register_patient",
       "edit_chart",
-      "view_history"
+      "view_history",
+      "portal_inbox",
+      "send_portal"
     ],
     "clinical_lead": [
       "view_patients",
@@ -94,7 +98,9 @@
       "register_patient",
       "edit_chart",
       "view_history",
-      "view_all_conversations"
+      "view_all_conversations",
+      "portal_inbox",
+      "send_portal"
     ],
     "auditor": [
       "view_audit",
@@ -115,11 +121,39 @@
       "book",
       "send_reminder",
       "frontdesk_chat",
-      "register_patient"
+      "register_patient",
+      "portal_requests"
     ],
     "network_engineer": [
       "view_network"
+    ],
+    "patient": [
+      "portal_chart",
+      "portal_appointments",
+      "portal_messages"
     ]
+  },
+  "portal": {
+    "_comment": "Patient portal (2.8). A patient account is linked to one patient id and sees only that record, through the fields listed here.",
+    "patient_role": "patient",
+    "released_fields": [
+      "id",
+      "name",
+      "age",
+      "sex",
+      "birthDate",
+      "conditions",
+      "medications",
+      "allergies",
+      "observations",
+      "preferred_contact",
+      "language"
+    ],
+    "max_subject_chars": 120,
+    "max_body_chars": 2000,
+    "max_note_chars": 300,
+    "max_open_requests": 5,
+    "emergency_notice": "Messages are not for emergencies. If this is urgent, call the clinic on 555-0100 or your local emergency number now."
   },
   "access": {
     "_comment": "Flag unusual record access, like Leash's anomaly score: too many different patients opened in a short window.",
