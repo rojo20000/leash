@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from agent.tools import ToolExecutor
+from agent.tools import ALL_RESOURCE_TYPES, ToolExecutor, call_facts
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -110,3 +110,42 @@ def test_a4_recorded_demo_recipients_are_accepted(ex):
     for to in tos:
         ex.execute("send_email", {"to": to, **EMAIL})
     assert tos and [x["to"] for x in sink_lines(ex)] == tos
+
+
+# A20: call_facts never raises and always returns three lists of strings
+ODD_ARGS = [
+    ("read_record", {"patient_id": 42}, (ALL_RESOURCE_TYPES, ["42"], [])),
+    ("read_record", {"patient_id": "pt-0042", "resource_types": [1]}, (["1"], ["pt-0042"], [])),
+    ("send_email", {"to": [None]}, ([], [], ["None"])),
+    ("send_email", {"to": 5}, ([], [], ["5"])),
+    ("read_record", None, (ALL_RESOURCE_TYPES, [], [])),
+    ("update_appointment", None, (["Encounter"], [], [])),
+    ("send_email", None, ([], [], [])),
+    ("read_record", [1], (ALL_RESOURCE_TYPES, [], [])),
+    ("send_email", "x", ([], [], [])),
+    ("read_record", {"patient_id": ["a", "b"], "resource_types": "Condition"}, (["Condition"], ["['a', 'b']"], [])),
+    ("read_record", {"patient_id": None, "resource_types": {"a": 1}}, (["{'a': 1}"], [], [])),
+    ("update_appointment", {"patient_id": {"a": 1}}, (["Encounter"], ["{'a': 1}"], [])),
+    ("send_email", {"to": {"a": 1}}, ([], [], ["{'a': 1}"])),
+    ("send_email", {"to": ["a@b.org", 5, ["c"]]}, ([], [], ["a@b.org", "5", "['c']"])),
+]
+
+
+@pytest.mark.parametrize("tool,args,want", ODD_ARGS)
+def test_a20_call_facts_returns_lists_of_strings_for_any_args(tool, args, want):
+    got = call_facts(tool, args)
+    assert got == want
+    assert all(type(part) is list and all(type(x) is str for x in part) for part in got)
+
+
+def test_a20_call_facts_unchanged_for_valid_calls():
+    assert call_facts("search_patients", {"name": "a"}) == (["Patient"], [], [])
+    assert call_facts("read_record", {"patient_id": "pt-0007"}) == (ALL_RESOURCE_TYPES, ["pt-0007"], [])
+    assert call_facts("read_record", {"patient_id": "pt-0007", "resource_types": ["Patient", "Encounter"]}) == (
+        ["Patient", "Encounter"], ["pt-0007"], [])
+    assert call_facts("read_document", {"document_id": "ref-0007"}) == (["DocumentReference"], [], [])
+    assert call_facts("update_appointment", {"patient_id": "pt-0007"}) == (["Encounter"], ["pt-0007"], [])
+    assert call_facts("send_email", {"to": ["a@b.org", "c@d.org"]}) == ([], [], ["a@b.org", "c@d.org"])
+    assert call_facts("send_email", {"to": "a@b.org"}) == ([], [], ["a@b.org"])
+    assert call_facts("nope", {}) == ([], [], [])
+    assert call_facts("read_record", {})[0] is not ALL_RESOURCE_TYPES  # callers get a copy, as before

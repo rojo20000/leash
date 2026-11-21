@@ -32,20 +32,30 @@ TOOL_SCHEMAS = [
 ]
 
 
+def _strs(v):
+    if v is None:
+        return []
+    return [str(x) for x in v] if isinstance(v, (list, tuple)) else [str(v)]
+
+
 def call_facts(tool, args):
-    """Policy inputs for a call: (resource_types, patient_ids, recipients)."""
-    args = args or {}
+    """Policy inputs for a call: (resource_types, patient_ids, recipients).
+
+    Never raises; every item is a str whatever JSON the agent sent, so the policy cores never see other types (A20).
+    """
+    args = args if isinstance(args, dict) else {}
+    pid = args.get("patient_id")
+    pids = [] if pid is None else [str(pid)]
     if tool == "search_patients":
         return ["Patient"], [], []
     if tool == "read_record":
-        return list(args.get("resource_types") or ALL_RESOURCE_TYPES), [args.get("patient_id")], []
+        return _strs(args.get("resource_types") or ALL_RESOURCE_TYPES), pids, []
     if tool == "read_document":
         return ["DocumentReference"], [], []
     if tool == "update_appointment":
-        return ["Encounter"], [args.get("patient_id")], []
+        return ["Encounter"], pids, []
     if tool == "send_email":
-        to = args.get("to")
-        return [], [], [to] if isinstance(to, str) else list(to or [])
+        return [], [], _strs(args.get("to"))
     return [], [], []
 
 
