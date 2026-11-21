@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clinic Assistant</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div class="strip"><span>Prototype. Made-up patients only. Runs entirely on this computer.</span>
+    <span id="mock-banner" class="strip-warn" hidden>Practice mode: Ollama isn't running, so answers are placeholders. Open Ollama and restart the app for real answers.</span></div>
+
+  <main id="login-view" class="login" hidden>
+    <h1>Clinic Assistant</h1>
+    <p class="muted">Demo accounts, all with the password chosen when the app was first started:</p>
+    <dl class="accounts">
+      <dt>dr_lee</dt><dd>Doctor: full chart, today's patients, the assistant</dd>
+      <dt>desk_sam</dt><dd>Front desk: schedule, check-in, booking, reminders</dd>
+      <dt>nurse_kim</dt><dd>Nurse: charts and rooming patients</dd>
+      <dt>lead_ana</dt><dd>Clinical lead: reviews stopped requests</dd>
+      <dt>auditor_ray</dt><dd>Auditor: the audit log</dd>
+    </dl>
+    <form id="login-form">
+      <label>Username <input id="login-user" autocomplete="username" required></label>
+      <label>Password <input id="login-pass" type="password" autocomplete="current-password" required></label>
+      <button type="submit">Sign in</button>
+      <p id="login-error" class="error" role="alert"></p>
+    </form>
+    <p class="version-line">Version <span class="app-version"></span></p>
+  </main>
+
+  <div id="app-view" hidden>
+    <header class="topbar">
+      <strong class="brand">Clinic Assistant <span class="ver app-version"></span></strong>
+      <nav id="tabs">
+        <button data-tab="home">Home</button>
+        <button data-tab="schedule" data-perm="view_schedule">Schedule</button>
+        <button data-tab="patients" data-perm="view_patients">Patients</button>
+        <button data-tab="chat" data-perm="chat">Ask a question</button>
+        <button data-tab="review" data-perm="chat,review_red,qa_review">Needs review <span id="review-count" class="count" hidden></span></button>
+        <button data-tab="outbox" data-perm="draft_message,approve_message">Messages</button>
+        <button data-tab="audit" data-perm="view_audit">Audit log</button>
+      </nav>
+      <div class="who"><span id="who-name"></span><span id="who-role" class="pill"></span><span id="who-model" class="model" title="The AI model runs on this computer"></span></div>
+      <button id="logout" class="ghost">Sign out</button>
+    </header>
+
+    <section id="tab-home" class="tab page" hidden>
+      <header class="page-head">
+        <h1 id="home-hello">Hello</h1>
+        <p id="home-summary" class="lede"></p>
+      </header>
+      <div class="home-grid">
+        <section>
+          <h2>Waiting for you</h2>
+          <div id="home-todo" class="rows"></div>
+          <div data-perm="view_patients">
+            <h2 class="sub-h">Latest chart updates</h2>
+            <div id="home-recent" class="rows"></div>
+          </div>
+        </section>
+        <aside class="guide" data-perm="check_in">
+          <h2>Your day at the front desk</h2>
+          <ol class="howto">
+            <li>Open Schedule. Everyone due today is listed by time.</li>
+            <li>When someone arrives, press Check in, confirm their date of birth and insurance card, then check them in. The clinician sees them as waiting straight away.</li>
+            <li>Book new appointments on the right. Only open times can be picked.</li>
+            <li>Switch to tomorrow to prepare reminders. Copy each one into your usual texting or portal tool, then mark it sent.</li>
+          </ol>
+          <h2>What you can see</h2>
+          <p>Names, dates of birth, contact details, insurance and appointment times. Clinical records are not available to the front desk, and the front desk assistant only knows the schedule. Clinical questions go to a nurse or clinician.</p>
+        </aside>
+        <aside class="guide" data-perm="chat,review_red,view_audit">
+          <h2>How this works</h2>
+          <ol class="howto">
+            <li>Open a patient. The list starts with whoever has the most to check.</li>
+            <li>Ask about them in the panel beside the record, or tap one of the suggested questions. Names and contact details are taken out before the model sees anything.</li>
+            <li>Read the label on the answer before you use it.</li>
+          </ol>
+          <h2>Answer labels</h2>
+          <dl class="key">
+            <dt><span class="tier green">Ready to read</span></dt><dd>Nothing flagged. Still a draft for you to check.</dd>
+            <dt><span class="tier amber">Check first</span></dt><dd>Something needs your attention, such as a possible emergency. You read why, then open the answer.</dd>
+            <dt><span class="tier red">Stopped</span></dt><dd>Not shown. A clinical lead looks at it; nothing for you to do.</dd>
+          </dl>
+          <p class="fine">The assistant never contacts anyone. A message it drafts goes out only after a clinician approves it and a person sends it.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section id="tab-schedule" class="tab page wide" hidden>
+      <div class="row-between sched-head">
+        <div>
+          <h2 id="sched-title">Schedule</h2>
+          <p id="sched-counts" class="muted"></p>
+        </div>
+        <div class="sched-controls">
+          <div class="seg" role="group" aria-label="Day">
+            <button type="button" data-day="0" class="ghost small-btn">Today</button>
+            <button type="button" data-day="1" class="ghost small-btn">Tomorrow</button>
+          </div>
+          <select id="sched-day" aria-label="Pick another day"></select>
+          <select id="sched-clin" aria-label="Clinician"></select>
+        </div>
+      </div>
+      <p id="sched-error" class="error" role="alert"></p>
+      <div class="sched-grid">
+        <div class="table-wrap">
+          <table class="sched">
+            <thead><tr><th>Time</th><th>Patient</th><th>Visit</th><th>With</th><th>Status</th><th><span class="sr">Action</span></th></tr></thead>
+            <tbody id="sched-body"></tbody>
+          </table>
+        </div>
+        <aside class="sched-side">
+          <button type="button" class="ghost register-btn" data-register data-perm="register_patient">Register a new patient</button>
+          <section id="book-box" data-perm="book">
+            <h2>Book an appointment</h2>
+            <form id="book-form" novalidate>
+              <label>Patient
+                <input id="book-q" type="search" placeholder="Type 2+ letters of a name, or a birth date (YYYY-MM-DD)" autocomplete="off">
+              </label>
+              <div id="book-results" class="pick-list"></div>
+              <div id="book-picked" class="picked" hidden></div>
+              <label>Clinician <select id="book-clin"></select></label>
+              <label>Day <select id="book-day"></select></label>
+              <label>Time <select id="book-time" disabled><option value="">Pick a clinician and day first</option></select></label>
+              <label>Visit type <select id="book-type"></select></label>
+              <p id="book-summary" class="summary muted">Pick a patient to start.</p>
+              <button id="book-btn" type="submit" disabled>Book</button>
+              <p id="book-msg" class="error" role="alert"></p>
+            </form>
+          </section>
+          <section id="desk-ai" data-perm="frontdesk_chat">
+            <h2>Front desk assistant</h2>
+            <p class="muted">Knows today's and tomorrow's schedule only. Patient names are swapped for tags before the model sees them.</p>
+            <div id="desk-log" class="chat-log" aria-live="polite" data-empty="Tap a question below, or type your own."></div>
+            <div id="desk-suggestions" class="suggestions"></div>
+            <form id="desk-form" class="composer">
+              <textarea id="desk-input" rows="2" placeholder="Ask about the schedule" required></textarea>
+              <button type="submit">Send</button>
+            </form>
+          </section>
+        </aside>
+      </div>
+    </section>
+
+    <section id="tab-patients" class="tab panes" hidden>
+      <aside class="pane pane-list">
+        <div class="pane-head row-between"><div><h2>Patients</h2><p class="muted">Most to check first</p></div>
+          <button type="button" class="ghost small-btn" data-register data-perm="register_patient">New patient</button></div>
+        <input id="patient-search" type="search" placeholder="Search name or condition" aria-label="Search patients">
+        <ul id="patient-items"></ul>
+      </aside>
+      <div class="pane pane-record">
+        <div id="patient-empty" class="empty"><strong>Pick a patient from the list.</strong><span class="muted">Start at the top: that person has the most to check. Their record opens here, and you can ask the assistant about them alongside it.</span></div>
+        <div id="patient-view" hidden>
+          <div class="record">
+            <header class="record-head">
+              <h2 id="pt-name" class="record-title"></h2>
+              <p id="pt-meta" class="muted"></p>
+              <div id="pt-ident" class="ident"></div>
+              <p class="synthetic">Made-up record for testing</p>
+            </header>
+            <div id="pt-attention"></div>
+            <div class="pt-grid">
+              <div><h3>Conditions</h3><ul id="pt-conditions"></ul></div>
+              <div><h3>Medications</h3><ul id="pt-meds"></ul></div>
+              <div><h3>Allergies</h3><ul id="pt-allergies"></ul></div>
+            </div>
+            <h3>Results</h3>
+            <div class="table-wrap"><table><thead><tr><th>Date</th><th>Test</th><th>Value</th><th>Reference</th></tr></thead><tbody id="pt-obs"></tbody></table></div>
+            <h3>Notes and documents</h3>
+            <div id="pt-notes"></div>
+            <section id="entry-box" class="entry" data-perm="edit_chart">
+              <h3>Add to this chart</h3>
+              <p class="muted">Additions only. Nothing already in the chart can be changed or deleted; corrections go in as an addendum, and every addition is kept in the history below.</p>
+              <form id="entry-form" novalidate>
+                <label>What are you adding?
+                  <select id="entry-kind">
+                    <option value="">Pick one...</option>
+                    <option value="note">A note (visit, finding, phone call, addendum)</option>
+                    <option value="result">A result or vital sign</option>
+                    <option value="condition">A condition</option>
+                    <option value="medication">A medicine</option>
+                    <option value="stop_medication">Stop a medicine</option>
+                    <option value="allergy">An allergy</option>
+                    <option value="attention">Something to check</option>
+                    <option value="resolve_attention">Resolve something to check</option>
+                  </select>
+                </label>
+                <div id="entry-fields"></div>
+                <div id="entry-allergy" class="allergy-warn" hidden></div>
+                <div class="pin-row"><label>PIN <input id="entry-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4 digits"></label>
+                  <button id="entry-btn" type="submit" disabled>Add to chart</button></div>
+                <p id="entry-summary" class="summary muted"></p>
+                <p id="entry-msg" class="error" role="alert"></p>
+              </form>
+            </section>
+            <h3>Chart history</h3>
+            <p class="muted">Everything added since the record was created, newest first. This list is hash-chained, so it can't be quietly edited.</p>
+            <ol id="pt-history" class="history"></ol>
+            <h3>Similar patients</h3>
+            <p class="muted">Matched on conditions, medicines, results and notes, never on names.</p>
+            <ul id="pt-similar" class="similar"></ul>
+          </div>
+        </div>
+      </div>
+      <aside id="pt-chat-pane" class="pane pane-chat" hidden>
+        <div class="pane-head row-between">
+          <div><h2>Ask about <span id="pt-chat-name">this patient</span></h2>
+          <p class="muted">Name, record number, birth date and contact details stay here.</p></div>
+          <button id="pt-chat-clear" class="ghost small-btn" title="Clear this conversation">Clear</button>
+        </div>
+        <div id="pt-chat-log" class="chat-log" aria-live="polite" data-empty="Next step: tap a question below, or type your own."></div>
+        <div id="pt-suggestions" class="suggestions"></div>
+        <form id="pt-chat-form" class="composer">
+          <textarea id="pt-chat-input" rows="2" placeholder="Ask about this patient" required></textarea>
+          <button type="submit">Send</button>
+        </form>
+        <p class="hint">Enter to send · Shift+Enter for a new line</p>
+      </aside>
+    </section>
+
+    <section id="tab-chat" class="tab page">
+      <div class="row-between">
+        <h2>Ask a general question</h2>
+        <button id="chat-clear" class="ghost small-btn">New conversation</button>
+      </div>
+      <p class="muted">For questions that aren't about one patient. To ask about a patient, open them from Patients instead.</p>
+      <p class="inline-key"><span class="tier green">Ready to read</span> shown as a draft <span class="tier amber">Check first</span> read the warning, then open it <span class="tier red">Stopped</span> a clinical lead looks at it</p>
+      <div id="chat-log" class="chat-log" aria-live="polite" data-empty="Ask anything clinical, for example: Summarise this note for a handover. Identifiers are masked before the model sees your text."></div>
+      <form id="chat-form" class="composer">
+        <textarea id="chat-input" rows="3" placeholder="e.g. Summarise this note for a handover: ..." required></textarea>
+        <button type="submit">Send</button>
+      </form>
+      <p class="hint">Enter to send · Shift+Enter for a new line</p>
+    </section>
+
+    <section id="tab-review" class="tab page" hidden>
+      <div class="row-between">
+        <h2>Needs review</h2>
+        <button id="review-refresh" class="ghost">Refresh</button>
+      </div>
+      <p class="muted">Anything that needs a person to look at it. Each item says what to do.</p>
+      <h3>Waiting for you <span id="todo-n" class="n"></span></h3>
+      <div id="review-todo"></div>
+      <h3>Done, or waiting on someone else <span id="done-n" class="n"></span></h3>
+      <div id="review-done"></div>
+    </section>
+
+    <section id="tab-outbox" class="tab page" hidden>
+      <h2>Messages to other people</h2>
+      <p class="muted">The assistant never contacts anyone itself.</p>
+      <ol class="flow" aria-label="How a message goes out">
+        <li>You describe the message</li><li>The assistant drafts it</li><li>A clinician approves or edits</li><li>A person sends it the usual way</li>
+      </ol>
+      <form id="draft-form" class="draft-form" data-perm="draft_message">
+        <label>Recipient group <select id="draft-group" required></select></label>
+        <label>What should the message say? (plain notes are fine) <textarea id="draft-instructions" rows="3" required placeholder="e.g. Lab results are normal; no follow-up needed unless symptoms return."></textarea></label>
+        <button type="submit">Ask the assistant for a draft</button>
+        <p id="draft-error" class="error" role="alert"></p>
+      </form>
+      <div id="outbox-list"></div>
+    </section>
+
+    <section id="tab-audit" class="tab page" hidden>
+      <div class="row-between">
+        <h2>Audit log</h2>
+        <button id="audit-refresh" class="ghost">Refresh</button>
+      </div>
+      <p id="audit-verify"></p>
+      <p id="vector-verify"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time (UTC)</th><th>Event</th><th>User</th><th>Details</th></tr></thead>
+          <tbody id="audit-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  <dialog id="reg-dialog" aria-labelledby="reg-title">
+    <form id="reg-form" novalidate>
+      <div class="row-between"><h2 id="reg-title">Register a new patient</h2><button type="button" id="reg-close" class="ghost small-btn">Close</button></div>
+      <p class="muted">Made-up people only. Every field is checked before it can be saved.</p>
+      <div class="reg-grid">
+        <label>First name <input id="reg-given" autocomplete="off" maxlength="40"></label>
+        <label>Last name <input id="reg-family" autocomplete="off" maxlength="40"></label>
+        <label>Date of birth <input id="reg-birth" type="date"></label>
+        <label>Sex <select id="reg-sex"></select></label>
+        <label>Phone <input id="reg-phone" inputmode="tel" placeholder="555-0123" maxlength="12"></label>
+        <label>Address <input id="reg-address" maxlength="80" placeholder="12 Example Street, Testville"></label>
+        <label>Insurance plan <select id="reg-plan"></select></label>
+        <label>Member ID <input id="reg-member" maxlength="12" placeholder="As printed on the card"></label>
+        <label>Prefers <select id="reg-contact"></select></label>
+        <label>Language <select id="reg-language"></select></label>
+      </div>
+      <ul id="reg-problems" class="problems"></ul>
+      <div class="pin-row"><label>PIN <input id="reg-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4 digits"></label>
+        <button id="reg-btn" type="submit" disabled>Register patient</button></div>
+      <p id="reg-msg" class="error" role="alert"></p>
+    </form>
+  </dialog>
+  <script src="/app.js"></script>
+</body>
+</html>

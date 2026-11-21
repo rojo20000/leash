@@ -1,0 +1,200 @@
+{
+  "_comment": "All restrictions live here. Change this file, not the code. Every change should be reviewed and dated.",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8642,
+    "session_minutes": 30,
+    "max_requests_per_minute": 20
+  },
+  "model": {
+    "ollama_url": "http://127.0.0.1:11434",
+    "chat_model": "MedAIBase/MedGemma1.5:4b",
+    "safety_model": "",
+    "temperature": 0.2,
+    "timeout_seconds": 180,
+    "max_answer_tokens": 450,
+    "context_tokens": 4096,
+    "keep_alive": "30m",
+    "_speed": "Answers are capped at max_answer_tokens and the model is kept loaded for keep_alive, so only the first answer after start pays the load time. The app warms the model when it starts."
+  },
+  "scope": {
+    "system_prompt": "You are a clinical documentation assistant used by licensed care staff inside one clinic. You help summarise notes, explain lab results, draft patient-friendly wording and suggest questions to consider. You do not make final diagnoses or treatment decisions; a clinician decides. Patient identifiers have been replaced with tags like [NAME] or [DATE]; never try to guess them. If a request is outside clinical documentation and care support, say you cannot help with it. If anything suggests an emergency, tell the user to follow the clinic's emergency protocol now. When a patient record is provided, answer only from that record, say what is missing, and point out anything that needs attention.",
+    "blocked_input_patterns": [
+      "ignore (all |any )?(previous|prior|above) instructions",
+      "disregard (the |your )?(system|previous) (prompt|instructions)",
+      "reveal (your|the) (system )?prompt",
+      "you are now (?!a clinical)",
+      "jailbreak",
+      "\\bDAN\\b"
+    ],
+    "out_of_scope_patterns": [
+      "\\b(write|generate) (me )?(some )?(code|malware|a virus)\\b",
+      "\\b(bomb|explosive|weapon)s?\\b",
+      "\\bhack(ing)? into\\b",
+      "\\b(stock|crypto) (tips|picks)\\b"
+    ],
+    "urgent_patterns": [
+      "\\b(chest pain|not breathing|unresponsive|anaphyla\\w*|stroke|suicid\\w*|overdose)\\b"
+    ],
+    "overconfident_output_patterns": [
+      "\\byou (definitely|certainly) have\\b",
+      "\\bthe diagnosis is\\b"
+    ],
+    "dangerous_output_patterns": [
+      "\\bstop taking\\b",
+      "\\bdouble (the|your) dose\\b",
+      "\\bno need to (see|consult) a (doctor|clinician|physician)\\b"
+    ],
+    "document_injection_patterns": [
+      "note to (the )?ai",
+      "\\b(ai|assistant|model)\\s*:\\s*(ignore|disregard|you must)",
+      "records?-export",
+      "<!--",
+      "\\bsend (the )?(complete|full|entire) (chart|record)",
+      "\\bemail\\b.*\\b(chart|record)\\b"
+    ]
+  },
+  "tiers": {
+    "_comment": "green = no flags, amber = held for the asker's review, red = blocked and sent to a second person. See the gateway plan.",
+    "green_sample_rate": 0.1,
+    "long_paste_chars": 1500,
+    "always_amber_recipient_groups": [
+      "patient-portal"
+    ]
+  },
+  "roles": {
+    "clinician": [
+      "view_patients",
+      "chat",
+      "draft_message",
+      "approve_message",
+      "view_schedule",
+      "room_patient",
+      "register_patient",
+      "edit_chart"
+    ],
+    "nurse": [
+      "view_patients",
+      "chat",
+      "draft_message",
+      "view_schedule",
+      "room_patient",
+      "register_patient",
+      "edit_chart"
+    ],
+    "clinical_lead": [
+      "view_patients",
+      "chat",
+      "draft_message",
+      "approve_message",
+      "review_red",
+      "view_schedule",
+      "register_patient",
+      "edit_chart"
+    ],
+    "auditor": [
+      "view_audit",
+      "qa_review"
+    ],
+    "admin": [
+      "view_audit",
+      "review_red"
+    ],
+    "receptionist": [
+      "view_schedule",
+      "check_in",
+      "book",
+      "send_reminder",
+      "frontdesk_chat",
+      "register_patient"
+    ]
+  },
+  "access": {
+    "_comment": "Flag unusual record access, like Leash's anomaly score: too many different patients opened in a short window.",
+    "max_patients_per_window": 12,
+    "window_minutes": 10
+  },
+  "clinic": {
+    "_comment": "The made-up clinic used by the scheduling demo. Front desk sees only what is listed in frontdesk.allowed_fields.",
+    "name": "Testville Family Clinic",
+    "phone": "555-0100",
+    "hours": [
+      "08:00",
+      "17:00"
+    ],
+    "slot_minutes": 20,
+    "booking_days_ahead": 14,
+    "no_show_after_minutes": 15,
+    "clinicians": {
+      "dr_lee": "Dr Lee",
+      "dr_osei": "Dr Osei"
+    },
+    "visit_types": [
+      "Follow-up",
+      "Annual physical",
+      "New problem",
+      "Lab review",
+      "Medication review"
+    ],
+    "cancel_reasons": [
+      "Patient called to cancel",
+      "Patient asked to reschedule",
+      "Clinician unavailable",
+      "Booked by mistake"
+    ]
+  },
+  "frontdesk": {
+    "_comment": "Minimum necessary for reception. The server builds front-desk views from this allow-list only, so clinical fields can never reach the front desk screens or its assistant.",
+    "allowed_fields": [
+      "id",
+      "name",
+      "birthDate",
+      "phone",
+      "address",
+      "insurance",
+      "preferred_contact",
+      "language"
+    ],
+    "system_prompt": "You help the front desk of a small clinic with scheduling only: who is due, who has arrived, open slots, and polite wording for patients. You are given today's and tomorrow's schedule with patients shown as tags like [P3] and clinicians as usernames like dr_lee. You have no clinical information and must never give medical advice. If asked anything clinical, say that a nurse or clinician must answer it. Answer briefly and only from the schedule provided.",
+    "clinical_redirect_patterns": [
+      "\\b(diagnos\\w*|medication\\w*|medicine\\w*|meds|dose|dosage|prescri\\w*|symptom\\w*|allerg\\w*|lab\\w*|results?|condition\\w*|treatment\\w*|blood pressure|pain|sick|side effects?|pregnan\\w*|refill\\w*)\\b"
+    ]
+  },
+  "confidential": {
+    "_comment": "DEMO ONLY. These fields stay hidden on every screen until the PIN is typed, every time, and each reveal is logged. 1234 is a demo PIN; a real clinic would use each person's own PIN or badge tap.",
+    "pin": "1234",
+    "fields": [
+      "mrn",
+      "birthDate",
+      "phone",
+      "address",
+      "member_id"
+    ],
+    "max_wrong": 5,
+    "lock_minutes": 5
+  },
+  "vectors": {
+    "_comment": "Local vector store in data/vectors.sqlite (append-only, hash-chained). Leave ollama_embed_model empty to use the built-in offline embedder; set it to e.g. nomic-embed-text after `ollama pull nomic-embed-text`, then recalibrate the threshold for that embedder.",
+    "ollama_embed_model": "",
+    "injection_similarity": {
+      "hashing-1024": 0.33
+    },
+    "similar_cases": 3
+  },
+  "communication": {
+    "_comment": "The AI never contacts anyone by itself. It can only draft; a clinician approves; the app never sends. Approved text is copied out by a person into the clinic's normal channel.",
+    "ai_can_send_directly": false,
+    "allowed_recipient_groups": {
+      "care-team": "Other staff inside the clinic",
+      "patient-portal": "Patient-friendly message, sent by staff through the patient portal",
+      "pharmacy": "Pharmacy query, sent by staff",
+      "referral": "Referral letter to another clinician"
+    },
+    "draft_instructions": "Write a short, polite draft message for the recipient group named below. Keep identifiers as tags like [NAME]; a person will fill them in. Plain language for patients. End with a line saying the message was prepared with AI assistance and reviewed by staff.",
+    "approver_must_differ_from_drafter": false
+  },
+  "logging": {
+    "store_masked_text": true,
+    "store_raw_text": false
+  }
+}
