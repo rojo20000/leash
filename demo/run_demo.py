@@ -161,6 +161,10 @@ def main():
             print(f"  {'PASS' if ok5 else 'FAIL'} 5 reasoner explanation for the attacker email served_by "
                   f"{rs.get('served_by')} (expected {want})")
             failed |= not ok5
+        ml_name = steps[0]["decision"]["ml"] if steps else None
+        ok6 = ml_name == "real" or os.environ.get("LEASH_ML", "").lower() == "stub"
+        print(f"  {'PASS' if ok6 else 'FAIL'} 6 gateway ML is {ml_name} (expected real unless LEASH_ML=stub)")
+        failed |= not ok6
 
         write_metrics("demo", {
             "unprotected_leaked": leaked, "protected_blocked": blocked and alert and not prot_leaks,

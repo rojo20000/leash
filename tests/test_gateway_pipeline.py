@@ -152,3 +152,14 @@ def test_decisions_metrics_reset_and_422(gw):
     assert gw.post("/v1/tool-call", json={"tool": "x"}).status_code == 422
     assert gw.post("/v1/admin/reset").json() == {"status": "reset"}
     assert gw.get("/v1/decisions").json()["decisions"] == [] and gw.get("/v1/audit/verify").json()["ok"]
+
+
+def test_ml_loader_never_falls_back_silently(monkeypatch):  # A7
+    import ml.api
+    from gateway.ml_loader import load_ml
+    monkeypatch.delenv("LEASH_ML")
+    monkeypatch.setattr(ml.api, "ready", lambda: False)
+    with pytest.raises(RuntimeError):
+        load_ml()
+    monkeypatch.setenv("LEASH_ML", "stub")
+    assert load_ml()[1] == "stub"

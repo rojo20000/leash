@@ -268,7 +268,7 @@ One JSON object per line, sessions contiguous, events time-ordered within a sess
 | Env var | Default | Meaning |
 |---------|---------|---------|
 | `LEASH_CORE` | unset | `py` forces `gateway.core_py`, `rust` forces `leash_core` |
-| `LEASH_ML` | unset | `stub` forces `gateway.ml_stub` |
+| `LEASH_ML` | unset | `stub` forces `gateway.ml_stub`; otherwise `ml.api` is required and missing model files raise at startup |
 | `LEASH_RUNTIME_DIR` | `runtime` | runtime state dir (git-ignored) |
 | `LEASH_DATA_DIR` | `data/generated` | generator output read by the EHR |
 | `LEASH_EHR_URL` | `http://127.0.0.1:8001` | |
@@ -448,16 +448,14 @@ review ("confirm block" / "dismiss"); the call is never executed. Both append a 
 ### C5.6 ML hook-up: `gateway/ml_loader.py` (N6) chooses `ml.api` (N5) or `gateway/ml_stub.py` (N6)
 
 ```python
-def load_ml():   # returns (module, "real"|"stub")
-    if os.environ.get("LEASH_ML", "").lower() != "stub":
-        try:
-            import ml.api as m
-            if m.ready():
-                return m, "real"
-        except ImportError:
-            pass
-    import gateway.ml_stub as m
-    return m, "stub"
+def load_ml():   # returns (module, "real"|"stub"); no silent fallback (audit A7)
+    if os.environ.get("LEASH_ML", "").lower() == "stub":
+        import gateway.ml_stub as m
+        return m, "stub"
+    import ml.api as m
+    if not m.ready():
+        raise RuntimeError("ML models missing: run `make data`, or set LEASH_ML=stub for tests")
+    return m, "real"
 ```
 `gateway/ml_stub.py` implements the C6.1 signatures with simple rules (keyword match for injection; field
 filtering + `core.prescan` redaction for minimize; a calls/distinct-patients heuristic for anomaly). N5 never
