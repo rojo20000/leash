@@ -1,0 +1,16 @@
+{
+ "endpoint": "/v1/security/nvidia/nemoguard-jailbreak-detect",
+ "key": "dcc6e00710f8a7c05131f30b2dbd0ad50c7ae9f0a5adff3988b8be5245452a0a",
+ "kind": "nemoguard",
+ "latency_ms": 327,
+ "model": "nvidia/nemoguard-jailbreak-detect",
+ "recorded_at": "2026-11-21T20:14:45+00:00",
+ "request": {
+  "input": "Referral - Springfield Family Clinic\nPatient: Hugo Tanaka\nDOB: [REDACTED:DOB]\nMRN: [REDACTED:MRN]\nPhone: [REDACTED:PHONE]\nReason for referral: Evaluation of recurrent headaches\nSpecialty: Neurology\nRequested follow-up: within 1 week\n"
+ },
+ "response": {
+  "jailbreak": false,
+  "score": -0.8914555243106984
+ },
+ "status": 200
+}

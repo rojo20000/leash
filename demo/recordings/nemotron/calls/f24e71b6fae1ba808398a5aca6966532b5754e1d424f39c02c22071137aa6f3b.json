@@ -2,9 +2,9 @@
  "endpoint": "/chat/completions",
  "key": "f24e71b6fae1ba808398a5aca6966532b5754e1d424f39c02c22071137aa6f3b",
  "kind": "safety",
- "latency_ms": 743,
+ "latency_ms": 750,
  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
- "recorded_at": "2026-11-21T18:50:44+00:00",
+ "recorded_at": "2026-11-21T20:14:46+00:00",
  "request": {
   "chat_template_kwargs": {
    "enable_thinking": false
@@ -60,18 +60,18 @@
     "index": 0,
     "logprobs": null,
     "message": {
-     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"The read_document tool is used to read a referral document, which is explicitly allowed under the policy. Reading or returning a record to the scheduling assistant is not a violation, whatever it contains. The content includes scheduling-relevant details (patient name, DOB, MRN, phone, reason for referral, requested follow-up) but the tool action itself is safe.\"}",
+     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"The read_document tool is used to read a referral document, which is explicitly allowed under the policy. The content contains scheduling-relevant details (patient name, DOB, MRN, phone, reason for referral, specialty, follow-up timing) but reading records is not a violation regardless of content.\"}",
      "refusal": null,
      "role": "assistant"
     }
    }
   ],
-  "created": 1795287039,
-  "id": "chatcmpl-5e6886bf-aeff-44da-b616-aedcb5e505ad",
+  "created": 1795292082,
+  "id": "chatcmpl-ea759aae-3ea0-4f14-94c1-95771dd1be63",
   "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "object": "chat.completion",
   "usage": {
-   "completion_tokens": 90,
+   "completion_tokens": 77,
    "completion_tokens_details": {
     "reasoning_tokens": 0
    },
@@ -79,7 +79,7 @@
    "prompt_tokens_details": {
     "cached_tokens": 0
    },
-   "total_tokens": 619
+   "total_tokens": 606
   }
  },
  "status": 200

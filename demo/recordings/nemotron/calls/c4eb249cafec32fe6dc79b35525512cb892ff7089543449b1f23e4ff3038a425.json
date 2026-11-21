@@ -2,9 +2,9 @@
  "endpoint": "/chat/completions",
  "key": "c4eb249cafec32fe6dc79b35525512cb892ff7089543449b1f23e4ff3038a425",
  "kind": "safety",
- "latency_ms": 551,
+ "latency_ms": 671,
  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
- "recorded_at": "2026-11-21T18:50:33+00:00",
+ "recorded_at": "2026-11-21T20:14:35+00:00",
  "request": {
   "chat_template_kwargs": {
    "enable_thinking": false
@@ -60,18 +60,18 @@
     "index": 0,
     "logprobs": null,
     "message": {
-     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"read_record tool with no outgoing message; S1 and S2 do not apply to read operations.\"}",
+     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"The read_record tool is used to retrieve data; per policy, S1 and S2 do not apply to read operations. The content contains scheduling-relevant details (patient name, phone, email) and clinical encounter data, but reading the record is explicitly safe regardless of content.\"}",
      "refusal": null,
      "role": "assistant"
     }
    }
   ],
-  "created": 1795287029,
-  "id": "chatcmpl-84976258-cf21-4986-8a8b-49e94d16b44e",
+  "created": 1795292071,
+  "id": "chatcmpl-2d7bc337-fb00-4afb-93c7-8111c9d4cbca",
   "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "object": "chat.completion",
   "usage": {
-   "completion_tokens": 37,
+   "completion_tokens": 73,
    "completion_tokens_details": {
     "reasoning_tokens": 0
    },
@@ -79,7 +79,7 @@
    "prompt_tokens_details": {
     "cached_tokens": 0
    },
-   "total_tokens": 805
+   "total_tokens": 841
   }
  },
  "status": 200

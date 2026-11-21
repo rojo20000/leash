@@ -95,9 +95,11 @@ def main():
             nm = d.get("nemotron") or {}
             for r in d["reasons"]:
                 print(f"       reason {r['code']} ({r['stage']}): {r['detail']}")
-            for stage in ("jailbreak", "content_safety"):
+            for stage in ("jailbreak", "nemoguard", "content_safety"):
                 if nm.get(stage):
-                    print(f"       {stage}: flagged={nm[stage]['flagged']} served_by={nm[stage]['served_by']}")
+                    sc = nm[stage].get("score")
+                    score = "" if stage != "nemoguard" else f" score={'n/a' if sc is None else f'{sc:.3f}'}"
+                    print(f"       {stage}: flagged={nm[stage]['flagged']}{score} served_by={nm[stage]['served_by']}")
             ro = nm.get("reasoner")
             if ro:
                 why = f" ({ro['error']})" if ro.get("error") else ""

@@ -2,9 +2,9 @@
  "endpoint": "/chat/completions",
  "key": "0c3fc6eeb707d90f0371a8ce8ece5bb934b0f7b4383705670fdb8caccf6fa21e",
  "kind": "safety",
- "latency_ms": 1334,
+ "latency_ms": 566,
  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
- "recorded_at": "2026-11-21T18:50:34+00:00",
+ "recorded_at": "2026-11-21T20:14:36+00:00",
  "request": {
   "chat_template_kwargs": {
    "enable_thinking": false
@@ -60,18 +60,18 @@
     "index": 0,
     "logprobs": null,
     "message": {
-     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"The update_appointment tool contains only scheduling details (patient_id, reason, start time) and has no destination, so it does not violate S1 or S2.\"}",
+     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"The update_appointment tool contains only scheduling details (patient_id, reason, start time) and no clinical data or external destination, so it does not violate S1 or S2.\"}",
      "refusal": null,
      "role": "assistant"
     }
    }
   ],
-  "created": 1795287029,
-  "id": "chatcmpl-ec555285-be34-4b96-936c-7c6ff6d9fad0",
+  "created": 1795292072,
+  "id": "chatcmpl-2cfc067c-7ac9-406c-81e8-242a68ca075c",
   "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "object": "chat.completion",
   "usage": {
-   "completion_tokens": 51,
+   "completion_tokens": 54,
    "completion_tokens_details": {
     "reasoning_tokens": 0
    },
@@ -79,7 +79,7 @@
    "prompt_tokens_details": {
     "cached_tokens": 0
    },
-   "total_tokens": 523
+   "total_tokens": 526
   }
  },
  "status": 200

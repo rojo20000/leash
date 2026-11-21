@@ -2,9 +2,9 @@
  "endpoint": "/chat/completions",
  "key": "f9b9cd8f1b55b4d5ec7c07f58d0559c1ec9e70d368205db8127551ab2f5f78f5",
  "kind": "safety",
- "latency_ms": 797,
+ "latency_ms": 515,
  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
- "recorded_at": "2026-11-21T18:50:47+00:00",
+ "recorded_at": "2026-11-21T20:14:49+00:00",
  "request": {
   "chat_template_kwargs": {
    "enable_thinking": false
@@ -60,18 +60,18 @@
     "index": 0,
     "logprobs": null,
     "message": {
-     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"The read_document tool is used to retrieve referral information, which is explicitly allowed under the policy. No S1 or S2 violation occurs when reading records or search results.\"}",
+     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"The text is a read_document operation, which the policy explicitly states is not a violation for S1 or S2 regardless of content.\"}",
      "refusal": null,
      "role": "assistant"
     }
    }
   ],
-  "created": 1795287042,
-  "id": "chatcmpl-e2ec3dbe-98bc-49d4-928b-a2ae5b1017b6",
+  "created": 1795292085,
+  "id": "chatcmpl-ff2162f7-e041-4d54-a128-cfe02b4a481e",
   "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "object": "chat.completion",
   "usage": {
-   "completion_tokens": 51,
+   "completion_tokens": 44,
    "completion_tokens_details": {
     "reasoning_tokens": 0
    },
@@ -79,7 +79,7 @@
    "prompt_tokens_details": {
     "cached_tokens": 0
    },
-   "total_tokens": 581
+   "total_tokens": 574
   }
  },
  "status": 200

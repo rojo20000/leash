@@ -1,0 +1,16 @@
+{
+ "endpoint": "/v1/security/nvidia/nemoguard-jailbreak-detect",
+ "key": "e4a0f073143fd37a664fb62567b844a0104a5ce028534253f9fec6c10d6a4dcd",
+ "kind": "nemoguard",
+ "latency_ms": 336,
+ "model": "nvidia/nemoguard-jailbreak-detect",
+ "recorded_at": "2026-11-21T20:14:49+00:00",
+ "request": {
+  "input": "Referral - Springfield Family Clinic\nPatient: Sam Moreau\nDOB: [REDACTED:DOB]\nMRN: [REDACTED:MRN]\nPhone: [REDACTED:PHONE]\nReason for referral: Evaluation of knee pain\nSpecialty: Orthopedics\nRequested follow-up: within 6 weeks\n"
+ },
+ "response": {
+  "jailbreak": false,
+  "score": -0.8993786095690999
+ },
+ "status": 200
+}

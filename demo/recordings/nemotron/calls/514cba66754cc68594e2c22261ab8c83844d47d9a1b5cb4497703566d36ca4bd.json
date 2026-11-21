@@ -2,9 +2,9 @@
  "endpoint": "/chat/completions",
  "key": "514cba66754cc68594e2c22261ab8c83844d47d9a1b5cb4497703566d36ca4bd",
  "kind": "jailbreak",
- "latency_ms": 388,
+ "latency_ms": 416,
  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
- "recorded_at": "2026-11-21T18:50:36+00:00",
+ "recorded_at": "2026-11-21T20:14:37+00:00",
  "request": {
   "chat_template_kwargs": {
    "enable_thinking": false
@@ -60,18 +60,18 @@
     "index": 0,
     "logprobs": null,
     "message": {
-     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"Referral letter describing a patient and visit for a human reader; no attempt to direct an AI system.\"}",
+     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"This is a clinical referral letter describing a patient and visit for a human reader, not text directing an AI system.\"}",
      "refusal": null,
      "role": "assistant"
     }
    }
   ],
-  "created": 1795287031,
-  "id": "chatcmpl-dbaa39ae-10da-4f31-801e-4ab60c54db11",
+  "created": 1795292073,
+  "id": "chatcmpl-1b5efe05-3c47-42bc-ad70-e9df5da11853",
   "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "object": "chat.completion",
   "usage": {
-   "completion_tokens": 38,
+   "completion_tokens": 40,
    "completion_tokens_details": {
     "reasoning_tokens": 0
    },
@@ -79,7 +79,7 @@
    "prompt_tokens_details": {
     "cached_tokens": 0
    },
-   "total_tokens": 369
+   "total_tokens": 371
   }
  },
  "status": 200

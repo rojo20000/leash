@@ -21,7 +21,7 @@
     "contamination": 0.02,
     "f1": 0.9342,
     "false_positive_rate_normal": 0.057,
-    "generated_at": "2026-11-21T19:57:06+00:00",
+    "generated_at": "2026-11-21T20:19:32+00:00",
     "k": 33.9319,
     "n_test_abnormal": 2089,
     "n_test_normal": 1457,
@@ -48,20 +48,20 @@
     }
   },
   "bench_quick": {
-    "generated_at": "2026-11-21T19:57:42+00:00",
+    "generated_at": "2026-11-21T20:20:38+00:00",
     "n": 10000,
     "python": {
-      "audit_append_us": 326.647,
-      "policy_us": 11.995
+      "audit_append_us": 507.984,
+      "policy_us": 17.469
     },
     "quick": true,
     "rust": {
-      "audit_append_us": 239.243,
-      "policy_us": 2.999
+      "audit_append_us": 647.168,
+      "policy_us": 8.133
     },
     "speedup": {
-      "audit_append": 1.37,
-      "policy": 4.0
+      "audit_append": 0.78,
+      "policy": 2.15
     }
   },
   "demo": {
@@ -73,7 +73,7 @@
     },
     "core": "rust",
     "driver": "scripted",
-    "generated_at": "2026-11-21T19:57:49+00:00",
+    "generated_at": "2026-11-21T20:20:51+00:00",
     "ml": "real",
     "nemotron_mode": "replay",
     "protected_blocked": true,
@@ -150,7 +150,7 @@
   },
   "injection": {
     "f1": 0.9209,
-    "generated_at": "2026-11-21T19:57:02+00:00",
+    "generated_at": "2026-11-21T20:19:26+00:00",
     "hard_negative_false_positives": 0,
     "n_test": 300,
     "n_test_hard_negative": 150,
@@ -188,7 +188,7 @@
         "recall": 1.0
       }
     },
-    "generated_at": "2026-11-21T19:57:10+00:00",
+    "generated_at": "2026-11-21T20:19:39+00:00",
     "n_notes": 240,
     "n_spans": 572,
     "precision": 1.0,
@@ -519,15 +519,120 @@
               "nemotron": 27
             }
           }
+        },
+        {
+          "all_served_by_nemotron": true,
+          "dev": {
+            "content_safety_accuracy": 0.8333,
+            "content_safety_counts": {
+              "fn": 0,
+              "fp": 2,
+              "tn": 9,
+              "tp": 1
+            },
+            "injection": {
+              "combined": {
+                "precision": 1.0,
+                "recall": 1.0
+              },
+              "combined_tfidf_jailbreak": {
+                "precision": 1.0,
+                "recall": 1.0
+              },
+              "jailbreak": {
+                "precision": 1.0,
+                "recall": 1.0
+              },
+              "nemoguard": {
+                "precision": 0.0,
+                "recall": 0.0
+              },
+              "tfidf": {
+                "precision": 1.0,
+                "recall": 1.0
+              }
+            },
+            "reasoner_action_agreement": 0.9231,
+            "reasoner_valid_json_rate": 1.0
+          },
+          "failed_dev_case_ids": [
+            "nc-005",
+            "nc-021",
+            "nc-036"
+          ],
+          "holdout": {
+            "content_safety_accuracy": 0.6667,
+            "content_safety_counts": {
+              "fn": 0,
+              "fp": 3,
+              "tn": 5,
+              "tp": 1
+            },
+            "injection": {
+              "combined": {
+                "precision": 1.0,
+                "recall": 0.3333
+              },
+              "combined_tfidf_jailbreak": {
+                "precision": 1.0,
+                "recall": 0.3333
+              },
+              "jailbreak": {
+                "precision": 1.0,
+                "recall": 0.3333
+              },
+              "nemoguard": {
+                "precision": 0.0,
+                "recall": 0.0
+              },
+              "tfidf": {
+                "precision": 1.0,
+                "recall": 0.3333
+              }
+            },
+            "reasoner_action_agreement": 1.0,
+            "reasoner_valid_json_rate": 1.0
+          },
+          "injection_policy_sha256": "6705f6072aca143522c8292e21e3893b55a79e67a3c64ab7ec9bff81c6f11eec",
+          "mode": "live",
+          "note": "adds NemoGuard JailbreakDetect as a third injection detector (team decision)",
+          "prompt_sha256": "fb3d8995b4225c94133a0e660c9fbb89f2ab9880abc122a83944c4cf5b3ef5dd",
+          "round": 5,
+          "safety_policy_sha256": "059bd707d3f8b7221274c6b2516145a5004e3bd15a3a140387fac11004867ecf",
+          "served_by": {
+            "fallback": 0,
+            "nemotron": 83,
+            "replay": 0
+          },
+          "served_by_step": {
+            "content_safety": {
+              "nemotron": 23
+            },
+            "jailbreak": {
+              "nemotron": 17
+            },
+            "nemoguard": {
+              "nemotron": 17
+            },
+            "reasoner": {
+              "nemotron": 26
+            }
+          }
         }
       ]
     },
-    "generated_at": "2026-11-21T18:50:14+00:00",
+    "generated_at": "2026-11-21T20:14:10+00:00",
     "latency_ms": {
+      "nvidia/nemoguard-jailbreak-detect": {
+        "n": 17,
+        "p50": 363.8,
+        "p95": 662.3,
+        "source": "live"
+      },
       "nvidia/nemotron-3.5-lightning-30b-a3b": {
-        "n": 67,
-        "p50": 703.6,
-        "p95": 1913.4,
+        "n": 66,
+        "p50": 718.5,
+        "p95": 1399.0,
         "source": "live"
       }
     },

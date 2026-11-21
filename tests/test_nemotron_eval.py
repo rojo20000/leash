@@ -47,5 +47,5 @@ def test_eval_off_mode(tmp_path, monkeypatch):
     assert json.loads(out.read_text())["round"] == 0
     for s in ("dev", "holdout"):
         assert {"injection", "content_safety_accuracy", "reasoner_action_agreement", "reasoner_valid_json_rate"} <= set(r[s])
-        assert {"tfidf", "jailbreak", "combined"} == set(r[s]["injection"])
+        assert {"tfidf", "jailbreak", "nemoguard", "combined", "combined_tfidf_jailbreak"} == set(r[s]["injection"])
     assert r["served_by"]["nemotron"] == 0

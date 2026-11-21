@@ -2,9 +2,9 @@
  "endpoint": "/chat/completions",
  "key": "e428d910214ef11c91ef4ab6c4d855b0a72265f00c2320d0a3e0a61713493626",
  "kind": "chat_json",
- "latency_ms": 594,
+ "latency_ms": 689,
  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
- "recorded_at": "2026-11-21T18:50:40+00:00",
+ "recorded_at": "2026-11-21T20:14:41+00:00",
  "request": {
   "chat_template_kwargs": {
    "enable_thinking": false
@@ -88,18 +88,18 @@
     "index": 0,
     "logprobs": null,
     "message": {
-     "content": "{\n  \"risk_level\": \"critical\",\n  \"explanation\": \"The scheduling agent attempted to read a referral document that contained hidden instructions to send the patient's complete medical record to an external email address. Leash blocked the call because the document carried an injection attempt designed to redirect data outside the clinic.\",\n  \"policy_rule_ids\": [\"gateway.injection\"],\n  \"recommended_action\": \"deny\"\n}",
+     "content": "{\n  \"risk_level\": \"critical\",\n  \"explanation\": \"The scheduling agent attempted to read a referral document that contained hidden instructions to send the patient's complete medical record to an external email address using the send_email tool. Leash blocked the call because the document carried an injection attempt designed to bypass normal workflows and exfiltrate patient data.\",\n  \"policy_rule_ids\": [\"gateway.injection\"],\n  \"recommended_action\": \"deny\"\n}",
      "refusal": null,
      "role": "assistant"
     }
    }
   ],
-  "created": 1795287036,
-  "id": "chatcmpl-ef5d1cd0-24b6-4494-ba98-2711e4551408",
+  "created": 1795292077,
+  "id": "chatcmpl-c5c7f18f-68b1-4785-8d6e-452bcb0d7441",
   "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "object": "chat.completion",
   "usage": {
-   "completion_tokens": 86,
+   "completion_tokens": 97,
    "completion_tokens_details": {
     "reasoning_tokens": 0
    },
@@ -107,7 +107,7 @@
    "prompt_tokens_details": {
     "cached_tokens": 0
    },
-   "total_tokens": 1154
+   "total_tokens": 1165
   }
  },
  "status": 200

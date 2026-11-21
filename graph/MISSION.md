@@ -180,6 +180,21 @@ Verified by the overseer at 11:25 (the model list is readable without a key; 33 
   - `nvidia/llama-3.1-nemoguard-8b-topic-control`: HTTP 500 (server-side inference error). Do not depend on it.
   All checks must still pass with no key and no network (replay mode), because judges will not have a key.
 
+## UPDATE 14:05 (team decision): NemoGuard JailbreakDetect is wired in, on a second allowed host
+The team allowed `https://ai.api.nvidia.com/v1/security/nvidia/nemoguard-jailbreak-detect` for synthetic
+document text and chose to add JailbreakDetect to the gateway as an extra escalate-only detector beside TF-IDF
+and the Lightning judge, "regardless" of whether it beats the judge, then re-measure and re-record the demo.
+Allowed off-machine destinations are now exactly: `https://integrate.api.nvidia.com/v1` (chat models) and that
+one JailbreakDetect URL. Overseer live probe at 14:06 with our key: `POST` with JSON body `{"input": "<text>"}`
+returns HTTP 200 in about 360-720 ms with `{"jailbreak": false, "score": -0.906...}` (a boolean and a float; a
+negative score means not a jailbreak). It did NOT flag our referral fixture sentence (score -0.906), the full
+poisoned referral (-0.897), a benign sentence (-0.935) or a clean referral (-0.925): it targets direct
+jailbreak prompts, not instructions hidden in clinical documents. Report that honestly. Do not add any new
+jailbreak or injection text to the repo (the team pasted NVIDIA's sample prompt in chat; it stays out).
+Current state before this change (all committed, `make check` passing, 100 tests): all three Nemotron roles run
+on Lightning (agent, reasoner, and two policy-conditioned judges); eval rounds 1-4 are in
+`metrics/results.json`; docs and tables are written.
+
 ## Pipeline with Nemotron
 policy (Rust) → injection check (TF-IDF + JailbreakDetect, combined) → identifier minimization (Rust
 pre-scan + Presidio) → Content Safety on the payload → anomaly score → decision → audit append.
@@ -226,3 +241,60 @@ run on-premises from their Hugging Face weights, so patient data never has to le
   minimum-necessary redaction, FHIR-aware policy, and a tamper-evident audit trail mapped to HIPAA rules.
 - Never-cut list additions: N16, N17, and at least one round of N18. If time runs short, drop JailbreakDetect
   before Content Safety, and keep the reasoner.
+
+---------------------------------------------------------------------------------------------------------
+
+# ADDENDUM 2 (team, 14:08): vector database for Clinic Assistant, designed by Sal Jimenez
+
+STATUS 14:10: BLOCKED. `/mnt/project-files/medical-local-ai/` is not reachable from this session (see
+DECISIONS.md). No planner or implementer work has started. The team's text follows word for word.
+
+Add scope: a vector database for Clinic Assistant, designed by Sal Jimenez. Add it as new nodes, with the spec
+below written into graph/MISSION.md word for word. Have the planner add a contract section, plan entries and
+briefs, then start the nodes. Stage 4 (N12-N15) keeps priority: run this alongside it within the 4-agent limit,
+and if we fall more than 30 minutes behind, cut this work before anything on the never-cut list.
+
+<context>
+Clinic Assistant is Leash's human-facing front end and also a demo on its own. It is a separate app from the Leash gateway, at /mnt/project-files/medical-local-ai/:
+- app/server.py: web service on 127.0.0.1:8642. App(data_dir=...) creates and fills data/ on first start.
+- app/privacy.py: mask() replaces names, dates, MRN, phone, email and address.
+- app/guardrails.py: input and output checks and the document-injection scan.
+- app/audit.py: hash-chained JSONL log. The new store copies its hashing and verify() pattern.
+- app/ehr.py: 40 synthetic patients. Patient syn-003 has a poisoned referral letter, which is the demo's attack.
+- config/policy.json: every rule. New settings go under `vectors`, each with a `_comment`.
+- tests/test_smoke.py: 20 tests that use a stand-in model (MOCK_LLM=1).
+It uses Python 3.8+ standard library only. The node must not import numpy, scikit-learn or anything else from the Leash environment, because Clinic Assistant runs without pip installs.
+</context>
+
+<spec>
+data/vectors.sqlite, implemented in app/vectorstore.py.
+- Table `vectors`: seq (INTEGER PRIMARY KEY AUTOINCREMENT), collection, doc_id, text, meta (JSON), embedder, embedding (float32 BLOB), created, prev_hash, hash (UNIQUE). Index on (collection, doc_id).
+- Append-only: triggers `no_update` and `no_delete` abort every UPDATE and DELETE. A change is a new row; at read time the newest row for a doc_id wins.
+- Tamper-evident: hash = SHA-256 of prev_hash plus every row field plus the vector bytes. VectorStore.verify() walks the chain and reports the first broken row. The Audit tab shows the result next to the audit-log check.
+- Masked text only: call privacy.mask() before VectorStore.add().
+- Collections after a fresh start: `injection_examples` (12 synthetic attack phrasings) and `patient_profiles` (40, one per patient: conditions, meds, attention flags, last 6 labs, notes except referral letters, all masked; meta holds age and sex). 52 rows total.
+- Embedders: built-in `hashing-1024` (hashed words and word pairs, offline) by default. Optional Ollama `nomic-embed-text`, turned on by `vectors.ollama_embed_model`, with its threshold under `vectors.injection_similarity` keyed `ollama:nomic-embed-text`. Filter rows by embedder, so a switch re-indexes next to the old rows instead of mixing vectors.
+- Uses: "Similar cases" on each patient record (top 3 other patients); and withholding a note whose cosine is >= 0.33 to any injection example (threshold in policy.json). Do not run the injection match on short chat questions, because it gave too many false positives there.
+- index_all() is idempotent: it skips doc_ids already stored for the current embedder.
+- status() returns the embedder, the count per collection, the verify result and the total rows.
+</spec>
+
+<before_planning>
+First check, without changing anything, that this session can read /mnt/project-files/medical-local-ai/. Also check git status and the branches there for app/vectorstore.py or other work Sal has already started. If you can't reach the folder, stop and tell me. If Sal's work exists, have the brief build on it instead of replacing it. Tell me in a few lines what you found before the planner starts.
+</before_planning>
+
+<node_requirements>
+- Owned paths: app/vectorstore.py, the `vectors` section of config/policy.json, the startup-indexing, Similar cases and Audit-status parts of app/server.py, the matching parts of static/, and a new tests/test_vectorstore.py. No Leash paths.
+- Tests in tests/test_vectorstore.py, using a temporary data_dir: UPDATE and DELETE are rejected; verify() names the broken row after a row is changed in a copy with the triggers dropped; index_all() run twice still gives 52 rows; no stored text contains an unmasked patient name; syn-003's poisoned note is withheld and a normal note is not; Similar cases returns 3 patients and never the patient itself.
+- Experiments use a fresh data_dir such as /tmp/vecdata. Do not delete or change anything in Clinic Assistant's data/, because it may hold my audit history.
+- Keep everything local: host 127.0.0.1, a local Ollama URL, no cloud fallback, no external scripts in static/.
+- Node check (re-run it yourself before marking passed):
+    cd /mnt/project-files/medical-local-ai && MOCK_LLM=1 python3 -m unittest -v
+      -> the 20 existing tests plus the new ones, OK
+    MOCK_LLM=1 python3 -c "from pathlib import Path; from app.server import App; a=App(data_dir=Path('/tmp/vecdata')); print(a.vectors.status()); print(a.audit.verify())"
+      -> embedder hashing-1024, injection_examples 12, patient_profiles 40, ok True, rows 52; audit ok True
+- Leash's own `make check` must still pass afterwards.
+- You may commit the Clinic Assistant changes in that repo once the node passes. Don't push either repo.
+</node_requirements>
+
+Log the scope change and the new nodes in DECISIONS.md. When the node passes, tell me what changed and how to see it: python3 manage_users.py add dr_lee clinician, then MOCK_LLM=1 python3 run.py, then open http://127.0.0.1:8642.

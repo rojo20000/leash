@@ -2,9 +2,9 @@
  "endpoint": "/chat/completions",
  "key": "7d72bd5e3aeb180a5b169b730ea9df0663317cd7289cf7da3418963b5754f76e",
  "kind": "chat_json",
- "latency_ms": 598,
+ "latency_ms": 823,
  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
- "recorded_at": "2026-11-21T18:28:59+00:00",
+ "recorded_at": "2026-11-21T20:14:44+00:00",
  "request": {
   "chat_template_kwargs": {
    "enable_thinking": false
@@ -94,8 +94,8 @@
     }
    }
   ],
-  "created": 1795285735,
-  "id": "chatcmpl-64df365a-9450-4142-8baa-855be02cf9b0",
+  "created": 1795292079,
+  "id": "chatcmpl-29d1336c-acd4-4b64-845d-0bc6281292fb",
   "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "object": "chat.completion",
   "usage": {

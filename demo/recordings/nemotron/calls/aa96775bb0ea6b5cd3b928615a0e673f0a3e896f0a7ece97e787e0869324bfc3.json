@@ -2,9 +2,9 @@
  "endpoint": "/chat/completions",
  "key": "aa96775bb0ea6b5cd3b928615a0e673f0a3e896f0a7ece97e787e0869324bfc3",
  "kind": "chat_json",
- "latency_ms": 586,
+ "latency_ms": 767,
  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
- "recorded_at": "2026-11-21T18:29:00+00:00",
+ "recorded_at": "2026-11-21T20:14:44+00:00",
  "request": {
   "chat_template_kwargs": {
    "enable_thinking": false
@@ -88,18 +88,18 @@
     "index": 0,
     "logprobs": null,
     "message": {
-     "content": "{\n  \"risk_level\": \"critical\",\n  \"explanation\": \"The scheduling agent attempted to send an email to an address outside the clinic's approved domains. Leash blocked the call because the destination domain was not on the allowed list, preventing patient information from leaving the clinic network.\",\n  \"policy_rule_ids\": [\"email.allowed_domains\"],\n  \"recommended_action\": \"deny\"\n}",
+     "content": "{\n  \"risk_level\": \"critical\",\n  \"explanation\": \"The scheduling agent attempted to send an email to an address outside the clinic's approved domains. Leash stopped the call because the destination domain was not on the allowed list, which prevents patient information from leaving the secure network.\",\n  \"policy_rule_ids\": [\"email.allowed_domains\"],\n  \"recommended_action\": \"deny\"\n}",
      "refusal": null,
      "role": "assistant"
     }
    }
   ],
-  "created": 1795285735,
-  "id": "chatcmpl-1415720d-804d-482c-ad81-d1aaa14da77c",
+  "created": 1795292080,
+  "id": "chatcmpl-4e0bd9cc-3060-4693-8da8-698c50e24fc8",
   "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "object": "chat.completion",
   "usage": {
-   "completion_tokens": 84,
+   "completion_tokens": 85,
    "completion_tokens_details": {
     "reasoning_tokens": 0
    },
@@ -107,7 +107,7 @@
    "prompt_tokens_details": {
     "cached_tokens": 0
    },
-   "total_tokens": 1027
+   "total_tokens": 1028
   }
  },
  "status": 200

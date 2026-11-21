@@ -2,7 +2,8 @@
 
 Design rule: Nemotron output can only add caution, never remove it. Detectors may turn an allow into an
 escalate; nothing returned here may turn a block/escalate into an allow, and the reasoner is advisory only.
-Only synthetic data goes to https://integrate.api.nvidia.com/v1. The API key is read at send time only and is
+Only synthetic data goes to https://integrate.api.nvidia.com/v1 and to the one NemoGuard JailbreakDetect URL
+(NEMOGUARD_URL; nothing else on that host is called). The API key is read at send time only and is
 never printed, logged, recorded or stored on any object.
 """
 import hashlib
@@ -25,6 +26,10 @@ DOTENV_PATH = ROOT / ".env"
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 DEFAULT_BASE = "https://integrate.api.nvidia.com/v1"
 GUARD = "nvidia/llama-3.1-nemotron-safety-guard-8b-v3"
+# NemoGuard JailbreakDetect (team decision 14:05): its own endpoint on ai.api.nvidia.com, body {"input": text}.
+NEMOGUARD = "nvidia/nemoguard-jailbreak-detect"
+NEMOGUARD_URL = "https://ai.api.nvidia.com/v1/security/nvidia/nemoguard-jailbreak-detect"
+NEMOGUARD_PATH = urlparse(NEMOGUARD_URL).path
 # What the team asked for first, per role (reported as swapped_from when we do not use it).
 REQUESTED = {
     "lightning": "nvidia/nemotron-3.5-lightning-30b-a3b",
@@ -44,8 +49,7 @@ _ENV_MODEL = {"lightning": "LEASH_NEMOTRON_LIGHTNING_MODEL", "safety": "LEASH_NE
 _unavailable = set()
 _models_cache = {}
 _models_error = ""
-_fails = 0
-_open_until = 0.0
+_breakers = {}  # "chat" (integrate.api.nvidia.com) | "nemoguard" -> [consecutive failures, open until]
 _lat = {}  # model -> [(ms, source)]
 
 
@@ -63,11 +67,12 @@ class Result:
 
 def _reset():
     """Clear process state (tests)."""
-    global _fails, _open_until, _models_error
+    global _models_error
     _unavailable.clear()
     _models_cache.clear()
     _lat.clear()
-    _fails, _open_until, _models_error = 0, 0.0, ""
+    _breakers.clear()
+    _models_error = ""
 
 
 def load_dotenv(path=None):
@@ -98,6 +103,18 @@ def _base_url():
     return base
 
 
+def _nemoguard_url():
+    u = os.environ.get("LEASH_NEMOGUARD_URL", NEMOGUARD_URL).rstrip("/")
+    if u != NEMOGUARD_URL and urlparse(u).hostname not in ("127.0.0.1", "localhost"):
+        raise ValueError("LEASH_NEMOGUARD_URL not allowed")
+    return u
+
+
+def nemoguard_enabled():
+    load_dotenv()
+    return os.environ.get("LEASH_NEMOGUARD", "on").lower() != "off"
+
+
 def _recordings():
     return Path(os.environ.get("LEASH_NEMOTRON_RECORDINGS") or ROOT / "demo" / "recordings" / "nemotron")
 
@@ -113,7 +130,8 @@ def mode():
 
 def config():
     return {"mode": mode(), "base_url": _base_url(), "key_set": bool(os.environ.get("NVIDIA_API_KEY")),
-            "recordings": str(_recordings()), "models": {r: _model_info(r) for r in ROLES}}
+            "recordings": str(_recordings()), "models": {r: _model_info(r) for r in ROLES},
+            "nemoguard": {"enabled": nemoguard_enabled(), "model": NEMOGUARD, "url": _nemoguard_url()}}
 
 
 def _fetch_models():
@@ -181,8 +199,8 @@ def _canonical(o):
     return json.dumps(o, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def _key(model, body):
-    return hashlib.sha256(_canonical({"endpoint": "/chat/completions", "model": model, "body": body})
+def _key(model, body, endpoint="/chat/completions"):
+    return hashlib.sha256(_canonical({"endpoint": endpoint, "model": model, "body": body})
                           .encode("utf-8")).hexdigest()
 
 
@@ -216,22 +234,22 @@ def _fail(error, model="", t0=None):
     return Result(False, "unavailable", model, None, ms, None, error)
 
 
-def _send(kind, model, body, retries, read_s, t0):
-    """One model, live. Returns a Result whose data is the raw response JSON."""
-    global _fails, _open_until
+def _send(kind, model, body, retries, read_s, t0, url=None, endpoint="/chat/completions", breaker="chat"):
+    """One model, live. Returns a Result whose data is the raw response JSON. Each host has its own breaker."""
+    br = _breakers.setdefault(breaker, [0, 0.0])
+    url = url or _base_url() + endpoint
     key = os.environ.get("NVIDIA_API_KEY")
     if not key:
         return _fail("no_key", model, t0)
     last = "connect"
     for attempt in range(retries + 1):
-        if time.monotonic() < _open_until:
+        if time.monotonic() < br[1]:
             return _fail("circuit_open", model, t0)
         pause = 0.0
         try:
-            with httpx.Client(base_url=_base_url(), timeout=httpx.Timeout(read_s, connect=5.0),
-                              transport=TRANSPORT) as c:
+            with httpx.Client(timeout=httpx.Timeout(read_s, connect=5.0), transport=TRANSPORT) as c:
                 t1 = time.perf_counter()
-                r = c.post("/chat/completions", json=body, headers={"Authorization": f"Bearer {key}"})
+                r = c.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
                 call_ms = round((time.perf_counter() - t1) * 1000)
         except httpx.TimeoutException:
             last = "timeout"
@@ -239,12 +257,12 @@ def _send(kind, model, body, retries, read_s, t0):
             last = "connect"
         else:
             if r.status_code == 200:
-                _fails = 0
+                br[0] = 0
                 try:
                     resp = r.json()
                 except ValueError:
                     return _fail("invalid_json", model, t0)
-                rec = {"key": _key(model, body), "kind": kind, "endpoint": "/chat/completions", "model": model,
+                rec = {"key": _key(model, body, endpoint), "kind": kind, "endpoint": endpoint, "model": model,
                        "request": body, "response": resp, "status": 200, "latency_ms": call_ms,
                        "recorded_at": _now()}
                 try:
@@ -266,16 +284,16 @@ def _send(kind, model, body, retries, read_s, t0):
                 except ValueError:
                     pass
         if last != "http_429":  # throttling is not a transport failure
-            _fails += 1
-            if _fails >= 3:
-                _open_until = time.monotonic() + 60
+            br[0] += 1
+            if br[0] >= 3:
+                br[1] = time.monotonic() + 60
         if attempt < retries:
             time.sleep(pause or (0.5, 1.0)[min(attempt, 1)])
     return _fail(last, model, t0)
 
 
-def _replay(model, body, t0):
-    p = _recordings() / "calls" / f"{_key(model, body)}.json"
+def _replay(model, body, t0, endpoint="/chat/completions"):
+    p = _recordings() / "calls" / f"{_key(model, body, endpoint)}.json"
     try:
         rec = json.loads(p.read_text(encoding="utf-8"))
         resp, rec_ms = rec["response"], float(rec.get("latency_ms", 0))
@@ -487,6 +505,31 @@ def jailbreak_check(text, *, redact=True):
     if r.ok:
         r.data = {"flagged": r.data["flagged"], "score": None, "raw": r.data["raw"]}
     return r
+
+
+def _parse_nemoguard(resp):
+    if not isinstance(resp.get("jailbreak"), bool):
+        raise ValueError("no verdict")
+    s = resp.get("score")
+    return {"flagged": resp["jailbreak"], "raw": json.dumps(resp, sort_keys=True),
+            "score": float(s) if isinstance(s, (int, float)) and not isinstance(s, bool) else None}
+
+
+def nemoguard_jailbreak(text, *, redact=True):
+    """NemoGuard JailbreakDetect. data = {"flagged": bool, "score": float | None, "raw": str}. Escalate-only signal."""
+    t0 = time.perf_counter()
+    m = mode()
+    if not nemoguard_enabled():
+        return _fail("disabled", "", t0)
+    if m == "off":
+        return _fail("mode_off", "", t0)
+    url = _nemoguard_url()
+    body = {"input": _redact_text(text) if redact else text}
+    if m == "replay":
+        res = _replay(NEMOGUARD, body, t0, NEMOGUARD_PATH)
+    else:
+        res = _send("nemoguard", NEMOGUARD, body, 1, _timeout(True), t0, url, NEMOGUARD_PATH, "nemoguard")
+    return _with(res, _parse_nemoguard)
 
 
 def latency_summary():

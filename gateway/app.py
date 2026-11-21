@@ -1,4 +1,4 @@
-"""Leash gateway (C5, C10): policy -> execute -> injection -> jailbreak -> minimize -> content_safety -> anomaly
+"""Leash gateway (C5, C10): policy -> execute -> injection -> jailbreak + nemoguard -> minimize -> content_safety -> anomaly
 -> decide -> reasoner -> audit.
 
 Design rule: Nemotron output can only add caution, never remove it. Detectors may turn an allow into an escalate;
@@ -27,9 +27,10 @@ from gateway.ml_loader import load_ml
 READ_TOOLS = {"search_patients", "read_record", "read_document"}
 ALERT_CODES = {"EMAIL_DOMAIN_NOT_ALLOWED", "INJECTION_DETECTED"}
 HARD_BLOCKS = {"INJECTION_DETECTED", "EXECUTION_ERROR"}
-STAGES = ("policy", "execute", "injection", "jailbreak", "minimize", "content_safety", "anomaly", "reasoner",
+STAGES = ("policy", "execute", "injection", "jailbreak", "nemoguard", "minimize", "content_safety", "anomaly", "reasoner",
           "audit")
-SERVED = {"jailbreak": ("nemotron", "replay", "fallback:local"), "content_safety": ("nemotron", "replay", "fallback:local"),
+SERVED = {"jailbreak": ("nemotron", "replay", "fallback:local"), "nemoguard": ("nemotron", "replay", "fallback:local"),
+          "content_safety": ("nemotron", "replay", "fallback:local"),
           "reasoner": ("nemotron", "replay", "fallback:template")}
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -125,8 +126,8 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
         ts = req.ts if req.ts is not None else time.time()
         tool, args = req.tool, req.args
         reasons, scores, redactions, output = [], {"injection": None, "anomaly": None}, [], None
-        nem = {"mode": nemotron.mode(), "jailbreak": None, "content_safety": None, "reasoner": None}
-        signals = {"jailbreak": None, "content_safety": None}
+        nem = {"mode": nemotron.mode(), "jailbreak": None, "nemoguard": None, "content_safety": None, "reasoner": None}
+        signals = {"jailbreak": None, "nemoguard": None, "content_safety": None}
 
         def mark(stage, t0):
             lat[stage] += (time.perf_counter() - t0) * 1000
@@ -162,18 +163,28 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
                 add("INJECTION_DETECTED", "injection", f"injection score {scores['injection']:.4f}")
             mark("injection", t0)
 
-        # 3b jailbreak: a model-only signal adds human review, never a hard block
+        # 3b remote detectors (Lightning judge, NemoGuard JailbreakDetect): a model-only signal adds human review,
+        # never a hard block; a detector that is not ok is fallback:local and contributes no flag
         if tool == "read_document" and output is not None and not reasons:
-            t0 = time.perf_counter()
-            r = nemotron.jailbreak_check(output.get("text", ""))
-            flagged = bool(r.ok and r.data["flagged"])
-            nem["jailbreak"] = {"served_by": r.served_by if r.ok else "fallback:local",
-                                "model": r.model if r.ok else "", "flagged": flagged,
-                                "latency_ms": round(r.latency_ms, 1)}
-            signals["jailbreak"] = "flagged" if flagged else "clear" if r.ok else None
-            if flagged:
-                add("INJECTION_SUSPECTED", "injection", f"jailbreak detector flagged; tfidf {scores['injection']:.2f}")
-            mark("jailbreak", t0)
+            hits = []
+            for stage, fn, name in (("jailbreak", nemotron.jailbreak_check, "jailbreak detector"),
+                                    ("nemoguard", nemotron.nemoguard_jailbreak, "nemoguard")):
+                t0 = time.perf_counter()
+                r = fn(output.get("text", ""))
+                if r.error == "disabled":  # LEASH_NEMOGUARD=off: the stage is skipped
+                    continue
+                flagged = bool(r.ok and r.data["flagged"])
+                nem[stage] = {"served_by": r.served_by if r.ok else "fallback:local",
+                              "model": r.model if r.ok else "", "flagged": flagged,
+                              "latency_ms": round(r.latency_ms, 1)}
+                if stage == "nemoguard":
+                    nem[stage]["score"] = r.data["score"] if r.ok else None
+                signals[stage] = "flagged" if flagged else "clear" if r.ok else None
+                if flagged:
+                    hits.append(name)
+                mark(stage, t0)
+            if hits:
+                add("INJECTION_SUSPECTED", "injection", f"{' + '.join(hits)} flagged; tfidf {scores['injection']:.2f}")
 
         # 4 minimize
         if output is not None and not any(r["code"] in HARD_BLOCKS for r in reasons):
@@ -275,6 +286,9 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
                 "scores": {k: (None if v is None else f"{v:.4f}") for k, v in scores.items()},
                 "latency_us": pre_us, "queue_id": queue_id,
                 "nemotron": {"jailbreak": (nem["jailbreak"] or {}).get("served_by"),
+                             "nemoguard": (nem["nemoguard"] or {}).get("served_by"),
+                             "nemoguard_score": None if (nem["nemoguard"] or {}).get("score") is None
+                             else f"{nem['nemoguard']['score']:.4f}",
                              "content_safety": (nem["content_safety"] or {}).get("served_by"),
                              "reasoner": (reason_obj or {}).get("served_by"),
                              "reasoner_risk": (reason_obj or {}).get("risk_level"),
@@ -365,7 +379,7 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
             rates = {k: round(v / n, 4) if n else 0.0 for k, v in counts.items()}
             by = {s: {"p50": _pct([d["latency_ms"].get(s, 0.0) for d in ds], .5),
                       "p95": _pct([d["latency_ms"].get(s, 0.0) for d in ds], .95)}
-                  for s in ("policy", "injection", "jailbreak", "minimize", "content_safety", "anomaly", "reasoner",
+                  for s in ("policy", "injection", "jailbreak", "nemoguard", "minimize", "content_safety", "anomaly", "reasoner",
                             "audit")}
             served = {st: {k: sum(((d.get("nemotron") or {}).get(st) or {}).get("served_by") == k for d in ds)
                            for k in ks} for st, ks in SERVED.items()}

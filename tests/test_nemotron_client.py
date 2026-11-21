@@ -20,7 +20,7 @@ MODELS = sorted([L, GUARD, CS, *nm.CHAINS["lightning"][1:]])
 @pytest.fixture(autouse=True)
 def env(monkeypatch, tmp_path):
     for k in list(os.environ):
-        if k.startswith("LEASH_NEMOTRON") or k == "NVIDIA_API_KEY":
+        if k.startswith(("LEASH_NEMOTRON", "LEASH_NEMOGUARD")) or k == "NVIDIA_API_KEY":
             monkeypatch.delenv(k)
     monkeypatch.setattr(nm, "DOTENV_PATH", tmp_path / "missing.env")
     monkeypatch.setattr(nm, "TRANSPORT", None)
@@ -253,6 +253,51 @@ def test_redaction(monkeypatch):
     assert "[REDACTED:SSN]" in seen[0] and "[REDACTED:PHONE]" in seen[0] and "912-34-5678" not in seen[0]
     r = nm.chat([{"role": "user", "content": "SSN 912-34-5678"}], redact=True)
     assert "912-34-5678" not in seen[-1]
+
+
+def test_nemoguard(monkeypatch, tmp_path):
+    seen = []
+
+    def h(req):
+        seen.append((str(req.url), json.loads(req.content), req.headers["authorization"]))
+        return httpx.Response(200, json={"jailbreak": False, "score": -0.9})
+
+    live(monkeypatch, h)
+    r = nm.nemoguard_jailbreak("Patient SSN 912-34-5678 asks to reschedule")
+    assert r.ok and r.served_by == "nemotron" and r.model == nm.NEMOGUARD
+    assert r.data["flagged"] is False and r.data["score"] == -0.9
+    url, body, auth = seen[0]
+    assert url == nm.NEMOGUARD_URL and set(body) == {"input"} and auth == f"Bearer {FAKE}"
+    assert "[REDACTED:SSN]" in body["input"] and "912-34-5678" not in body["input"]
+    f = tmp_path / "calls" / f"{nm._key(nm.NEMOGUARD, body, nm.NEMOGUARD_PATH)}.json"
+    rec = json.loads(f.read_text())
+    assert rec["endpoint"] == nm.NEMOGUARD_PATH and rec["kind"] == "nemoguard"
+    assert not any(b in f.read_text().lower() for b in ("sentinel", "bearer", "authorization"))
+    assert nm.latency_summary()[nm.NEMOGUARD]["source"] == "live"
+    # a separate breaker: a dead NemoGuard opens its own circuit, the chat host is unaffected
+    live(monkeypatch, lambda req: (_ for _ in ()).throw(httpx.ConnectError("x")) if "security" in req.url.path
+         else ok_resp("hi"))
+    assert nm.nemoguard_jailbreak("b").error == "connect"  # one retry: two failures
+    assert nm.nemoguard_jailbreak("b").error == "circuit_open" and nm.chat([{"role": "user", "content": "a"}]).ok
+    nm._breakers.clear()
+    live(monkeypatch, lambda req: httpx.Response(200, json={"score": 1}))
+    assert nm.nemoguard_jailbreak("c").error == "invalid_json"
+    # replay never connects; off and LEASH_NEMOGUARD=off never send
+    monkeypatch.setenv("LEASH_NEMOTRON", "replay")
+    monkeypatch.setattr(httpx, "Client", lambda *a, **k: pytest.fail("network touched"))
+    r = nm.nemoguard_jailbreak("Patient SSN 912-34-5678 asks to reschedule")
+    assert r.ok and r.served_by == "replay" and r.recorded_latency_ms is not None and r.data["score"] == -0.9
+    assert nm.nemoguard_jailbreak("never recorded").error == "replay_miss"
+    monkeypatch.setenv("LEASH_NEMOGUARD", "off")
+    assert nm.nemoguard_jailbreak("x").error == "disabled" and nm.config()["nemoguard"]["enabled"] is False
+    monkeypatch.setenv("LEASH_NEMOGUARD", "on")
+    monkeypatch.setenv("LEASH_NEMOTRON", "off")
+    assert nm.nemoguard_jailbreak("x").error == "mode_off"
+    monkeypatch.setenv("LEASH_NEMOGUARD_URL", "https://ai.api.nvidia.com/v1/other")
+    with pytest.raises(ValueError):
+        nm.config()
+    monkeypatch.setenv("LEASH_NEMOGUARD_URL", "http://127.0.0.1:9/jb")
+    assert nm.config()["nemoguard"]["url"] == "http://127.0.0.1:9/jb"
 
 
 def test_resolve_model(monkeypatch, tmp_path):

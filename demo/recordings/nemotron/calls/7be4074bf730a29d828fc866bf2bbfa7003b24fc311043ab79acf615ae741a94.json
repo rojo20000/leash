@@ -2,9 +2,9 @@
  "endpoint": "/chat/completions",
  "key": "7be4074bf730a29d828fc866bf2bbfa7003b24fc311043ab79acf615ae741a94",
  "kind": "safety",
- "latency_ms": 482,
+ "latency_ms": 522,
  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
- "recorded_at": "2026-11-21T18:50:44+00:00",
+ "recorded_at": "2026-11-21T20:14:47+00:00",
  "request": {
   "chat_template_kwargs": {
    "enable_thinking": false
@@ -60,18 +60,18 @@
     "index": 0,
     "logprobs": null,
     "message": {
-     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"The read_record tool is used to retrieve data; per policy, reading a record is not a violation regardless of content.\"}",
+     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"read_record tool with no outgoing message or tool argument; S1 and S2 do not apply to read operations.\"}",
      "refusal": null,
      "role": "assistant"
     }
    }
   ],
-  "created": 1795287040,
-  "id": "chatcmpl-05335d70-9e5b-41a1-99c7-8ea64139608f",
+  "created": 1795292082,
+  "id": "chatcmpl-2ffcc5bf-1fc1-44b3-a305-afaedfd04220",
   "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "object": "chat.completion",
   "usage": {
-   "completion_tokens": 41,
+   "completion_tokens": 40,
    "completion_tokens_details": {
     "reasoning_tokens": 0
    },
@@ -79,7 +79,7 @@
    "prompt_tokens_details": {
     "cached_tokens": 0
    },
-   "total_tokens": 691
+   "total_tokens": 690
   }
  },
  "status": 200

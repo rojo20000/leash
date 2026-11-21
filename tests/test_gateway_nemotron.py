@@ -25,6 +25,7 @@ def _env(monkeypatch, tmp_path):
     monkeypatch.setenv("LEASH_ML", "stub")
     monkeypatch.setenv("LEASH_WARMUP", "0")
     monkeypatch.setenv("LEASH_NEMOTRON", "off")
+    monkeypatch.delenv("LEASH_NEMOGUARD", raising=False)
     monkeypatch.setenv("LEASH_NEMOTRON_RECORDINGS", str(tmp_path / "rec"))
     monkeypatch.setattr(nemotron, "TRANSPORT", None)
     nemotron._reset()
@@ -95,6 +96,36 @@ def test_jailbreak_not_ok_falls_back_to_tfidf(gw):
     assert d["decision"] == "allow"
     assert d["nemotron"]["jailbreak"]["served_by"] == "fallback:local" and not d["nemotron"]["jailbreak"]["flagged"]
     assert d["nemotron"]["reasoner"] is None
+
+
+def test_nemoguard_flag_escalates_never_blocks(gw, monkeypatch):
+    flag(monkeypatch, "jailbreak_check", False)
+    monkeypatch.setattr(nemotron, "nemoguard_jailbreak",
+                        lambda *a, **k: res({"flagged": True, "score": 1.25, "raw": ""}))
+    d = call(gw, "read_document", {"document_id": "ref-0007"})  # TF-IDF clean
+    assert d["decision"] == "escalate" and codes(d) == ["INJECTION_SUSPECTED"]
+    assert d["reasons"][0]["detail"].startswith("nemoguard flagged; tfidf")
+    assert d["nemotron"]["nemoguard"] == {"served_by": "replay", "model": "nvidia/test-guard", "flagged": True,
+                                          "latency_ms": 3.0, "score": 1.25}
+    audit = json.loads((gw.rt / "audit.jsonl").read_text().splitlines()[-1])["nemotron"]
+    assert audit["nemoguard"] == "replay" and audit["nemoguard_score"] == "1.2500"
+    d = call(gw, "read_document", {"document_id": "ref-0042"}, ts=1001.0)  # TF-IDF high: block, flag not needed
+    assert d["decision"] == "block" and codes(d) == ["INJECTION_DETECTED"] and d["nemotron"]["nemoguard"] is None
+    assert gw.get("/v1/metrics").json()["nemotron"]["served_by"]["nemoguard"]["replay"] == 1
+
+
+def test_nemoguard_unavailable_changes_nothing(tmp_path, monkeypatch):
+    def run(name):
+        g = make_gw(tmp_path, name)
+        return [{k: v for k, v in call(g, t, a, ts=ts, session=s, call_id=f"c{i:03d}").items() if k not in STRIP_D}
+                for i, (t, a, ts, s) in enumerate(_calls()[:8])]
+
+    monkeypatch.setattr(nemotron, "jailbreak_check", lambda t, **k: res({"flagged": True, "score": None, "raw": ""}))
+    unavailable = run("u")  # mode off: NemoGuard not ok -> fallback:local, no flag
+    monkeypatch.setenv("LEASH_NEMOGUARD", "off")
+    assert run("d") == unavailable
+    d = call(make_gw(tmp_path, "x"), "read_document", {"document_id": "ref-0007"})
+    assert d["nemotron"]["nemoguard"] is None and d["reasons"][0]["detail"].startswith("jailbreak detector flagged")
 
 
 # ------------------------------------------------------------------ content safety
@@ -211,7 +242,7 @@ def test_decision_fields_and_metrics(gw):
     call(gw, "send_email", {"to": [ATTACKER], "subject": "s", "body": "b"})
     d = call(gw, "send_email", {"to": "pt-0007@patients.example.org", "subject": "s", "body": "b"}, ts=2000.0)
     assert d["decision"] == "allow" and d["nemotron"]["reasoner"] is None
-    for k in ("jailbreak", "content_safety", "reasoner"):
+    for k in ("jailbreak", "nemoguard", "content_safety", "reasoner"):
         assert k in d["latency_ms"]
     blocked = gw.get("/v1/decisions").json()["decisions"][0]
     check_reasoner(blocked["nemotron"]["reasoner"])
@@ -220,7 +251,7 @@ def test_decision_fields_and_metrics(gw):
     m = gw.get("/v1/metrics").json()["nemotron"]
     assert m["mode"] == "off" and m["served_by"]["reasoner"]["fallback:template"] == 1
     assert m["served_by"]["content_safety"]["fallback:local"] == 1 and set(m["models"]) == set(nemotron.ROLES)
-    assert {"jailbreak", "content_safety", "reasoner"} <= set(gw.get("/v1/metrics").json()["latency_ms"]["by_stage"])
+    assert {"jailbreak", "nemoguard", "content_safety", "reasoner"} <= set(gw.get("/v1/metrics").json()["latency_ms"]["by_stage"])
 
 
 # ------------------------------------------------------------------ data minimisation

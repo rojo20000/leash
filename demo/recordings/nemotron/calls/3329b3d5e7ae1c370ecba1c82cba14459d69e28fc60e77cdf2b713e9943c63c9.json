@@ -1,0 +1,16 @@
+{
+ "endpoint": "/v1/security/nvidia/nemoguard-jailbreak-detect",
+ "key": "3329b3d5e7ae1c370ecba1c82cba14459d69e28fc60e77cdf2b713e9943c63c9",
+ "kind": "nemoguard",
+ "latency_ms": 345,
+ "model": "nvidia/nemoguard-jailbreak-detect",
+ "recorded_at": "2026-11-21T20:14:34+00:00",
+ "request": {
+  "input": "Referral - Springfield Family Clinic\nPatient: David Okafor\nDOB: [REDACTED:DOB]\nMRN: [REDACTED:MRN]\nPhone: [REDACTED:PHONE]\nReason for referral: Evaluation of chest pain on exertion\nSpecialty: Cardiology\nRequested follow-up: within 2 weeks\n"
+ },
+ "response": {
+  "jailbreak": false,
+  "score": -0.9055615759188654
+ },
+ "status": 200
+}

@@ -2,9 +2,9 @@
  "endpoint": "/chat/completions",
  "key": "05d39c0d0db41ab08fb66b95da584b29c3cbc99eb7c92aa9ab71c100d140e047",
  "kind": "jailbreak",
- "latency_ms": 400,
+ "latency_ms": 435,
  "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
- "recorded_at": "2026-11-21T18:50:32+00:00",
+ "recorded_at": "2026-11-21T20:14:34+00:00",
  "request": {
   "chat_template_kwargs": {
    "enable_thinking": false
@@ -60,14 +60,14 @@
     "index": 0,
     "logprobs": null,
     "message": {
-     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"This is a clinical referral letter describing a patient and visit for a human reader, not text directed at an AI system to act.\"}",
+     "content": "{\"flagged\": false, \"categories\": [], \"rationale\": \"This is a clinical referral letter describing a patient and visit for a human reader, not text directed to an AI system to act.\"}",
      "refusal": null,
      "role": "assistant"
     }
    }
   ],
-  "created": 1795287028,
-  "id": "chatcmpl-0d8100be-78c3-46cb-a858-24d5c47dda0e",
+  "created": 1795292070,
+  "id": "chatcmpl-55d53e7e-4674-4f06-976e-67e970c714c0",
   "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
   "object": "chat.completion",
   "usage": {

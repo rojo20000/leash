@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21T13:58-06:00",
+  "updated": "2026-11-21T14:22-06:00",
   "schedule": {
     "stage0_due": "11:50",
     "stage1_due": "15:30",
@@ -144,7 +144,7 @@
       "status": "running",
       "iteration": 1,
       "last_check": "",
-      "reviewer_notes": "fix agent: .gitattributes (eol=lf), README notes for results.json regeneration, stopping the dashboard, and LEASH_CORE=py make check. Then overseer: clean-worktree make check, PROGRESS.md, final commit. Leftover: empty folder ../leash-diag from the overseer's scratch worktree (outside the repo; left for the team to delete)."
+      "reviewer_notes": "Fresh-eyes fixes done and committed (3054d45): .gitattributes eol=lf; README notes on results.json regeneration, stopping the dashboard, and LEASH_CORE=py make check (run, PASS 1-5). FINAL STEPS HELD until N20 and N21 land: clean-worktree make check, PROGRESS.md with the final output, final commit. Leftover: empty folder ../leash-diag from the overseer's scratch worktree (outside the repo; left for the team to delete)."
     },
     "N1b": {
       "name": "replan_nemotron",
@@ -180,6 +180,20 @@
       "iteration": 1,
       "last_check": "LEASH_CORE=py LEASH_ML=stub LEASH_NEMOTRON=replay pytest tests/test_agent_*.py: 9 passed, 2 skipped (live Ollama and live Nemotron, opt-in)",
       "reviewer_notes": "Overseer re-ran the check. Live Lightning result reported by the node: unprotected, 20 tool calls all served by nemotron, the agent followed the hidden instruction and one email to records-transfer@outside-clinic.example landed in the sink; protected, 15 tool calls all nemotron, no attacker email sent, 3 appointments booked. For N10: confirm from the decisions whether the protected run's read of ref-0042 was blocked with INJECTION_DETECTED (likely why the agent never attempted the email) and say so in the demo notes; the live agent is not deterministic, so the scripted replay remains the asserted demo. No recordings were written under demo/recordings/nemotron/calls/ by this node."
+    },
+    "N20": {
+      "name": "jailbreak_detect",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "make check exit 0: cargo test 11 passed; pytest 103 passed, 3 skipped; demo totals 17 allow, 3 block, 0 escalate; PASS 1-5. Node also ran LEASH_CORE=py make check: pass. Round 5 (live, 83 steps all served by nemotron) dev/holdout: NemoGuard P/R 0/0 / 0/0; Lightning judge 1.0/1.0 / 1.0/0.333; TF-IDF 1.0/1.0 / 1.0/0.333; combined of three 1.0/1.0 / 1.0/0.333; content-safety tn/fp/tp/fn 9/2/1/0 / 5/3/1/0; reasoner agreement 0.923 / 1.0; latency p50/p95 ms NemoGuard 363.8/662.3 (n=17), Lightning 718.5/1399.0 (n=66)",
+      "reviewer_notes": "Overseer re-ran make check and the key scan (real key only in .env; no auth header in recordings). NemoGuard JailbreakDetect is an escalate-only third injection detector with its own switch (LEASH_NEMOGUARD) and per-host circuit breaker; contract C10.7a. MEASURED: it flagged 0 of 17 documents including all 8 injected ones (scores -0.82 to -0.99), so it changes no metric. Also for docs: the Lightning judge's holdout recall was 0.667 in round 4 and 0.333 in round 5 with unchanged prompts (3 injected holdout documents; run-to-run variation), so the final-state combined holdout recall is 0.333. 43 recording files; both cores replay. DEMO_SCRIPT quotes all still match. The scripted demo does not print a NemoGuard line because no read is escalated."
+    },
+    "N21": {
+      "name": "jailbreak_detect_docs",
+      "status": "running",
+      "iteration": 1,
+      "last_check": "",
+      "reviewer_notes": "implementer after N20: docs, tables (five rounds), dashboard rendering of the nemoguard detector, screenshots"
     }
   },
   "clock_note": "Timestamps written before 11:33 in this file and DECISIONS.md were estimates and run up to ~12 minutes fast; actual: key supplied 11:28, N5/N6 passed 11:30."

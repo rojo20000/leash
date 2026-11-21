@@ -622,7 +622,8 @@ a `block` or `escalate` into an `allow`. The Lightning reasoner is advisory only
 decision and is never an input to `decide`, the queue status or the executor. Only deterministic policy, the local
 ML thresholds and the human reviewer decide.
 
-Data rule: the only off-machine destination is `https://integrate.api.nvidia.com/v1`, only through
+Data rule: the only off-machine destination is `https://integrate.api.nvidia.com/v1` (plus, since 14:20, the one
+NemoGuard JailbreakDetect URL in C10.7a), only through
 `leash/nemotron.py`, only with synthetic data. `NVIDIA_API_KEY` is never printed, logged, recorded, put in an
 exception message or repr, or committed. Every request body that `chat_json`, `content_safety` and
 `jailbreak_check` send has had `core.prescan` spans replaced by typed placeholders `[REDACTED:<KIND>]` (a detector
@@ -931,6 +932,49 @@ and `latency_ms.by_stage` gains `jailbreak`, `content_safety`, `reasoner`.
 ```
 `<M>` = `{"injection": {"tfidf": {"precision": p, "recall": r}, "jailbreak": {...}, "combined": {...}},
 "content_safety_accuracy": a, "reasoner_action_agreement": a, "reasoner_valid_json_rate": a}`.
+
+### C10.7a NemoGuard JailbreakDetect (added 14:20, N20; team decision in graph/MISSION.md UPDATE 14:05)
+
+Additive to C10.1-C10.7; where it differs, this section wins.
+
+- **Destinations.** The allowed off-machine destinations are now exactly `https://integrate.api.nvidia.com/v1`
+  (C10) and `https://ai.api.nvidia.com/v1/security/nvidia/nemoguard-jailbreak-detect` (`nemotron.NEMOGUARD_URL`),
+  both only through `leash/nemotron.py`, synthetic data only. Nothing else on `ai.api.nvidia.com` is called (no
+  model list, no other path). `LEASH_NEMOGUARD_URL` may override the URL only with that exact URL or a
+  `127.0.0.1`/`localhost` URL (tests); anything else raises `ValueError` from `config()` and the call.
+- **Config (C10.1).** `LEASH_NEMOGUARD` = `on` (default) | `off`. `off` skips the detector everywhere: the
+  client returns `Result(ok=False, error="disabled")` without a request, the gateway sets `nemotron.nemoguard`
+  to `null` and the stage latency to `0.0`. `config()` gains `"nemoguard": {"enabled": bool, "model":
+  "nvidia/nemoguard-jailbreak-detect", "url": "..."}`.
+- **Client (C10.2).** `nemoguard_jailbreak(text: str, *, redact: bool = True) -> Result`. Request: `POST
+  <url>` with JSON `{"input": <text after core.prescan redaction>}` and the same Bearer header (send time only).
+  Response `{"jailbreak": bool, "score": float}` (live probe 14:06: 360-720 ms; negative score = not a jailbreak).
+  `data = {"flagged": <jailbreak>, "score": float | None, "raw": <response JSON, sorted keys>}`; a response
+  without a boolean `jailbreak` is `error="invalid_json"`. `model = "nvidia/nemoguard-jailbreak-detect"`;
+  latency in `latency_summary()` under that id. Live/replay/off, timeouts (`min(8, LEASH_NEMOTRON_TIMEOUT_S)`
+  read, 5 s connect), one retry with backoff, 429 handling, never raises on network/HTTP/JSON problems, never
+  opens a socket in replay or off, key never printed/logged/recorded: as C10.2. New error value `"disabled"`.
+  **Circuit breaker: separate** (one per host: `chat` for integrate.api.nvidia.com, `nemoguard` here), so a
+  NemoGuard outage cannot open the circuit for the agent, reasoner or judges. `jailbreak_check` (the Lightning
+  judge, role `jailbreak`) is unchanged.
+- **Recording (C10.3).** `key = sha256(canonical({"endpoint": "/v1/security/nvidia/nemoguard-jailbreak-detect",
+  "model": "nvidia/nemoguard-jailbreak-detect", "body": {"input": ...}}))`; file `kind: "nemoguard"`, `endpoint`
+  = that path. Same storage rules (no key, no headers).
+- **Gateway (C10.5 step 3).** For `read_document` output with no block reason yet, both remote detectors run on
+  the prescan-redacted text, `jailbreak` then `nemoguard` (stages of the same names). Combination:
+  TF-IDF `>= 0.5` -> block `INJECTION_DETECTED` whatever the remote detectors say (they are then skipped);
+  otherwise the Lightning judge OR NemoGuard flagged -> escalate `INJECTION_SUSPECTED` (stage `injection`), detail
+  `"<names> flagged; tfidf 0.12"` with names from `jailbreak detector` and `nemoguard` joined by `" + "`; a remote
+  detector that is not ok is `fallback:local` and contributes no flag. NemoGuard never blocks. The reasoner
+  context (C10.6) is unchanged: the reason detail names the detector.
+  For evaluation, `combined` = TF-IDF `>= 0.5` OR judge flagged OR NemoGuard flagged; `combined_tfidf_jailbreak`
+  keeps the rounds 1-4 definition.
+- **Fields (C10.7).** Decision `nemotron` gains `"nemoguard": {"served_by", "model", "flagged", "latency_ms",
+  "score": float | null} | null`; `latency_ms` and `latency_ms.by_stage` gain `nemoguard`; `/v1/metrics`
+  `nemotron.served_by` gains `"nemoguard": {"nemotron", "replay", "fallback:local"}`. Audit `nemotron` gains
+  `"nemoguard": "<served_by>" | null` and `"nemoguard_score": "<score with 4 decimals>" | null` (a string, no
+  floats). Eval `<M>.injection` gains `nemoguard` and `combined_tfidf_jailbreak`; each case row gains
+  `nemoguard_flagged`, `nemoguard_served_by`, `nemoguard_score`; `served_by_step` gains `nemoguard`.
 
 ### C10.8 Agent (extends C7)
 
