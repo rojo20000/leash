@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21T16:31-06:00",
+  "updated": "2026-11-21T16:48-06:00",
   "schedule": {
     "stage0_due": "11:50",
     "stage1_due": "15:30",
@@ -242,12 +242,19 @@
       "iteration": 2,
       "last_check": "dry-run and grep check ok",
       "reviewer_notes": "Makefile target clinic-check (4 lines added, 0 removed); README section 'Human front end: Clinic Assistant', corrected in iteration 2 to the measured live behaviour and three honest limits; C12.1 note with the measurements."
+    },
+    "N24": {
+      "name": "merge_syraft_update_v2_5",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "merged tree: Clinic Assistant unittest Ran 71 tests OK (skipped=1); live-gateway test OK; Leash make check exit 0 (105 passed, 3 skipped, PASS 1-5); 0 tracked files missing",
+      "reviewer_notes": "Team request 16:40. Branch = Clinic Assistant v2.5-v2.7 (27 files, all under clinic-assistant/). Review: probe to a public address is off by default; tests delete only mkdtemp dirs; network.leash_url overlaps the N23 leash section; model default llama3.2 not installed here. Conflicts in app/server.py (import) and static/app.js (2 hunks) resolved by an implementer with the teammate's update as the base and the Leash tab re-applied; overseer verified. Committed vectors.sqlite and clinic.db are the teammate's."
     }
   },
   "clock_note": "Timestamps written before 11:33 in this file and DECISIONS.md were estimates and run up to ~12 minutes fast; actual: key supplied 11:28, N5/N6 passed 11:30.",
   "final": {
     "leash_build": "complete",
     "final_check": "graph/final_make_check.txt",
-    "open": "none; N23 committed locally and not pushed"
+    "open": "none; merge of syraft-update-v2.5 committed locally and not pushed"
   }
 }
