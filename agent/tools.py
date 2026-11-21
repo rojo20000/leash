@@ -1,6 +1,7 @@
 """Clinical agent tools (C4.2), shared by the unprotected agent and the gateway executor."""
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 import httpx
@@ -54,6 +55,17 @@ def _need(args, *keys):
             raise ValueError(f"missing or bad arg: {k}")
 
 
+_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")  # no dot: "." and ".." are URL path segments
+
+
+def _need_id(args, key):
+    """An id that is safe to put in an EHR URL path (audit A1)."""
+    v = args.get(key)
+    if not isinstance(v, str) or not _ID.fullmatch(v):
+        raise ValueError(f"missing or bad arg: {key}")
+    return v
+
+
 class ToolExecutor:
     def __init__(self, ehr: httpx.Client, sink_path: str, mode: str, session_id: str):
         self.ehr, self.sink_path, self.mode, self.session_id = ehr, sink_path, mode, session_id
@@ -77,8 +89,7 @@ class ToolExecutor:
             b = self._get("/fhir/Patient", name=args.get("name"), birthdate=args.get("birthdate"))
             return {"patients": [e["resource"] for e in b.get("entry", [])]}
         if tool == "read_record":
-            _need(args, "patient_id")
-            pid = args["patient_id"]
+            pid = _need_id(args, "patient_id")
             types = args.get("resource_types") or ALL_RESOURCE_TYPES
             bad = [t for t in types if t not in ALL_RESOURCE_TYPES]
             if bad:
@@ -91,10 +102,10 @@ class ToolExecutor:
                     res[t] = [e["resource"] for e in self._get(f"/fhir/{t}", patient=pid).get("entry", [])]
             return {"patient_id": pid, "resources": res}
         if tool == "read_document":
-            _need(args, "document_id")
-            return self._get(f"/fhir/DocumentReference/{args['document_id']}/text")
+            return self._get(f"/fhir/DocumentReference/{_need_id(args, 'document_id')}/text")
         if tool == "update_appointment":
-            _need(args, "patient_id", "start", "reason")
+            _need_id(args, "patient_id")
+            _need(args, "start", "reason")
             r = self.ehr.post("/fhir/Encounter", json={k: args[k] for k in ("patient_id", "start", "reason")})
             if r.status_code >= 400:
                 raise ValueError(f"EHR {r.status_code} creating encounter")
