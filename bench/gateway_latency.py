@@ -47,20 +47,22 @@ def run(mode):
     tmp = tempfile.mkdtemp(prefix="leash-bench-")
     try:
         ehr = TestClient(create_ehr(data_dir=str(ROOT / "data" / "generated")))
-        app = create_app(ehr_client=ehr, runtime_dir=tmp, policy_path=POLICY)
+        now = [time.time()]  # the gateway's clock (it ignores client timestamps)
+        app = create_app(ehr_client=ehr, runtime_dir=tmp, policy_path=POLICY, clock=lambda: now[0])
         with TestClient(app) as gw:  # entering runs the lifespan warm-up before any measured call
             assert gw.get("/health").json()["nemotron"] == mode
             decs = []
             for i in range(N_SCRIPTED):
                 decs += [s["decision"] for s in run_session(
-                    "protected", "scripted", f"bench-s{i}", ehr, gw, os.path.join(tmp, "sink.jsonl"))]
+                    "protected", "scripted", f"bench-s{i}", ehr, gw, os.path.join(tmp, "sink.jsonl"),
+                    set_time=lambda t: now.__setitem__(0, t))]
             t0 = time.time()
             for b in range(N_BULK):
                 for k in range(BULK_LEN):
+                    now[0] = t0 + 2.0 * k
                     r = gw.post("/v1/tool-call", json={
                         "session_id": f"bench-bulk{b}", "role": "scheduling_assistant", "tool": "read_record",
-                        "args": {"patient_id": f"pt-{b * BULK_LEN + k + 1:04d}", "resource_types": ["Patient"]},
-                        "ts": t0 + 2.0 * k})
+                        "args": {"patient_id": f"pt-{b * BULK_LEN + k + 1:04d}", "resource_types": ["Patient"]}})
                     r.raise_for_status()
                     decs.append(r.json())
         return decs

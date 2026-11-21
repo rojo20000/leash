@@ -14,6 +14,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -78,9 +79,11 @@ def main():
         ehr.post("/admin/reset")
         rt = tmp / "protected"
         print(f"\n== Protected run (Leash gateway; Nemotron mode: {nem_mode}) ==")
-        app = create_app(ehr_client=ehr, runtime_dir=str(rt), policy_path=POLICY)
+        now = [time.time()]  # the gateway's clock; run_session moves it to start + offset before each call
+        app = create_app(ehr_client=ehr, runtime_dir=str(rt), policy_path=POLICY, clock=lambda: now[0])
         with TestClient(app) as gw:
-            steps = run_session("protected", driver, "demo-protected", ehr, gw, str(tmp / "unused.jsonl"), RECORDING)
+            steps = run_session("protected", driver, "demo-protected", ehr, gw, str(tmp / "unused.jsonl"), RECORDING,
+                                set_time=lambda t: now.__setitem__(0, t))
             queue = gw.get("/v1/queue", params={"status": "all"}).json()["items"]
             verify_clean = gw.get("/v1/audit/verify").json()
         core = load_core()
@@ -161,6 +164,10 @@ def main():
             print(f"  {'PASS' if ok5 else 'FAIL'} 5 reasoner explanation for the attacker email served_by "
                   f"{rs.get('served_by')} (expected {want})")
             failed |= not ok5
+        ml_name = steps[0]["decision"]["ml"] if steps else None
+        ok6 = ml_name == "real" or os.environ.get("LEASH_ML", "").lower() == "stub"
+        print(f"  {'PASS' if ok6 else 'FAIL'} 6 gateway ML is {ml_name} (expected real unless LEASH_ML=stub)")
+        failed |= not ok6
 
         write_metrics("demo", {
             "unprotected_leaked": leaked, "protected_blocked": blocked and alert and not prot_leaks,

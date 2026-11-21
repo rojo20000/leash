@@ -11,7 +11,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import precision_score, recall_score
 from sklearn.pipeline import FeatureUnion, Pipeline
 
-from ml.common import ART, SEED, now, p, write_metrics
+from ml.common import ART, SEED, normalize, now, p, write_metrics
 
 
 def build():
@@ -24,6 +24,8 @@ def build():
 
 def train():
     rows = [json.loads(l) for l in open(p("data", "corpus", "corpus.jsonl"), encoding="utf-8")]
+    for r in rows:
+        r["text"] = normalize(r["text"])  # same form ml.api.injection_score gives the model
     tr = [r for r in rows if r["split"] == "train"]
     te = [r for r in rows if r["split"] == "test"]
     # Also train on single benign sentences (train split only) so short benign requests are not scored as injections.

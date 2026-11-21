@@ -1,5 +1,7 @@
+use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashSet;
+use std::sync::OnceLock;
 
 #[derive(Deserialize)]
 struct Tools {
@@ -41,6 +43,12 @@ pub struct PolicyCore {
 
 pub type Decision = (String, String, String);
 
+// One plain ASCII address; \A..\z so the whole recipient must match (same pattern in core_py.py).
+fn addr() -> &'static Regex {
+    static A: OnceLock<Regex> = OnceLock::new();
+    A.get_or_init(|| Regex::new(r"\A[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\z").unwrap())
+}
+
 fn d(a: &str, b: &str, c: String) -> Decision {
     (a.to_string(), b.to_string(), c)
 }
@@ -79,9 +87,9 @@ impl PolicyCore {
             return d("block", "RESOURCE_NOT_ALLOWED", format!("resource {r:?} not allowed"));
         }
         for r in recipients {
-            let lower = r.to_lowercase();
-            let dom = lower.rsplit_once('@').map(|(_, x)| x).unwrap_or("");
-            if !self.domains.iter().any(|x| x == dom) {
+            // no trim: Rust trim and Python str.strip disagree on some characters
+            let dom = addr().captures(r).map(|c| c[1].to_ascii_lowercase()).unwrap_or_default();
+            if !self.domains.iter().any(|x| *x == dom) {
                 return d("block", "EMAIL_DOMAIN_NOT_ALLOWED", format!("domain {dom:?} not allowed"));
             }
         }
@@ -133,6 +141,36 @@ allowed_domains = ["Clinic.example.org"]
         assert_eq!(e(&mut p, "send_email", &[], &["noat"]), "EMAIL_DOMAIN_NOT_ALLOWED");
         assert_eq!(e(&mut p, "send_email", &[], &["A@CLINIC.example.org"]), "TOOL_REQUIRES_APPROVAL");
         assert_eq!(e(&mut p, "read_record", &["Patient"], &[]), "OK");
+    }
+
+    #[test]
+    fn policy_recipient_single_address() {
+        // A4: same cases as RECIPIENT_CASES in tests/test_core_parity.py
+        let mut p = PolicyCore::from_toml_str(&P.replace("[\"Clinic.example.org\"]", "[\"Clinic.example.org\", \"nodot\"]")).unwrap();
+        let mut e = |r: &str| p.evaluate("read_record", &[], &[], &v(&["frontdesk@clinic.example.org", r]), 0.0);
+        for ok in ["frontdesk@clinic.example.org", "Bob@CLINIC.EXAMPLE.ORG", "a.b+c%d_e-f@clinic.example.org"] {
+            assert_eq!(e(ok).1, "OK", "{ok:?}");
+        }
+        for bad in [
+            "attacker@outside-clinic.example, frontdesk@clinic.example.org",
+            "a@b@clinic.example.org",
+            "x@evil.example\u{2028}@clinic.example.org",
+            " frontdesk@clinic.example.org",
+            "frontdesk@clinic.example.org ",
+            "frontdesk@clinic.example.org\n",
+            "frontdesk@clinic.example.org\u{a0}",
+            "a@b",
+            "a@nodot",
+            "",
+            "@clinic.example.org",
+            "x@\u{441}linic.example.org",
+            "x@clinic.example.org\u{ff20}clinic.example.org",
+            "\u{e9}@clinic.example.org",
+        ] {
+            let r = e(bad);
+            assert_eq!((r.0.as_str(), r.1.as_str(), r.2.as_str()), ("block", "EMAIL_DOMAIN_NOT_ALLOWED", "domain \"\" not allowed"), "{bad:?}");
+        }
+        assert_eq!(e("x@Outside-Clinic.example").2, "domain \"outside-clinic.example\" not allowed");
     }
 
     #[test]

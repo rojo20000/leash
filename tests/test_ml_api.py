@@ -30,6 +30,15 @@ def test_injection_scores():
     assert 0.0 <= s < 0.5
 
 
+@pytest.mark.parametrize("hide", [
+    lambda t: "​".join(t),
+    lambda t: "­".join(t),
+    lambda t: "".join(chr(ord(c) + 0xFEE0) if "!" <= c <= "~" else c for c in t),
+], ids=["zero_width_space", "soft_hyphen", "full_width"])
+def test_injection_score_ignores_invisible_characters(hide):  # AUDIT A5
+    assert api.injection_score(hide(HIDDEN)) >= 0.5
+
+
 def test_anomaly_scores():
     bulk = [ev(i, pats=(f"pt-{i + 1:04d}",)) for i in range(40)]
     assert api.anomaly_score(bulk) >= 0.5

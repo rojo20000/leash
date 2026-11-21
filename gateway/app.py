@@ -4,6 +4,7 @@
 Design rule: Nemotron output can only add caution, never remove it. Detectors may turn an allow into an escalate;
 the reasoner runs after the decision is final and never changes decision, reasons, result or queue status."""
 import hashlib
+import hmac
 import json
 import os
 import threading
@@ -16,7 +17,8 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agent.tools import ToolExecutor, call_facts
@@ -41,7 +43,7 @@ class ToolCall(BaseModel):
     tool: str
     args: dict = {}
     call_id: Optional[str] = None
-    ts: Optional[float] = None
+    ts: Optional[float] = None  # accepted so old clients do not break; ignored (server clock decides, A3)
 
 
 class Review(BaseModel):
@@ -49,8 +51,20 @@ class Review(BaseModel):
     note: str = ""
 
 
+def reviewer_only(x_leash_token: str = Header("")):
+    """Review and admin routes need the shared secret LEASH_REVIEW_TOKEN (read per request; unset = closed)."""
+    want = os.environ.get("LEASH_REVIEW_TOKEN", "")
+    if not want or not hmac.compare_digest(x_leash_token.encode(), want.encode()):
+        raise HTTPException(403, "reviewer token required")
+
+
 def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+
+
+def _args_sha(args):
+    return hashlib.sha256(json.dumps(args, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def _pct(vals, q):
@@ -60,7 +74,7 @@ def _pct(vals, q):
     return s[min(len(s) - 1, int(q * len(s)))]
 
 
-def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
+def create_app(ehr_client=None, runtime_dir=None, policy_path=None, clock=time.time) -> FastAPI:
     core = load_core()
     ml, ml_name = load_ml()
     rt = Path(runtime_dir or os.environ.get("LEASH_RUNTIME_DIR", "runtime"))  # created on first write
@@ -95,14 +109,20 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
 
     def save_queue():
         rt.mkdir(parents=True, exist_ok=True)
-        with open(p_queue, "w", encoding="utf-8") as f:
+        with open(p_queue + ".tmp", "w", encoding="utf-8") as f:  # a failed write leaves the old file intact
             json.dump({"items": S["queue"]}, f)
+        os.replace(p_queue + ".tmp", p_queue)
 
     def get_audit():
         if S["audit"] is None:
             rt.mkdir(parents=True, exist_ok=True)
             S["audit"] = core.AuditLog(p_audit)
         return S["audit"]
+
+    def audit_intent(call_id, session_id, tool, sha):
+        """A21: appended BEFORE a write tool runs. If this raises, the caller must not run the tool (fail closed)."""
+        get_audit().append(json.dumps({"kind": "intent", "ts": _now_iso(), "call_id": call_id,
+                                       "session_id": session_id, "tool": tool, "args_sha256": sha}))
 
     def run_tool(tool, args, session_id):
         return ToolExecutor(ehr, p_sink, "protected", session_id).execute(tool, args)
@@ -123,8 +143,13 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
         lat = {k: 0.0 for k in STAGES}
         t_start = time.perf_counter()
         call_id = req.call_id or uuid.uuid4().hex
-        ts = req.ts if req.ts is not None else time.time()
+        ts = clock()  # never the request's ts: the client must not choose the rate and anomaly windows
         tool, args = req.tool, req.args
+        try:  # A21: what goes into an audit record must be encodable, checked before any stage runs
+            json.dumps([call_id, req.session_id, req.role, tool], ensure_ascii=False).encode("utf-8")
+            sha = _args_sha(args)
+        except (TypeError, ValueError):
+            raise HTTPException(422, "request is not encodable as UTF-8 JSON") from None
         reasons, scores, redactions, output = [], {"injection": None, "anomaly": None}, [], None
         nem = {"mode": nemotron.mode(), "jailbreak": None, "nemoguard": None, "content_safety": None, "reasoner": None}
         signals = {"jailbreak": None, "nemoguard": None, "content_safety": None}
@@ -135,11 +160,17 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
         def add(code, stage, detail=""):
             reasons.append({"code": code, "stage": stage, "detail": detail})
 
-        # 1 policy
+        # 1 policy (a failure here is an audited block, never an HTTP 500)
         t0 = time.perf_counter()
-        rtypes, pids, recips = call_facts(tool, args)
-        pids = [p for p in pids if p]
-        dec, code, detail = policy.evaluate(tool, rtypes, pids, recips, ts)
+        try:
+            rtypes, pids, recips = call_facts(tool, args)
+            pids = [p for p in pids if p]
+            if not all(isinstance(v, str) for seq in (rtypes, pids, recips) for v in seq):
+                raise TypeError("non-string policy fact")
+            dec, code, detail = policy.evaluate(tool, rtypes, pids, recips, ts)
+        except Exception as e:  # noqa: BLE001
+            rtypes, pids, recips = [], [], []
+            dec, code, detail = "block", "EXECUTION_ERROR", f"bad call arguments ({type(e).__name__})"
         mark("policy", t0)
         if dec != "allow":
             add(code, "policy", detail)
@@ -202,12 +233,13 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
                     f"Tool: {tool}\nDestination: {', '.join(recips) or 'none'}\n"
                     f"Content: {json.dumps(x, sort_keys=True)[:4000]}")
             r = nemotron.content_safety(text)
-            if r.ok:
-                flagged, cats = bool(r.data["flagged"]), list(r.data["categories"])
-            else:  # local fallback: identifiers in an outgoing email
-                body_text = f"{args.get('subject', '')} {args.get('body', '')}"
-                flagged = tool == "send_email" and any(k in ("SSN", "MRN") for k, _, _ in core.prescan(body_text))
-                cats = ["PII/Privacy"] if flagged else []
+            # local rule (identifiers in an outgoing email) always runs: a judge "clear" cannot remove this hold
+            body_text = f"{args.get('subject', '')} {args.get('body', '')}"
+            local = tool == "send_email" and any(k in ("SSN", "MRN") for k, _, _ in core.prescan(body_text))
+            flagged = local or bool(r.ok and r.data["flagged"])
+            cats = list(r.data["categories"]) if r.ok else []
+            if local and "PII/Privacy" not in cats:
+                cats.append("PII/Privacy")
             nem["content_safety"] = {"served_by": r.served_by if r.ok else "fallback:local",
                                      "model": r.model if r.ok else "", "flagged": flagged, "categories": cats,
                                      "latency_ms": round(r.latency_ms, 1)}
@@ -241,6 +273,7 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
             if tool not in READ_TOOLS:
                 t0 = time.perf_counter()
                 try:
+                    audit_intent(call_id, req.session_id, tool, sha)  # no write without an audit record
                     output = run_tool(tool, args, req.session_id)
                 except Exception as e:
                     decision = "block"
@@ -262,23 +295,24 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
         reason_obj = None
         if decision != "allow":
             t0 = time.perf_counter()
-            if tool == "read_document" and any(r["code"] == "INJECTION_DETECTED" for r in reasons):
-                shown = ml.minimize(tool, raw, keep_fields)[0]  # prescan-redacted text for the reviewer
-            else:
-                shown = output if tool in READ_TOOLS else None
-            ctx = reasoner.build_context(tool, args, shown, decision, reasons, scores, signals, policy_path)
             try:
-                reason_obj = reasoner.explain(ctx)
-            except Exception:  # noqa: BLE001
-                reason_obj = reasoner.template(ctx, error="exception")
+                if tool == "read_document" and any(r["code"] == "INJECTION_DETECTED" for r in reasons):
+                    shown = ml.minimize(tool, raw, keep_fields)[0]  # prescan-redacted text for the reviewer
+                else:
+                    shown = output if tool in READ_TOOLS else None
+                ctx = reasoner.build_context(tool, args, shown, decision, reasons, scores, signals, policy_path)
+                try:
+                    reason_obj = reasoner.explain(ctx)
+                except Exception:  # noqa: BLE001
+                    reason_obj = reasoner.template(ctx, error="exception")
+            except Exception:  # noqa: BLE001  advisory only: no explanation, but the call is still audited
+                reason_obj = None
             nem["reasoner"] = reason_obj
             mark("reasoner", t0)
 
         # 9 audit
         pre_us = int((time.perf_counter() - t_start) * 1e6)
         t0 = time.perf_counter()
-        sha = hashlib.sha256(json.dumps(args, sort_keys=True, separators=(",", ":"),
-                                        ensure_ascii=False).encode("utf-8")).hexdigest()
         now = _now_iso()
         body = {"kind": "decision", "ts": now, "call_id": call_id, "session_id": req.session_id,
                 "role": req.role, "tool": tool, "args_sha256": sha, "patient_ids": pids, "recipients": recips,
@@ -337,27 +371,36 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
                 raise HTTPException(404, "unknown queue_id")
             if item["status"] != "pending":
                 raise HTTPException(409, "not pending")
-            result = None
+            result, fail = None, None  # fail = (reason code, HTTP status, error text): approved but not carried out
             if approve and item["kind"] == "approval":
                 try:
-                    result = minimized(item["tool"], run_tool(item["tool"], item["args"], item["session_id"]))[0]
+                    if item["tool"] not in READ_TOOLS:
+                        audit_intent(item["call_id"], item["session_id"], item["tool"], _args_sha(item["args"]))
+                    fresh = run_tool(item["tool"], item["args"], item["session_id"])
+                    # the document may have changed since the reviewer saw it: score the fresh text before release
+                    if item["tool"] == "read_document" and float(ml.injection_score(fresh.get("text", ""))) >= 0.5:
+                        fail = ("INJECTION_DETECTED", 409, "the document text now scores as an injection")
+                    else:
+                        result = minimized(item["tool"], fresh)[0]
                 except Exception as e:
-                    result = {"error": str(e)}
-            item["status"] = "approved" if approve else "denied"
+                    fail = ("EXECUTION_ERROR", 502, str(e))
+            item["status"] = "failed" if fail else "approved" if approve else "denied"
             item["reviewed_by"], item["reviewed_at"], item["note"] = body.reviewer, _now_iso(), body.note
             save_queue()
-            allow = approve and item["kind"] == "approval"
+            allow = approve and item["kind"] == "approval" and not fail
             get_audit().append(json.dumps({
                 "kind": "review", "ts": item["reviewed_at"], "call_id": item["call_id"], "queue_id": queue_id,
                 "decision": "allow" if allow else "block",
-                "reasons": ["HUMAN_APPROVED" if approve else "HUMAN_DENIED"], "reviewer": body.reviewer}))
-            return {"queue_id": queue_id, "status": item["status"], "result": result}
+                "reasons": ["HUMAN_APPROVED" if approve else "HUMAN_DENIED"] + ([fail[0]] if fail else []),
+                "reviewer": body.reviewer}))
+            out = {"queue_id": queue_id, "status": item["status"], "result": result}
+            return JSONResponse(dict(out, error=fail[2]), status_code=fail[1]) if fail else out
 
-    @app.post("/v1/queue/{queue_id}/approve")
+    @app.post("/v1/queue/{queue_id}/approve", dependencies=[Depends(reviewer_only)])
     def approve(queue_id: str, body: Review = Review()):
         return review(queue_id, True, body)
 
-    @app.post("/v1/queue/{queue_id}/deny")
+    @app.post("/v1/queue/{queue_id}/deny", dependencies=[Depends(reviewer_only)])
     def deny(queue_id: str, body: Review = Review()):
         return review(queue_id, False, body)
 
@@ -395,7 +438,7 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
                                  "latency_ms": nemotron.latency_summary(),
                                  "models": nemotron.config()["models"]}}
 
-    @app.post("/v1/admin/reset")
+    @app.post("/v1/admin/reset", dependencies=[Depends(reviewer_only)])
     def reset():
         with lock:
             for p in (p_audit, p_audit + ".head", p_dec, p_queue):

@@ -39,7 +39,7 @@ Full detail, including every model swap with its evidence, is in `docs/NEMOTRON.
 
 ## Accomplishments
 
-- A working attack and defense demo that needs no key and no network, with five assertions that run in `make check`.
+- A working attack and defense demo that needs no key and no network, with six assertions that run in `make check`.
 - Measured numbers with sample sizes for every model, and before and after numbers for the Nemotron loop, with the round 4 to round 5 variation stated.
 - A design rule that is tested, not just stated: Nemotron output can only add caution.
 - A HIPAA mapping that says where Leash falls short (no caller authentication).

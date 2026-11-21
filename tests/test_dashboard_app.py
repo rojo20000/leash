@@ -112,3 +112,38 @@ def test_missing_reasoner(monkeypatch, tmp_path):
     at = run(monkeypatch, tmp_path / "fx")
     assert not at.exception
     assert any("No explanation available" in i.value for i in at.info)
+
+
+def test_review_sends_the_reviewer_token(monkeypatch):  # A2
+    import httpx
+    import dashboard.client as client
+    seen = {}
+
+    def post(url, **kw):
+        seen.update(kw, url=url)
+        return httpx.Response(200, json={"status": "approved"}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(client.httpx, "post", post)
+    monkeypatch.setenv("LEASH_REVIEW_TOKEN", "t0k")
+    assert client.review("q-0001", "approve") == {"status": "approved"}
+    assert seen["headers"] == {"X-Leash-Token": "t0k"} and seen["url"].endswith("/v1/queue/q-0001/approve")
+
+
+def test_failed_review_shows_the_http_status(monkeypatch):  # A22: approve can answer 502/409 (item becomes "failed")
+    import sys
+    import httpx
+    monkeypatch.syspath_prepend(str(Path(APP).parent))
+    import client  # the module dashboard/app.py imports
+    monkeypatch.delenv("LEASH_DASHBOARD_FIXTURES", raising=False)
+    monkeypatch.setattr(client, "get", lambda path, params=None: json.loads(
+        (FX / f"{client.PATHS[path]}.json").read_text(encoding="utf-8")))
+
+    def review(qid, action):
+        req = httpx.Request("POST", "http://gw")
+        raise httpx.HTTPStatusError("bad gateway", request=req, response=httpx.Response(502, request=req))
+
+    monkeypatch.setattr(client, "review", review)
+    at = AppTest.from_file(APP, default_timeout=30).run()
+    at.button(key="approve-q-0001").click().run()
+    assert not at.exception and any("could not approve" in e.value and "HTTP 502" in e.value for e in at.error)
+    sys.modules.pop("client", None)

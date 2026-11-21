@@ -30,6 +30,6 @@ def get(path, params=None):
 
 def review(queue_id, action, reviewer="dashboard", note=""):
     r = httpx.post(f"{base_url()}/v1/queue/{queue_id}/{action}", json={"reviewer": reviewer, "note": note},
-                   timeout=2.0)
+                   headers={"X-Leash-Token": os.environ.get("LEASH_REVIEW_TOKEN", "")}, timeout=2.0)
     r.raise_for_status()
     return r.json()

@@ -156,6 +156,11 @@ def explain(context):
             t = template(context, error="ungrounded")
             t["latency_ms"] = round(r.latency_ms, 1)
             return t
-        return _obj(r.served_by, r.model, r.latency_ms, r.data, "")
+        # The model reads agent-controlled text, so it may only add caution: never milder than the template.
+        t, d = template(context), dict(r.data)
+        d["risk_level"] = max(d["risk_level"], t["risk_level"], key=RISK_LEVELS.index)
+        d["recommended_action"] = max(d["recommended_action"], t["recommended_action"],
+                                      key=["approve", "needs_more_info", "deny"].index)
+        return _obj(r.served_by, r.model, r.latency_ms, d, "")
     except Exception as e:  # noqa: BLE001  explain never raises
         return template(context, error="exception")

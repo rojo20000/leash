@@ -15,7 +15,7 @@ from . import llm, privacy
 REVIEW_NOTE = "\n\n---\nAI draft for clinician review. Not a diagnosis or a treatment decision."
 URGENT_NOTE = ("If this is happening now, follow the clinic's emergency protocol "
                "immediately. Do not wait for this tool.")
-HIDDEN_CHARS = re.compile("[​-‏‪-‮⁠-⁤﻿\U000e0000-\U000e007f]")
+HIDDEN_CHARS = privacy.HIDDEN_CHARS  # defined there so masking can keep these characters
 RANK = {"green": 0, "amber": 1, "red": 2}
 
 

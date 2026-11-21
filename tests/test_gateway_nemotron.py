@@ -33,8 +33,10 @@ def _env(monkeypatch, tmp_path):
 
 def make_gw(tmp_path, name="rt", ehr_client=None):
     ehr_client = ehr_client or httpx.Client(base_url="http://ehr", transport=httpx.MockTransport(_fake_ehr))
-    c = TestClient(create_app(ehr_client=ehr_client, runtime_dir=str(tmp_path / name), policy_path=POLICY))
-    c.rt = tmp_path / name
+    now = [1000.0]  # fake server clock; call() sets it
+    c = TestClient(create_app(ehr_client=ehr_client, runtime_dir=str(tmp_path / name), policy_path=POLICY,
+                              clock=lambda: now[0]))
+    c.rt, c.now = tmp_path / name, now
     return c
 
 
@@ -44,7 +46,8 @@ def gw(tmp_path):
 
 
 def call(gw, tool, args, ts=1000.0, session="s1", call_id=None):
-    body = {"session_id": session, "tool": tool, "args": args, "ts": ts}
+    gw.now[0] = ts
+    body = {"session_id": session, "tool": tool, "args": args}
     if call_id:
         body["call_id"] = call_id
     r = gw.post("/v1/tool-call", json=body)
@@ -145,6 +148,19 @@ def test_content_safety_local_fallback(gw):
     assert d["nemotron"]["content_safety"]["served_by"] == "fallback:local"
     d = call(gw, "send_email", dict(mail, body="See you soon."), ts=2000.0)
     assert d["decision"] == "allow" and d["nemotron"]["content_safety"]["flagged"] is False
+
+
+def test_judge_clear_does_not_remove_local_hold(gw, monkeypatch):  # A8
+    flag(monkeypatch, "content_safety", False)  # the judge answers ok, not flagged
+    mail = {"to": ["pt-0007@patients.example.org"], "subject": "Result", "body": "Your MRN-0000042 is ready."}
+    for body in (mail["body"], "SSN 123-45-6789 on file."):
+        d = call(gw, "send_email", dict(mail, body=body))
+        assert d["decision"] == "escalate" and codes(d) == ["CONTENT_SAFETY_FLAGGED"]
+        cs = d["nemotron"]["content_safety"]
+        assert cs["served_by"] == "replay" and cs["flagged"] is True and cs["categories"] == ["PII/Privacy"]
+    assert not (gw.rt / "email_sink.jsonl").exists()
+    d = call(gw, "send_email", dict(mail, body="See you soon."))
+    assert d["decision"] == "allow" and d["nemotron"]["content_safety"]["categories"] == []
 
 
 def test_remote_flags_only_escalate(gw, monkeypatch):

@@ -35,6 +35,15 @@ def test_policy_order():
     assert ev("send_email", [], [], ["a@Clinic.Example.org"], 0.0) == ("allow", "OK")
 
 
+def test_policy_two_addresses_in_one_recipient_blocked():  # A4
+    p = pol()
+    two = "attacker@outside-clinic.example, frontdesk@clinic.example.org"
+    assert p.evaluate("send_email", [], [], [two], 0.0) == ("block", "EMAIL_DOMAIN_NOT_ALLOWED", "domain '' not allowed")
+    assert p.evaluate("send_email", [], [], ["frontdesk@clinic.example.org\n"], 0.0)[0] == "block"
+    assert p.evaluate("send_email", [], [], ["frontdesk@clinic.example.org"], 0.0)[:2] == ("allow", "OK")
+    assert p.evaluate("send_email", [], [], ["x@Outside-Clinic.example"], 0.0)[2] == "domain 'outside-clinic.example' not allowed"
+
+
 def test_policy_any_resource_checked():
     p = pol()
     assert p.evaluate("read_record", ["Patient", "Condition", "Bad2"], [], [], 0.0) == (

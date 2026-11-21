@@ -40,7 +40,9 @@ REQUESTED = {
 CHAINS = {
     "lightning": [REQUESTED["lightning"], "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
                   "nvidia/nemotron-3.5-super-vl-120b-a12b"],
-    "safety": [REQUESTED["lightning"], GUARD, REQUESTED["safety"]],  # judge mode (round 4): the guard never cites S1/S2
+    # judge mode (round 4). No guard fallback: the guard never cites S1/S2, so its "unsafe" parsed as ok / not
+    # flagged and switched off the gateway's local rule. A failed judge is a failed check.
+    "safety": [REQUESTED["lightning"]],
     "jailbreak": [REQUESTED["lightning"]],  # judge mode (round 3): the guard model ignores a custom injection policy
 }
 _ENV_MODEL = {"lightning": "LEASH_NEMOTRON_LIGHTNING_MODEL", "safety": "LEASH_NEMOTRON_SAFETY_MODEL",
@@ -122,9 +124,11 @@ def _recordings():
 def mode():
     load_dotenv()
     _base_url()
-    m = os.environ.get("LEASH_NEMOTRON", "").lower()
+    m = os.environ.get("LEASH_NEMOTRON", "").strip().lower()
     if m in ("live", "replay", "off"):
         return m
+    if m:  # a typo ("false", "offline") must not fall through to live
+        raise ValueError("LEASH_NEMOTRON must be live, replay or off")
     return "live" if os.environ.get("NVIDIA_API_KEY") else "replay"
 
 

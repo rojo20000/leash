@@ -69,7 +69,8 @@ def act(qid, action):
         st.session_state["flash"] = f"{qid}: {action} done"
         st.rerun()  # refetch so the queue, audit-chain count and feed reflect the review
     except (httpx.HTTPError, OSError) as e:
-        st.error(f"{qid}: could not {action} ({type(e).__name__})")
+        r = getattr(e, "response", None)  # 403: no reviewer token; 502/409: approved but the call failed (now "failed")
+        st.error(f"{qid}: could not {action} ({type(e).__name__}{f', HTTP {r.status_code}' if r is not None else ''})")
 
 
 # ---- sidebar / controls

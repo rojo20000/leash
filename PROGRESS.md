@@ -76,3 +76,9 @@ speedup {'policy': 3.77, 'audit_append': 1.32}
 
 git status --short in the worktree after the run:  M metrics/results.json (timestamps and quick-benchmark timings only)
 ```
+
+## Audit fixes, first batch (branch `audit-fixes`, 2026-11-21 17:15)
+
+14 of 15 approved findings fixed with tests, one commit per finding; A9 was already fixed on `main` by merge `92763c2`. See DECISIONS.md (17:15).
+Checks on the branch after merging `main`: `make check` exit 0 on the Rust core (private build of the extension) and with `LEASH_CORE=py`: `cargo test` 12 passed, `pytest` 174 passed and 3 skipped, demo assertions PASS 1 to 6, `17 allow, 3 block, 0 escalate`, reasoner served from replay. Clinic Assistant suite OK with `python -S` and with the project interpreter (Presidio installed). `scripts/serve.py` run end to end on test ports 18000/18001/18501.
+Not pushed. After merging, run `make rust` once the dashboard servers are stopped.

@@ -80,6 +80,39 @@ def test_mode(monkeypatch):
     assert nm.config()["base_url"] == "http://127.0.0.1:9/v1"
 
 
+def test_mode_rejects_unknown_values(monkeypatch):  # A76: a typo must not mean "live"
+    monkeypatch.setenv("NVIDIA_API_KEY", FAKE)
+    for bad in ("false", "0", "offline"):
+        monkeypatch.setenv("LEASH_NEMOTRON", bad)
+        with pytest.raises(ValueError, match="LEASH_NEMOTRON must be live, replay or off"):
+            nm.mode()
+    monkeypatch.setenv("LEASH_NEMOTRON", "replay ")
+    assert nm.mode() == "replay"
+    monkeypatch.setenv("LEASH_NEMOTRON", "")  # empty = unset: unchanged
+    assert nm.mode() == "live"
+
+
+@pytest.fixture(scope="class", params=["false", "0", "offline", "live", "replay ", "OFF"])
+def outer_mode(request):  # class scope: set before conftest's function-scoped autouse fixture runs
+    mp = pytest.MonkeyPatch()
+    mp.setenv("LEASH_NEMOTRON", request.param)
+    yield request.param
+    mp.undo()
+
+
+class TestPytestGuard:  # A76: conftest.py forces replay for every value except replay/off
+    @pytest.fixture(autouse=True)
+    def env(self):  # replaces the module's env fixture, which would delete LEASH_NEMOTRON
+        yield
+
+    def test_guard(self, outer_mode, monkeypatch, tmp_path):
+        want = outer_mode.strip().lower() if outer_mode.strip().lower() in ("replay", "off") else "replay"
+        assert os.environ["LEASH_NEMOTRON"].strip().lower() == want
+        monkeypatch.setattr(nm, "DOTENV_PATH", tmp_path / "missing.env")
+        monkeypatch.setenv("LEASH_NEMOTRON", "live")  # an opt-in live test can still choose live afterwards
+        assert nm.mode() == "live"
+
+
 def test_live_chat_records_and_hides_key(monkeypatch, tmp_path, caplog, capsys):
     seen = {}
 
@@ -215,7 +248,14 @@ def test_chat_json(monkeypatch):
     assert not r.ok and r.error == "invalid_json" and r.data is None
 
 
-def test_safety_swap_on_404(monkeypatch):
+def test_safety_guard_model_only_when_forced(monkeypatch):  # was test_safety_swap_on_404 (chain fall-through, A75)
+    monkeypatch.setenv("LEASH_NEMOTRON_SAFETY_MODEL", GUARD)
+    live(monkeypatch, lambda req: guard_resp("User Safety: unsafe\nSafety Categories: S1"))
+    r = nm.content_safety("hello")
+    assert r.ok and r.model == GUARD and r.data["flagged"] and r.data["categories"] == ["S1"]
+
+
+def test_safety_main_model_down_is_not_ok(monkeypatch):  # A75: no fall to the guard model, which cannot cite S1/S2
     models = []
 
     def h(req):
@@ -223,12 +263,12 @@ def test_safety_swap_on_404(monkeypatch):
         models.append(m)
         if m == L:
             return httpx.Response(404, json={"detail": "Specified function in account is not found"})
-        return guard_resp("User Safety: unsafe\nSafety Categories: S1")
+        return guard_resp('{"User Safety": "unsafe", "Safety Categories": "PII/Privacy"}')
 
     live(monkeypatch, h)
-    r = nm.content_safety("hello")
-    assert r.ok and r.model == GUARD and r.swapped_from == L and models == [L, GUARD]
-    assert nm.resolve_model("safety")[0] == GUARD
+    r = nm.content_safety("Your MRN-0000042 chart: diabetes, metformin.")
+    assert not r.ok and r.data is None and r.error == "model_unavailable" and r.served_by == "unavailable"
+    assert models == [L]
 
 
 def test_safety_judge_default(monkeypatch):

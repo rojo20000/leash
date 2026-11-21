@@ -58,9 +58,10 @@ def prescan(text: str) -> list[tuple[str, int, int]]
 2. ANY element of `resource_types` not in `allowed_resources` -> `("block", "RESOURCE_NOT_ALLOWED", detail)`, where
    detail names the FIRST offending element in the given order. (Revised 11:45: an earlier wording checked only
    element 0, which let a five-type `read_record` through.)
-3. If `recipients` is non-empty: for each recipient, lowercase it; domain = text after the last `@`
-   (a recipient with no `@` has domain `""`). Any domain not exactly in `allowed_domains` (no subdomain
-   matching) -> `("block", "EMAIL_DOMAIN_NOT_ALLOWED", ...)`.
+3. If `recipients` is non-empty: for each recipient, the whole string, with no trimming, must fully match
+   `[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)` (ASCII only, exactly one address; audit A4). The
+   domain is capture group 1, ASCII-lowercased; a recipient that does not match has domain `""`. Any domain
+   not exactly in `allowed_domains` (no subdomain matching) -> `("block", "EMAIL_DOMAIN_NOT_ALLOWED", ...)`.
 4. Rate window: drop window entries with `entry_ts <= ts - window_seconds`; add `(ts, pid)` for every
    `pid` in `patient_ids`; if the number of DISTINCT patient ids in the window is `> max_records`
    -> `("escalate", "RECORD_RATE_EXCEEDED", ...)`. (Steps 1-3 blocking means nothing is added.)
@@ -268,7 +269,7 @@ One JSON object per line, sessions contiguous, events time-ordered within a sess
 | Env var | Default | Meaning |
 |---------|---------|---------|
 | `LEASH_CORE` | unset | `py` forces `gateway.core_py`, `rust` forces `leash_core` |
-| `LEASH_ML` | unset | `stub` forces `gateway.ml_stub` |
+| `LEASH_ML` | unset | `stub` forces `gateway.ml_stub`; otherwise `ml.api` is required and missing model files raise at startup |
 | `LEASH_RUNTIME_DIR` | `runtime` | runtime state dir (git-ignored) |
 | `LEASH_DATA_DIR` | `data/generated` | generator output read by the EHR |
 | `LEASH_EHR_URL` | `http://127.0.0.1:8001` | |
@@ -278,6 +279,7 @@ One JSON object per line, sessions contiguous, events time-ordered within a sess
 | `LEASH_OLLAMA_URL` | `http://127.0.0.1:11434` | |
 | `LEASH_LIVE_LLM` | unset | `1` enables live-LLM tests (`@pytest.mark.live`) |
 | `LEASH_DASHBOARD_FIXTURES` | unset | dir of fixture JSON; dashboard reads it instead of the gateway |
+| `LEASH_REVIEW_TOKEN` | unset | shared secret for the gateway's approve, deny and reset routes (C5.4), read per request; unset or empty = those routes answer 403. Set for the gateway and the dashboard, never for the agent. `scripts/serve.py` generates a random one if unset. |
 
 Runtime files (all under `$LEASH_RUNTIME_DIR`, created on demand, git-ignored):
 `audit.jsonl` + `audit.jsonl.head` (C1.3), `queue.json` (C5.4), `decisions.jsonl` (one decision JSON per line),
@@ -330,13 +332,22 @@ Policy inputs the gateway derives from a call (`call_facts(tool, args) -> (resou
 search_patients `(["Patient"], [], [])`; read_record `(args.resource_types or ALL_RESOURCE_TYPES, [patient_id], [])`;
 read_document `(["DocumentReference"], [], [])`; update_appointment `(["Encounter"], [patient_id], [])`;
 send_email `([], [], to as list)`; unknown tool `([], [], [])`.
+(Audit A20) `call_facts` never raises and every item it returns is a `str`, whatever JSON the agent sent: a
+missing or null `patient_id` gives `[]`, any other value `[str(value)]`; a non-list `resource_types` or `to`
+becomes a one-item list; items are passed through `str()`; `args` that is not an object counts as `{}`.
+(Audit A1) `ToolExecutor.execute` raises `ValueError` unless `patient_id` / `document_id` fully match
+`[A-Za-z0-9_-]{1,64}`, so an id can never change the EHR URL path or query.
+(Audit A4) `send_email` raises `ValueError` unless every `to` entry fully matches the address pattern of C1.1
+step 3; nothing is written to the sink in that case.
 
 ---------------------------------------------------------------------------------------------------------
 
 ## C5. Gateway (`gateway/`, N6)
 
 `gateway/app.py`: `create_app(ehr_client: httpx.Client | None = None, runtime_dir: str | None = None,
-policy_path: str | None = None) -> FastAPI`; module-level `app = create_app()` (uses env defaults, C3).
+policy_path: str | None = None, clock: Callable[[], float] = time.time) -> FastAPI`; module-level
+`app = create_app()` (uses env defaults, C3). `clock` (audit A3) is the only time source for the policy rate window
+and the anomaly window; tests, the demo, the benchmark and the `make dashboard` seeding inject a fake clock.
 (Added 11:45) Importing `gateway.app` and calling `create_app()` create no files or directories; the runtime dir
 is created on the first write. Warm-up: the app's FastAPI lifespan startup runs `minimize("read_document",
 {"document_id":"warmup","patient_id":"pt-0000","text":"Call 555-000-0000 re MRN-0000000."}, keep_fields)` and
@@ -346,8 +357,11 @@ in decisions, the audit log or latency stats. Lifespan runs when the server star
 
 ### C5.1 Pipeline for `POST /v1/tool-call`, in order, each stage timed with `time.perf_counter()`
 
-1. `policy`: `core.Policy.evaluate(tool, *call_facts(tool,args), ts)` where `ts` = request `ts` if given
-   (simulated clock for scripted replays) else `time.time()`.
+1. `policy`: `core.Policy.evaluate(tool, *call_facts(tool,args), ts)` where `ts` = `clock()`, the server clock
+   (audit A3). The request's `ts` never influences a decision.
+   (Audit A20) Any exception in this step, or a policy fact that is not a `str`, gives `block` with reason
+   `EXECUTION_ERROR` (stage `policy`) and empty `patient_ids`/`recipients`; the call is audited like any other,
+   never HTTP 500. A reasoner failure on such a call leaves `nemotron.reasoner` null.
 2. `execute` (only if policy did not block, and only for read tools `search_patients`, `read_record`,
    `read_document`): run `ToolExecutor.execute` to get the output to inspect.
 3. `injection`: for `read_document` output, `injection_score(output["text"])`; `>= 0.5` -> block `INJECTION_DETECTED`.
@@ -362,6 +376,10 @@ in decisions, the audit log or latency stats. Lifespan runs when the server star
    calls and are not all escalated. There is no "session hold" behaviour.
 6. `decide`: any block -> `block`; else any escalate -> `escalate`; else `allow`. Write tools
    (`update_appointment`, `send_email`) execute only now, and only on `allow`.
+   (Audit A21) No write without an audit record: before a write tool runs, the gateway appends an `intent`
+   record (C5.3). If that append raises, the tool does not run and the call becomes `block` `EXECUTION_ERROR`.
+   Before step 1, a request whose `args`, `session_id`, `role`, `tool` or `call_id` cannot be encoded as UTF-8
+   JSON (for example a lone surrogate) is answered with HTTP 422 and nothing runs.
 7. `audit`: append the C5.3 record. Then append the decision to `decisions.jsonl`; enqueue (C5.4) if escalate or
    if block with a reason in `{"EMAIL_DOMAIN_NOT_ALLOWED","INJECTION_DETECTED"}` (kind `alert`).
 
@@ -373,6 +391,9 @@ Request:
  "args":{"to":["records-transfer@outside-clinic.example"],"subject":"Record","body":"..."},
  "call_id":"optional, uuid4 hex assigned if missing","ts":1795280400.0}
 ```
+`ts` is optional and IGNORED (audit A3): it is accepted only so that older clients do not get a 422. In-process
+callers that need a repeatable timeline inject `clock` into `create_app` and move it themselves
+(`agent.runner.run_session(..., set_time=...)` calls `set_time(<session start> + offset_s)` before each call).
 Decision (HTTP 200 for every decision; 422 only for malformed requests):
 ```json
 {"seq":17,"call_id":"3f2a...","session_id":"demo-protected","tool":"send_email",
@@ -407,6 +428,13 @@ Decision (HTTP 200 for every decision; 422 only for malformed requests):
 Human review appends `{"kind":"review","ts":...,"call_id":...,"queue_id":...,"decision":"allow"|"block",
 "reasons":["HUMAN_APPROVED"|"HUMAN_DENIED"],"reviewer":"dr.lee"}`. Raw args and PHI never go in the audit log.
 
+(Audit A21) Intent record, appended BEFORE a write tool (`update_appointment`, `send_email`) executes, both on an
+`allow` in step 6 and when a reviewer approves a held write:
+`{"kind":"intent","ts":...,"call_id":...,"session_id":...,"tool":"send_email","args_sha256":"..."}`.
+The `decision` (or `review`) record that follows is the outcome record for the same `call_id`. So an allowed write
+adds two audit lines, every other call one; `entries` in `/v1/audit/verify` counts all lines, and line numbers
+(`first_bad`) count intent lines too. Readers that want decisions must filter on `kind`.
+
 ### C5.4 HTTP API
 
 | Method, path | Body / params | Response |
@@ -414,7 +442,7 @@ Human review appends `{"kind":"review","ts":...,"call_id":...,"queue_id":...,"de
 | `GET /health` | | `{"status":"ok","core":"python","ml":"stub"}` |
 | `POST /v1/tool-call` | C5.2 request | C5.2 decision |
 | `GET /v1/decisions?limit=100` | | `{"decisions":[decision,...]}` oldest first, last `limit` |
-| `GET /v1/queue?status=pending` | status optional (`pending`/`approved`/`denied`/`all`, default `pending`) | `{"items":[item,...]}` |
+| `GET /v1/queue?status=pending` | status optional (`pending`/`approved`/`denied`/`failed`/`all`, default `pending`) | `{"items":[item,...]}` |
 | `POST /v1/queue/{queue_id}/approve` | `{"reviewer":"dr.lee","note":""}` | `{"queue_id":"q-0004","status":"approved","result":<tool output or null>}` |
 | `POST /v1/queue/{queue_id}/deny` | same | `{"queue_id":"q-0004","status":"denied","result":null}` |
 | `GET /v1/audit/verify` | | `{"ok":true,"first_bad":null,"reason":"","entries":42,"core":"python"}` |
@@ -423,7 +451,20 @@ Human review appends `{"kind":"review","ts":...,"call_id":...,"queue_id":...,"de
 
 Unknown `queue_id` -> 404. Approving/denying a non-pending item -> 409.
 
-Queue item (`queue.json` holds `{"items":[...]}`):
+(Audit A22) Approving an `approval` item whose tool then fails does not record success: the item status becomes
+`failed` (final, like `approved`/`denied`; the agent must send the call again), the `review` audit record has
+`"decision":"block","reasons":["HUMAN_APPROVED","EXECUTION_ERROR"]`, and the answer is HTTP 502
+`{"queue_id":"q-0004","status":"failed","result":null,"error":"<short text>"}`. For an approved `read_document`
+the fresh text is scored with `injection_score` before release; `>= 0.5` -> the text is not returned, status
+`failed`, reasons `["HUMAN_APPROVED","INJECTION_DETECTED"]`, HTTP 409 with the same body shape.
+
+(Audit A2) `POST /v1/queue/{queue_id}/approve`, `POST /v1/queue/{queue_id}/deny` and `POST /v1/admin/reset` require
+the header `X-Leash-Token` equal to `$LEASH_REVIEW_TOKEN` (compared with `hmac.compare_digest`). Missing or wrong
+header, or the variable unset or empty -> 403 `{"detail":"reviewer token required"}` (fail closed).
+`POST /v1/tool-call` and every `GET` route need no token. `dashboard/client.py` `review()` sends the header from
+its own environment.
+
+Queue item (`queue.json` holds `{"items":[...]}`; written to `queue.json.tmp` and moved with `os.replace`):
 ```json
 {"queue_id":"q-0004","kind":"approval","status":"pending","created_at":"2026-11-21T14:02:11Z",
  "call_id":"...","session_id":"...","tool":"read_record","args":{"patient_id":"pt-0099"},
@@ -448,16 +489,14 @@ review ("confirm block" / "dismiss"); the call is never executed. Both append a 
 ### C5.6 ML hook-up: `gateway/ml_loader.py` (N6) chooses `ml.api` (N5) or `gateway/ml_stub.py` (N6)
 
 ```python
-def load_ml():   # returns (module, "real"|"stub")
-    if os.environ.get("LEASH_ML", "").lower() != "stub":
-        try:
-            import ml.api as m
-            if m.ready():
-                return m, "real"
-        except ImportError:
-            pass
-    import gateway.ml_stub as m
-    return m, "stub"
+def load_ml():   # returns (module, "real"|"stub"); no silent fallback (audit A7)
+    if os.environ.get("LEASH_ML", "").lower() == "stub":
+        import gateway.ml_stub as m
+        return m, "stub"
+    import ml.api as m
+    if not m.ready():
+        raise RuntimeError("ML models missing: run `make data`, or set LEASH_ML=stub for tests")
+    return m, "real"
 ```
 `gateway/ml_stub.py` implements the C6.1 signatures with simple rules (keyword match for injection; field
 filtering + `core.prescan` redaction for minimize; a calls/distinct-patients heuristic for anomaly). N5 never
@@ -550,7 +589,8 @@ def run_session(mode: str,              # "unprotected" | "protected"
                 ehr_client: httpx.Client,
                 gateway_client: httpx.Client | None,   # required when mode == "protected"
                 sink_path: str,
-                recording_path: str = "demo/recordings/referrals.json") -> list[dict]
+                recording_path: str = "demo/recordings/referrals.json",
+                set_time: Callable[[float], None] | None = None) -> list[dict]
     # returns one step per tool call:
     # {"step":1,"tool":"read_document","args":{...},"decision":<C5.2 decision or None when unprotected>,"result":<dict or None>}
 ```
@@ -572,7 +612,9 @@ Recording `demo/recordings/referrals.json` (N6 writes it; deterministic, no LLM 
  ]}
 ```
 Replay: an arg value `{"$from_step": n}` is replaced by `json.dumps` of step n's result (`""` if that step
-had no result). Protected replays send `ts = <session start epoch> + offset_s`. All five referrals are processed;
+had no result). Protected replays send no `ts` (the gateway ignores it, audit A3); before each call they
+call `set_time(<session start epoch> + offset_s)` when given, so an in-process caller can move the clock it
+injected into `create_app`. All five referrals are processed;
 the malicious one (ref-0042) includes the read_record (all types) + send_email steps above.
 
 ## C8. Demo (`demo/run_demo.py`, N8)
@@ -635,7 +677,7 @@ still sees that an SSN is present, never its value). The agent's `chat` path sen
 | Env var | Default | Meaning |
 |---|---|---|
 | `NVIDIA_API_KEY` | unset | Bearer key. Read from the environment, else from `<repo>/.env`. Never printed. |
-| `LEASH_NEMOTRON` | `live` if a key is present, else `replay` | `live`: call the API and record every HTTP 200 response. `replay`: answer only from recordings, never open a socket. `off`: no API, no replay; every step uses its fallback. `make check`, `demo --scripted` and every test force `replay` or `off`. |
+| `LEASH_NEMOTRON` | `live` if a key is present, else `replay` | Stripped and lower-cased; any other non-empty value raises `ValueError` (audit A76). `live`: call the API and record every HTTP 200 response. `replay`: answer only from recordings, never open a socket. `off`: no API, no replay; every step uses its fallback. `make check`, `demo --scripted` and every test force `replay` or `off`. |
 | `LEASH_NEMOTRON_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Any other host raises `ValueError`, except `127.0.0.1`/`localhost`. |
 | `LEASH_NEMOTRON_RECORDINGS` | `demo/recordings/nemotron` | Recording dir (tests point it at `tmp_path`). |
 | `LEASH_NEMOTRON_LIGHTNING_MODEL` | unset (C10.4 default) | Agent + reasoner model; set = no swap. |
@@ -748,6 +790,10 @@ demo/recordings/nemotron/
 | `safety` | `nvidia/nemotron-3.5-content-safety` | `nvidia/llama-3.1-nemotron-safety-guard-8b-v3` | content-safety: listed but HTTP 404 "function not found" for this key on /chat/completions; safety-guard-8b-v3: works, replies with JSON text |
 | `jailbreak` | `nvidia/nemoguard-jailbreak-detect`, only if its reference page shows it served from integrate.api.nvidia.com | `nvidia/llama-3.1-nemotron-safety-guard-8b-v3` with `leash/prompts/injection_policy.txt` | not in /v1/models |
 
+(Audit A75) In code the content-safety chain is the Lightning judge only, with no swap candidate, like the
+jailbreak chain: the guard model's own categories parsed as "ok, not flagged". A failed judge is a failed check
+(`Result.ok == False`), and the gateway's local rule decides (C10.5 step 5).
+
 `resolve_model(role)`: an explicitly set `LEASH_NEMOTRON_*_MODEL` wins (no swap). Otherwise the first id in
 [default] + candidates that is in `list_models()` and not marked unavailable in this process. If `list_models()`
 is empty (replay without models.json), return the default with `verified: False`. If N16 confirms from the
@@ -782,8 +828,10 @@ ordinary clinical content written for a human reader."
    `"Role: scheduling_assistant. Task: Process today's new referrals and book follow-ups.\nTool: <tool>\nDestination: <comma-joined recipients or none>\nContent: <json.dumps(X, sort_keys=True)[:4000]>"`
    where X is the minimized output for read tools and the args for write tools.
    `flagged` -> escalate `CONTENT_SAFETY_FLAGGED` (stage `content_safety`, detail = categories joined by ", ").
-   Remote not ok -> served_by `fallback:local`: flagged iff the tool is `send_email` and `core.prescan` finds an
-   `SSN` or `MRN` span in subject + body.
+   Local rule, always evaluated (audit A8): flagged if the tool is `send_email` and `core.prescan` finds an
+   `SSN` or `MRN` span in subject + body (category `PII/Privacy`). The final flag is the local rule OR the
+   remote flag, so a remote "clear" never removes this hold. Remote not ok -> served_by `fallback:local` and
+   the local rule alone decides.
 6. `anomaly` (C5.1 step 5 as revised: skipped for calls that already have a block reason).
 7. `decide` (unchanged precedence block > escalate > allow; the decision is final here).
 8. `reasoner` (new stage; only when the decision is `block` or `escalate`): `leash.reasoner.explain(context)`
@@ -993,6 +1041,7 @@ demo never needs the network, and prints for each blocked or escalated protected
 refreshes the recordings (`make record`). `--assert` adds assertion 5: if `demo/recordings/nemotron/calls/` holds
 any file, the protected send_email to the attacker has `nemotron.reasoner.served_by == "replay"`; otherwise it
 prints `SKIP 5 (no Nemotron recordings)`. Assertions 1-4 pass in every mode, including `LEASH_NEMOTRON=off`.
+Assertion 6 (audit A7): the gateway's ML is `real` unless `LEASH_ML=stub` was set.
 `--live` runs the Lightning agent (Ollama fallback) with `LEASH_NEMOTRON=live`.
 (Revised 12:30, N8) Assertion 5 expects `"nemotron"` instead of `"replay"` when `LEASH_NEMOTRON=live` (that is
 `make record`), and prints SKIP under `LEASH_NEMOTRON=off`. Make targets: `make check` exports

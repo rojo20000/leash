@@ -1,6 +1,7 @@
 """Clinical agent tools (C4.2), shared by the unprotected agent and the gateway executor."""
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 import httpx
@@ -31,20 +32,30 @@ TOOL_SCHEMAS = [
 ]
 
 
+def _strs(v):
+    if v is None:
+        return []
+    return [str(x) for x in v] if isinstance(v, (list, tuple)) else [str(v)]
+
+
 def call_facts(tool, args):
-    """Policy inputs for a call: (resource_types, patient_ids, recipients)."""
-    args = args or {}
+    """Policy inputs for a call: (resource_types, patient_ids, recipients).
+
+    Never raises; every item is a str whatever JSON the agent sent, so the policy cores never see other types (A20).
+    """
+    args = args if isinstance(args, dict) else {}
+    pid = args.get("patient_id")
+    pids = [] if pid is None else [str(pid)]
     if tool == "search_patients":
         return ["Patient"], [], []
     if tool == "read_record":
-        return list(args.get("resource_types") or ALL_RESOURCE_TYPES), [args.get("patient_id")], []
+        return _strs(args.get("resource_types") or ALL_RESOURCE_TYPES), pids, []
     if tool == "read_document":
         return ["DocumentReference"], [], []
     if tool == "update_appointment":
-        return ["Encounter"], [args.get("patient_id")], []
+        return ["Encounter"], pids, []
     if tool == "send_email":
-        to = args.get("to")
-        return [], [], [to] if isinstance(to, str) else list(to or [])
+        return [], [], _strs(args.get("to"))
     return [], [], []
 
 
@@ -52,6 +63,19 @@ def _need(args, *keys):
     for k in keys:
         if not isinstance(args.get(k), str) or not args[k]:
             raise ValueError(f"missing or bad arg: {k}")
+
+
+_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")  # no dot: "." and ".." are URL path segments
+# one plain address per recipient, untrimmed; the policy check in both cores uses the same pattern (audit A4)
+_ADDR = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
+
+
+def _need_id(args, key):
+    """An id that is safe to put in an EHR URL path (audit A1)."""
+    v = args.get(key)
+    if not isinstance(v, str) or not _ID.fullmatch(v):
+        raise ValueError(f"missing or bad arg: {key}")
+    return v
 
 
 class ToolExecutor:
@@ -77,8 +101,7 @@ class ToolExecutor:
             b = self._get("/fhir/Patient", name=args.get("name"), birthdate=args.get("birthdate"))
             return {"patients": [e["resource"] for e in b.get("entry", [])]}
         if tool == "read_record":
-            _need(args, "patient_id")
-            pid = args["patient_id"]
+            pid = _need_id(args, "patient_id")
             types = args.get("resource_types") or ALL_RESOURCE_TYPES
             bad = [t for t in types if t not in ALL_RESOURCE_TYPES]
             if bad:
@@ -91,10 +114,10 @@ class ToolExecutor:
                     res[t] = [e["resource"] for e in self._get(f"/fhir/{t}", patient=pid).get("entry", [])]
             return {"patient_id": pid, "resources": res}
         if tool == "read_document":
-            _need(args, "document_id")
-            return self._get(f"/fhir/DocumentReference/{args['document_id']}/text")
+            return self._get(f"/fhir/DocumentReference/{_need_id(args, 'document_id')}/text")
         if tool == "update_appointment":
-            _need(args, "patient_id", "start", "reason")
+            _need_id(args, "patient_id")
+            _need(args, "start", "reason")
             r = self.ehr.post("/fhir/Encounter", json={k: args[k] for k in ("patient_id", "start", "reason")})
             if r.status_code >= 400:
                 raise ValueError(f"EHR {r.status_code} creating encounter")
@@ -103,7 +126,8 @@ class ToolExecutor:
             _need(args, "subject")
             to = args.get("to")
             to = [to] if isinstance(to, str) else to
-            if not to or not all(isinstance(t, str) for t in to) or not isinstance(args.get("body"), str):
+            if (not to or not all(isinstance(t, str) and _ADDR.fullmatch(t) for t in to)
+                    or not isinstance(args.get("body"), str)):
                 raise ValueError("bad args for send_email")
             mid = self._next_message_id()
             line = {"message_id": mid, "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
