@@ -55,3 +55,7 @@ dashboard: data
 
 preflight:
 	$(PY) scripts/preflight.py
+
+# Clinic Assistant (clinic-assistant/, standard library only): its own unittest suite. Not part of make check.
+clinic-check:
+	cd clinic-assistant && MOCK_LLM=1 python -m unittest -v

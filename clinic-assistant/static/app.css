@@ -346,3 +346,12 @@ dialog[open] { animation: rise 180ms var(--ease-out); }
   .spinner { animation-duration: 1.8s; }
 }
 .record-title { font-size: 22px; line-height: 1.25; }
+
+/* Leash tab */
+.leash-results { list-style: none; margin: 12px 0; padding: 0; border-top: 1px solid var(--rule); }
+.leash-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.leash-pre { max-height: 280px; overflow: auto; padding: 10px; background: var(--shade); border: 1px solid var(--rule); border-radius: 6px; font-size: 12.5px; }
+.leash-box { margin-top: 12px; padding: 4px 14px 12px; border: 1px solid var(--rule-2); border-left-width: 4px; border-radius: 6px; background: var(--sheet); }
+.leash-box.blocked { border-color: var(--red); background: var(--red-tint); }
+.leash-box.wait { border-color: var(--amber); background: var(--amber-tint); }
+#leash-error:not(:empty) { padding: 10px 12px; border: 1px solid var(--red); border-left-width: 4px; border-radius: 6px; background: var(--red-tint); font-weight: 600; }

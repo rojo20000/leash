@@ -1065,3 +1065,207 @@ Python 3.8+ standard library only. No imports from the Leash environment (no num
 Never write to `clinic-assistant/data/`: tests and experiments use fresh temp dirs (`App(data_dir=...)`).
 Everything local: host 127.0.0.1, the local `model.ollama_url`, no cloud fallback, no external scripts in `static/`.
 The store holds masked text only. Synthetic data only.
+
+---------------------------------------------------------------------------------------------------------
+
+## C12. Clinic Assistant as a Leash client (integrated mode) (added 16:15, N23; graph/MISSION.md ADDENDUM 3)
+
+Design: Sal Jimenez's note `clinic-assistant/handoff/LEASH_OVERSEER_HANDOFF.md`, cut to the smallest end-to-end slice.
+**Leash is not changed**: gateway, Rust core, role policy, recordings, dashboard and `make check` stay exactly as they
+are. Everything below is built inside `clinic-assistant/` (paths relative to it), plus the root `Makefile` target
+`clinic-check` and one README section. The C11.3 rules apply unchanged.
+
+### C12.1 Scope and the one-policy limit
+- Leash's prototype enforces a single role policy, `policies/scheduling_assistant.toml` (tools search_patients,
+  read_record, read_document, update_appointment, send_email; resources Patient, Encounter, DocumentReference; rate
+  10 distinct patients per 300 s, one window shared by all sessions). **Every Clinic Assistant role is therefore sent
+  to Leash as `"role": "scheduling_assistant"`.** A per-role clinician policy (and per-role field filter) is future work.
+- This is what makes the demo honest: a clinician who asks Leash for the **full chart** (all five resource types)
+  gets a real policy block (`RESOURCE_NOT_ALLOWED`) with Leash's reasoner explanation; the **scheduling view** (the
+  three allowed types) gets a real minimized record.
+- In integrated mode Clinic Assistant offers exactly two gateway actions to a signed-in user with `view_patients`
+  (clinician, nurse, clinical_lead): search Leash's patients (`search_patients`) and open one (`read_record`).
+  Records come from Leash's mock EHR (`pt-0001`..`pt-0200`) through the gateway. Clinic Assistant's own
+  `patients.json`, Patients tab, chat, schedule and every other feature are unchanged and keep using local data.
+- Not in this slice: sending Leash-returned records to the local model (so no masking/note-scan step on them),
+  `read_document` and the injected-document attack beat (that beat stays Leash's scripted demo; `syn-003` stays
+  standalone-only), write tools, docs beyond one README section.
+- Observed at integration (16:26): against the live gateway with Leash's real behaviour model (anomaly threshold 0.5):
+  a lone patient search scores 0.870 and is held for review; a search followed by opening a record scores 0.583 and is
+  held; a second search-then-open scores 0.635 and is held; opening a record with no search in the previous 60 seconds
+  scores 0.186 and is allowed, returning the minimized record; a full-chart request is blocked by policy
+  (`RESOURCE_NOT_ALLOWED`) before the behaviour check runs. The model was trained on a scheduling agent's sessions, where
+  searches are rare. Approving a held call in the Leash dashboard runs it in Leash and does not return the record to
+  Clinic Assistant.
+
+### C12.2 Switch (`config/policy.json` section `leash`, every key with a `_comment`)
+```json
+"leash": {"_comment": "Integrated mode: patient search/open go through the Leash gateway. Off by default.",
+  "enabled": false, "gateway_url": "http://127.0.0.1:8000", "timeout_seconds": 10,
+  "dashboard_url": "http://127.0.0.1:8501"}
+```
+plus `_enabled`, `_gateway_url`, `_timeout_seconds`, `_dashboard_url` comment keys (same style as `vectors`).
+Integrated mode is on iff `policy["leash"]["enabled"] is True` **or** env `CLINIC_LEASH=1`, evaluated per request by
+`leash_client.enabled(policy)`. One run with it on, without editing the committed file:
+`CLINIC_LEASH=1 MOCK_LLM=1 python run.py`. The committed file keeps `"enabled": false`.
+
+### C12.3 Client (`app/leash_client.py`, new; standard library only)
+```python
+LEASH_ROLE = "scheduling_assistant"          # C12.1: the only policy Leash has
+SCHEDULING_TYPES = ["Patient", "Encounter", "DocumentReference"]
+FULL_TYPES = ["Patient", "Condition", "MedicationRequest", "Encounter", "DocumentReference"]
+class LeashError(Exception): ...            # message is short and has no record contents
+def enabled(policy: dict) -> bool
+def tool_call(policy: dict, tool: str, args: dict, session_id: str, call_id: str) -> dict   # the C5.2 decision
+```
+`enabled(policy)` = `policy.get("leash", {}).get("enabled") is True or os.environ.get("CLINIC_LEASH") == "1"`.
+`tool_call` reads only `policy["leash"]["gateway_url"]` and `policy["leash"].get("timeout_seconds", 10)`; it does not
+check `enabled` (the caller does). The body it sends is
+`{"session_id": session_id, "role": LEASH_ROLE, "tool": tool, "args": args, "call_id": call_id}`.
+`LeashError` messages are exactly one of: `"Refusing non-local Leash gateway"`, `"unreachable (<exception class
+name>)"`, `"HTTP <status>"`, `"bad response"`, `"call_id mismatch"`.
+`tool_call`: URL = `policy["leash"]["gateway_url"].rstrip("/") + "/v1/tool-call"`. First `llm._assert_local(url)`
+(hostname in `llm.LOCAL_HOSTS`, else `RuntimeError`), re-raised as `LeashError("Refusing non-local Leash gateway")`
+before any socket is opened. Opener = `urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())`
+where `NoRedirect(urllib.request.HTTPRedirectHandler)` returns `None` from `redirect_request`, so no proxy and no
+redirect can take the request off the machine. `POST`, `Content-Type: application/json`, timeout
+`policy["leash"]["timeout_seconds"]`. Raises `LeashError` on: connection error or timeout, any HTTP status other than
+200, a body that is not a JSON object, `decision` not in `allow|block|escalate`, or a returned `call_id` different
+from the one sent. Nothing from the Leash Python environment is imported.
+
+Request body (C5.2), exactly:
+```json
+{"session_id":"clinic-assistant:dr_lee","role":"scheduling_assistant","tool":"read_record",
+ "args":{"patient_id":"pt-0042","resource_types":["Patient","Encounter","DocumentReference"]},
+ "call_id":"<uuid.uuid4().hex, generated by Clinic Assistant>"}
+```
+- `session_id` = `"clinic-assistant:" + <signed-in username>`. No `ts` (the gateway uses its own clock).
+- `search_patients`: `args = {"name": q}` (q stripped, 1..80 characters).
+- `read_record`: scheduling view `{"patient_id": pid, "resource_types": SCHEDULING_TYPES}`; full chart
+  `{"patient_id": pid, "resource_types": FULL_TYPES}`. `pid` must match `^pt-\d{4}$`.
+
+Decision fields read (C5.2, C10.7): `call_id`, `decision`, `reasons` (`code`, `stage`, `detail`), `result`,
+`redactions`, `queue_id`, and `nemotron.reasoner` (`explanation`, `risk_level`, `policy_rule_ids`,
+`recommended_action`, `served_by`). The reasoner may be `served_by: "fallback:template"` in replay mode, and is
+null or absent on allow; `nemotron` itself may be absent. Unknown extra fields are ignored.
+
+### C12.4 Endpoints Clinic Assistant exposes to its own UI (`app/server.py`)
+`server.py` adds one top-level import, `from . import leash_client`, and uses only `leash_client.enabled`,
+`leash_client.tool_call`, `leash_client.LeashError`, `leash_client.SCHEDULING_TYPES`, `leash_client.FULL_TYPES` and
+`leash_client.LEASH_ROLE`. Two new `App` methods:
+```python
+def leash_status(self) -> dict      # {"enabled": leash_client.enabled(self.policy),
+                                    #  "dashboard_url": self.policy.get("leash", {}).get("dashboard_url", "http://127.0.0.1:8501")}
+def leash_call(self, sess: dict, tool: str, args: dict, view: str | None = None,
+               patient_id: str | None = None) -> tuple[int, dict]   # (200, decision body) or (502, unavailable body); writes the C12.6 entry
+```
+`leash_call` generates `call_id = uuid.uuid4().hex`, uses `session_id = "clinic-assistant:" + sess["user"]`, calls
+`tool_call`, maps the decision to the 200 body below, or catches `LeashError` and returns the 502 body; it writes
+exactly one audit entry either way. The handler does the checks in the table, then builds `args` (C12.3) and calls it.
+
+| Method, path | Body | Checks, in order |
+|---|---|---|
+| `GET /api/me` | | gains `"leash": {"enabled": bool, "dashboard_url": str}` (additive, always present) |
+| `POST /api/leash/search` | `{"q": "smith"}` | same-origin (403), signed in (401), `view_patients` (403), mode on (else 404 `{"error":"Integrated mode is off."}`), q 1..80 chars after strip (400) |
+| `POST /api/leash/open` | `{"patient_id": "pt-0042", "view": "scheduling"}` | the same; `patient_id` pattern and `view` in `scheduling\|full` (400) |
+
+Response for a decision, HTTP 200:
+```json
+{"state":"allow","call_id":"<32 hex>","tool":"read_record","view":"scheduling","patient_id":"pt-0042",
+ "reasons":[{"code":"OK","stage":"policy","detail":""}],
+ "result":{"patient_id":"pt-0042","resources":{"Patient":[...],"Encounter":[...],"DocumentReference":[...]}},
+ "redactions":[{"path":"resources.Patient[0].address","kind":"FIELD","source":"policy"}],
+ "queue_id":null,"reasoner":null,"dashboard_url":"http://127.0.0.1:8501"}
+```
+`state` = the gateway's `decision` (`allow|block|escalate`); `view` and `patient_id` are null for search; `result`
+is the decision's `result` on allow, else null; `reasoner` = the five reasoner fields listed in C12.3, or null.
+Gateway unreachable, non-200, malformed, `call_id` mismatch or a non-local URL: HTTP **502**
+`{"state":"unavailable","call_id":"<32 hex>","error":"Leash gateway unavailable: <short reason>. Nothing was shown from Clinic Assistant's own records."}`.
+**No fallback** to `patients.json` in any case.
+
+### C12.5 UI (`static/index.html`, `static/app.js`, optionally a few lines of `static/app.css`)
+New tab button `<button id="tab-btn-leash" data-tab="leash" data-perm="view_patients">Leash</button>` right after
+Patients; right after the existing `data-perm` loop,
+`if (!(me.leash && me.leash.enabled)) $("tab-btn-leash").hidden = true;` (the only mode gate). New section
+`<section id="tab-leash" class="tab page" hidden>` holding: the note "Integrated mode. Records come from Leash's
+synthetic EHR through the Leash gateway. Leash enforces one role policy (scheduling_assistant) for every Clinic
+Assistant role, so a full-chart request is blocked by design."; form `#leash-search-form` with input `#leash-q` and a submit button; list `#leash-results` (one
+row per patient: name from `name[0].given` + `name[0].family`, the id, and buttons "Scheduling view" and "Full
+chart (Leash will block)"); panel `#leash-result`; error line `#leash-error`. All text through `textContent`, no
+innerHTML, no external scripts. Every decision state shows "Request id: <call_id>".
+- **allow**: green "Allowed by Leash" + the view label; per resource type in `result.resources` a heading with the
+  count and a `<pre>` of the JSON; a "Removed by Leash" list of `redactions` (`path`, `kind`, `source`), or "Nothing
+  removed". For search, allow fills `#leash-results` from `result.patients`.
+- **block**: red "Blocked by Leash"; each reason as `code (stage): detail`; a box "Leash's explanation (advisory: a
+  reviewer makes the final call)" with explanation, risk level, recommended action, rule ids and served_by.
+- **escalate**: amber "Waiting for review in Leash"; the queue id; "Approve or deny it in the Leash dashboard at
+  <dashboard_url>" (a link, `target="_blank" rel="noopener"`); reasons and reasoner as for block. Clinic Assistant
+  creates no review item of its own.
+- **unavailable** (502): `#leash-error` shows the `error` text and `#leash-result` is cleared.
+Reaching each live: allow = scheduling view of any patient; block = full chart; escalate = scheduling view of 11
+distinct patients within 300 s (`RECORD_RATE_EXCEEDED`; the window is shared by all sessions); unavailable = gateway stopped.
+
+### C12.6 Audit and request-id linking
+Each `/api/leash/*` call that passes validation writes exactly one entry to Clinic Assistant's own `audit.jsonl`:
+`app.audit.write("leash_tool_call", sess["user"], call_id=..., tool=..., view=..., patient_id=..., decision=...,
+reasons=[...], queue_id=..., role_sent="scheduling_assistant", session_id=..., results=..., error=...)` where
+`decision` is `allow|block|escalate|unavailable`, `reasons` is the list of reason codes only, `results` is the
+patient count for a search allow (else null) and `error` is the short `LeashError` text for unavailable (else "").
+Never the search text, record contents, redaction values or the reasoner explanation. Leash writes its own C5.3
+record with the same `call_id`, also visible in `GET /v1/decisions`. Neither side writes the other's files.
+
+### C12.7 Stub gateway (`tests/stub_gateway.py`, owned by N23a; imported by N23a and N23b tests)
+Standard library only; imports nothing from `app`.
+```python
+class StubGateway:
+    def __init__(self, mode: str = "allow"): ...  # starts ThreadingHTTPServer(("127.0.0.1", 0)) in a daemon thread
+    url: str             # "http://127.0.0.1:<ephemeral port>"
+    mode: str            # set any time: "allow" | "block" | "escalate" | "http500" | "wrong_call_id" | "not_json"
+    requests: list[dict] # every parsed POST /v1/tool-call body, in arrival order
+    def stop(self) -> None   # shutdown() + server_close(); idempotent; afterwards url refuses connections
+```
+Usage: `gw = StubGateway(); self.addCleanup(gw.stop)`; then `gw.mode = "block"`. It silences `log_message`, answers
+only `POST /v1/tool-call` (anything else 404), and every decision echoes the request's `call_id`, `session_id` and
+`tool` (`wrong_call_id` returns `"call_id": "0" * 32`; `http500` returns status 500 `{"detail":"stub error"}`;
+`not_json` returns status 200 body `not json`). Every decision also carries `"seq": 1`, `"scores": {"injection":
+null, "anomaly": null}`, `"latency_ms": {"policy": 0.01, "total": 0.1}`, `"audit_hash": "stub"`, `"ts":
+"2026-11-21T16:30:00.000000Z"`, `"core": "stub"`, `"ml": "stub"`. Canned decisions:
+- `allow`, tool `search_patients`: `reasons [{"code":"OK","stage":"policy","detail":""}]`, `result {"patients":
+  [{"resourceType":"Patient","id":"pt-0001","name":[{"given":["Ana"],"family":"Stubson"}],"telecom":[]},
+  {"resourceType":"Patient","id":"pt-0002","name":[{"given":["Ben"],"family":"Stubson"}],"telecom":[]}]}`,
+  `redactions []`, `queue_id null`, `nemotron {"mode":"replay","jailbreak":null,"nemoguard":null,"content_safety":null,"reasoner":null}`.
+- `allow`, tool `read_record`: `result {"patient_id": <args.patient_id>, "resources": {t: [] for t in
+  args.resource_types}}` with `resources.Patient = [{"resourceType":"Patient","id":<pid>,"name":[{"given":["Ana"],
+  "family":"Stubson"}],"telecom":[]}]` when Patient is requested; `redactions [{"path":"resources.Patient[0].address",
+  "kind":"FIELD","source":"policy"}]`; rest as search allow.
+- `block`: `decision "block"`, `reasons [{"code":"RESOURCE_NOT_ALLOWED","stage":"policy","detail":"resource
+  'Condition' not allowed"}]`, `result null`, `redactions []`, `queue_id null`, reasoner `{"served_by":
+  "fallback:template","model":"","latency_ms":0.1,"risk_level":"high","explanation":"STUB-EXPLANATION Leash blocked
+  this call.","policy_rule_ids":["resources.allowed"],"recommended_action":"deny","advisory":true,"error":""}`.
+- `escalate`: `decision "escalate"`, `reasons [{"code":"RECORD_RATE_EXCEEDED","stage":"policy","detail":"11 distinct
+  records in window, max 10"}]`, `result {"status":"pending_approval","queue_id":"q-0004"}`, `queue_id "q-0004"`,
+  reasoner as block but `risk_level "medium"`, `recommended_action "needs_more_info"`, `policy_rule_ids ["rate.max_records"]`.
+
+### C12.8 Tests and checks
+- N23a `tests/test_leash_client.py`: the client against `StubGateway` (no `App`, no `app.server` import): request
+  body exactly as C12.3; each `LeashError` message; `enabled()` off for the committed policy and on with
+  `CLINIC_LEASH=1`; loopback-only (`http://10.0.0.5:8000`, `http://example.org` raise before any request, stub
+  receives nothing); committed `leash` section keys and `_comment`s.
+- N23b `tests/test_leash_endpoints.py`: the endpoints on a temp-dir `App` served on port 0, against `StubGateway`:
+  the four states, one `leash_tool_call` audit entry per call with the `call_id` the stub received, off by default
+  (404, `/api/me` `leash.enabled` false), permission and input checks, and one test against the real gateway skipped
+  unless `LEASH_GATEWAY_LIVE=1`.
+- Every test App points `gateway_url` at a stub (never `:8000`, except the live test). Temp dirs only from
+  `tempfile.mkdtemp()`, removed only through `tests.test_vectorstore._rm_temp`.
+- Root target `make clinic-check` = `cd clinic-assistant && MOCK_LLM=1 python -m unittest -v`; it is not part of
+  `make check`.
+
+### C12.9 Build split (four parallel nodes, disjoint files, then integration)
+| Node | Owns (relative to repo root) |
+|---|---|
+| N23a client | `clinic-assistant/app/leash_client.py`, `clinic-assistant/config/policy.json` `leash` section, `clinic-assistant/tests/stub_gateway.py`, `clinic-assistant/tests/test_leash_client.py` |
+| N23b server | integrated-mode parts of `clinic-assistant/app/server.py` (import, `/api/me` key, two routes, `leash_status`, `leash_call`), `clinic-assistant/tests/test_leash_endpoints.py` |
+| N23c UI | `clinic-assistant/static/index.html`, `static/app.js`, `static/app.css` (the Leash tab only) |
+| N23d packaging | `Makefile` target `clinic-check` only; `README.md` section `## Human front end: Clinic Assistant` |
+| N23 integration (overseer) | none; runs `make clinic-check` then `make check` |
+While the others are editing, each node runs only its own test module or static check, never the whole suite.

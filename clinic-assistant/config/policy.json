@@ -184,6 +184,17 @@
     "similar_cases": 3,
     "_similar_cases": "How many other patients the Similar cases panel shows (the patient itself is never included)."
   },
+  "leash": {
+    "_comment": "Integrated mode: patient search/open go through the Leash gateway. Off by default.",
+    "enabled": false,
+    "_enabled": "Set true here, or run once with CLINIC_LEASH=1 (for example CLINIC_LEASH=1 MOCK_LLM=1 python run.py) without editing this file.",
+    "gateway_url": "http://127.0.0.1:8000",
+    "_gateway_url": "Leash gateway address. Must be a loopback address (127.0.0.1, localhost, ::1); anything else is refused.",
+    "timeout_seconds": 10,
+    "_timeout_seconds": "How long to wait for the gateway before reporting it unreachable.",
+    "dashboard_url": "http://127.0.0.1:8501",
+    "_dashboard_url": "Where Leash's approval queue (dashboard) is, shown to the user when a call is escalated."
+  },
   "communication": {
     "_comment": "The AI never contacts anyone by itself. It can only draft; a clinician approves; the app never sends. Approved text is copied out by a person into the clinic's normal channel.",
     "ai_can_send_directly": false,

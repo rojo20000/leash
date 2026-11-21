@@ -69,6 +69,7 @@ async function start() {
   $("who-role").textContent = me.role.replace("_", " ");
   $("who-model").textContent = `Local model: ${me.model}`;
   document.querySelectorAll("[data-perm]").forEach((n) => { n.hidden = !can(n.dataset.perm); });
+  if (!(me.leash && me.leash.enabled)) $("tab-btn-leash").hidden = true;
   const group = $("draft-group"); group.replaceChildren();
   Object.entries(me.recipient_groups).forEach(([k, v]) => {
     const o = el("option", null, `${k}: ${v}`); o.value = k; group.append(o);
@@ -390,6 +391,91 @@ function showTab(name) {
   if (name === "audit") loadAudit();
 }
 document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+// ---- Leash tab (integrated mode): every record comes through the Leash gateway ----
+function leashReasoner(d) {
+  const box = el("div", "leash-box");
+  if (d.reasons && d.reasons.length) {
+    const ul = el("ul", "reasons");
+    d.reasons.forEach((r) => ul.append(el("li", null, `${r.code} (${r.stage}): ${r.detail}`)));
+    box.append(el("h3", null, "Reasons"), ul);
+  }
+  const x = d.reasoner;
+  if (x) {
+    box.append(el("h3", null, "Leash's explanation (advisory: a reviewer makes the final call)"), el("p", null, x.explanation),
+      el("p", "muted", `Risk: ${x.risk_level}`), el("p", "muted", `Recommended: ${x.recommended_action}`),
+      el("p", "muted", `Rules: ${(x.policy_rule_ids || []).join(", ")}`), el("p", "muted", `Source: ${x.served_by}`));
+  }
+  return box;
+}
+
+function leashShow(d) {
+  const out = $("leash-result"); out.replaceChildren();
+  out.append(el("p", "muted", `Request id: ${d.call_id}`));
+  if (d.state === "allow") {
+    out.append(el("span", "tier green", "Allowed by Leash"), el("p", null, d.view === "full" ? "Full chart" : "Scheduling view"));
+    Object.entries((d.result && d.result.resources) || {}).forEach(([type, list]) => {
+      out.append(el("h3", null, `${type} (${list.length})`), el("pre", "leash-pre", JSON.stringify(list, null, 2)));
+    });
+    out.append(el("h3", null, "Removed by Leash"));
+    if (d.redactions && d.redactions.length) {
+      const ul = el("ul", "reasons");
+      d.redactions.forEach((r) => ul.append(el("li", null, `${r.path} (${r.kind}, ${r.source})`)));
+      out.append(ul);
+    } else out.append(el("p", "muted", "Nothing removed"));
+    return;
+  }
+  const wait = d.state === "escalate";
+  const box = leashReasoner(d); box.classList.add(wait ? "wait" : "blocked");
+  out.append(el("span", `tier ${wait ? "amber" : "red"}`, wait ? "Waiting for review in Leash" : "Blocked by Leash"));
+  if (wait) {
+    out.append(el("p", null, `Queue id: ${d.queue_id}`));
+    const p = el("p", null, "Approve or deny it in the Leash dashboard at ");
+    const a = el("a", null, d.dashboard_url); a.href = d.dashboard_url; a.target = "_blank"; a.rel = "noopener";
+    p.append(a); out.append(p);
+  }
+  out.append(box);
+}
+
+async function leashCall(path, body) {
+  $("leash-error").textContent = "";
+  try { return await api(path, body); }
+  catch (err) { $("leash-error").textContent = err.message; $("leash-result").replaceChildren(); return null; }
+}
+
+async function leashOpen(id, view) {
+  $("leash-result").replaceChildren();
+  const d = await leashCall("/api/leash/open", { patient_id: id, view });
+  if (d) leashShow(d);
+}
+
+[["leash-open-sched", "scheduling"], ["leash-open-full", "full"]].forEach(([id, view]) => $(id).addEventListener("click", () => {
+  const pid = $("leash-pid").value.trim();
+  if (!/^pt-\d{4}$/.test(pid)) {
+    $("leash-error").textContent = "Enter a patient id like pt-0042."; $("leash-result").replaceChildren(); return;
+  }
+  leashOpen(pid, view);
+}));
+
+$("leash-search-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const list = $("leash-results"); list.replaceChildren(); $("leash-result").replaceChildren();
+  const d = await leashCall("/api/leash/search", { q: $("leash-q").value });
+  if (!d) return;
+  if (d.state !== "allow") return leashShow(d);
+  const pts = (d.result && d.result.patients) || [];
+  if (!pts.length) list.append(el("li", "muted", "No patients found."));
+  pts.forEach((p) => {
+    const n = (p.name && p.name[0]) || null;
+    const name = n ? `${(n.given || []).join(" ")} ${n.family || ""}`.trim() : p.id;
+    const li = el("li", "row"), t = el("div", "row-text"), btns = el("div", "leash-btns");
+    t.append(el("strong", null, name || p.id), el("span", "muted", p.id));
+    [["Scheduling view", "scheduling"], ["Full chart (Leash will block)", "full"]].forEach(([label, view]) => {
+      const b = el("button", "ghost small-btn", label); b.type = "button"; b.onclick = () => leashOpen(p.id, view); btns.append(b);
+    });
+    li.append(t, btns); list.append(li);
+  });
+});
 
 document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.go)));
 

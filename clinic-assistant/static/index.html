@@ -36,6 +36,7 @@
         <button data-tab="home">Home</button>
         <button data-tab="schedule" data-perm="view_schedule">Schedule</button>
         <button data-tab="patients" data-perm="view_patients">Patients</button>
+        <button id="tab-btn-leash" data-tab="leash" data-perm="view_patients">Leash</button>
         <button data-tab="chat" data-perm="chat">Ask a question</button>
         <button data-tab="review" data-perm="chat,review_red,qa_review">Needs review <span id="review-count" class="count" hidden></span></button>
         <button data-tab="outbox" data-perm="draft_message,approve_message">Messages</button>
@@ -219,6 +220,25 @@
         </form>
         <p class="hint">Enter to send · Shift+Enter for a new line</p>
       </aside>
+    </section>
+
+    <section id="tab-leash" class="tab page" hidden>
+      <h2>Patients through Leash</h2>
+      <p class="muted">Records here come from Leash's synthetic records system through the Leash gateway. Leash applies one role policy (a scheduling assistant) to every Clinic Assistant role, so the scheduling view is the most it will return and a full-chart request is blocked by design. Leash's behaviour check was trained on a scheduling agent, so patient searches are often held for review in the Leash dashboard; opening a record by its id is the direct route.</p>
+      <form id="leash-search-form" class="draft-form">
+        <label>Find a patient <input id="leash-q" type="search" placeholder="Name or part of a name" autocomplete="off" required></label>
+        <button type="submit">Search through Leash</button>
+      </form>
+      <div id="leash-open-row" class="draft-form">
+        <label>Open by patient id <input id="leash-pid" type="text" placeholder="pt-0042" autocomplete="off"></label>
+        <span class="leash-btns">
+          <button type="button" id="leash-open-sched" class="ghost small-btn">Scheduling view</button>
+          <button type="button" id="leash-open-full" class="ghost small-btn">Full chart</button>
+        </span>
+      </div>
+      <p id="leash-error" class="error" role="alert"></p>
+      <ul id="leash-results" class="leash-results"></ul>
+      <div id="leash-result" aria-live="polite"></div>
     </section>
 
     <section id="tab-chat" class="tab page">
