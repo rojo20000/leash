@@ -21,6 +21,8 @@ import uuid
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from .db import ClinicDB
+
 # (from, to) -> the permission needed for that step
 TRANSITIONS = {
     ("booked", "arrived"): "check_in",
@@ -42,28 +44,32 @@ def _now() -> datetime:
 
 
 class Schedule:
-    def __init__(self, path: Path, clinic: dict, patients: dict, now=_now):
+    """Appointments, stored in the clinic database (data/clinic.db).
+
+    On first start, data/schedule.json (if any) is imported once and then left as it was.
+    """
+
+    def __init__(self, path: Path, clinic: dict, patients, now=_now, db: ClinicDB | None = None):
         self.path, self.clinic, self.patients, self.now = path, clinic, patients, now
-        self.lock = threading.Lock()
-        if not path.exists():
-            path.write_text("[]")
-        today = self.now().date()
+        self.db = db or getattr(patients, "db", None) or ClinicDB(path.parent / "clinic.db")
+        self.lock = threading.RLock()
         with self.lock:
-            items = self._load()
-            seeded = {a["date"] for a in items}
-            for d in (today, today + timedelta(days=1)):
-                if d.isoformat() not in seeded:
-                    items += self._seed_day(d)
-            self._save(items)
+            if self.db.get_meta("schedule_imported") is None:
+                if path.exists():
+                    items = json.loads(path.read_text())
+                    if items:
+                        self.db.write_many([("appointment", a, "imported", f"Imported from {path.name}")
+                                            for a in items], "system", "system")
+                    for d in {a["date"] for a in items}:
+                        self.db.mark_seeded(d)
+                self.db.set_meta("schedule_imported", path.name if path.exists() else "none")
+        today = self.now().date()
+        for d in (today, today + timedelta(days=1)):
+            self.ensure_day(d)
 
     # ---- storage ---------------------------------------------------------
-    def _load(self) -> list[dict]:
-        return json.loads(self.path.read_text())
-
-    def _save(self, items: list[dict]) -> None:
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(items, indent=1))
-        tmp.replace(self.path)  # atomic: a crash never leaves a half-written schedule
+    def _save(self, a: dict, by: str, role: str | None, action: str, summary: str) -> dict:
+        return self.db.write("appointment", a, action, by, role, summary)
 
     # ---- slots -----------------------------------------------------------
     def slots(self) -> list[str]:
@@ -75,29 +81,56 @@ class Schedule:
         return out
 
     def open_slots(self, day: str, clinician: str) -> list[str]:
-        taken = {a["time"] for a in self._load()
-                 if a["date"] == day and a["clinician"] == clinician and a["status"] in ACTIVE}
+        taken = {a["time"] for a in self.db.appointments(day, day, clinician) if a["status"] in ACTIVE}
         now = self.now()
         return [t for t in self.slots() if t not in taken
                 and datetime.fromisoformat(f"{day}T{t}") > now]
 
     # ---- demo data -------------------------------------------------------
-    def _seed_day(self, d: date) -> list[dict]:
-        """A believable day: most slots filled, a few gaps, and one of each kind of case on the first clinician's list."""
+    def ensure_day(self, d: date) -> None:
+        """Fill a day with demo appointments the first time it is looked at (once per day, ever)."""
+        day = d.isoformat()
+        if self.db.seeded(day):
+            return
+        with self.lock:
+            if self.db.seeded(day):
+                return
+            existing = self.db.appointments(day)
+            items = self._seed_day(d, existing)
+            if items:
+                self.db.write_many([("appointment", a, "seeded", "Demo appointment added") for a in items],
+                                   "system", "system")
+            self.db.mark_seeded(day)
+
+    def _seed_day(self, d: date, existing: list[dict] | None = None) -> list[dict]:
+        """A believable day: most slots filled, a few gaps, and one of each kind of case on the first clinician's list.
+
+        Past days come out finished (mostly done, a few no-shows); days with real bookings keep them.
+        """
+        existing = existing or []
         rng = random.Random(d.toordinal())
         ids = sorted(self.patients)
         first, rest = ids[:13], ids[13:]  # the first 13 records cover every scenario once
         rng.shuffle(first); rng.shuffle(rest)
-        pool = [self.patients[i] for i in (first + rest if d == self.now().date() else rest + first)]
+        busy = {a["patient_id"] for a in existing if a["status"] in ACTIVE}
+        taken = {(a["clinician"], a["time"]) for a in existing if a["status"] in ACTIVE}
+        pool = [i for i in (first + rest if d == self.now().date() else rest + first) if i not in busy]
+        past = d < self.now().date()
         out, slots = [], self.slots()
         for c_i, clinician in enumerate(self.clinic["clinicians"]):
             chosen = [s for s in slots if rng.random() < 0.55][:12]
             for t in chosen:
                 if not pool:
                     break
-                p = pool.pop(0) if c_i == 0 else pool.pop(rng.randrange(len(pool)))
-                out.append(self._new(d.isoformat(), t, clinician, p["id"],
-                                     rng.choice(self.clinic["visit_types"]), "system"))
+                pid = pool.pop(0) if c_i == 0 else pool.pop(rng.randrange(len(pool)))
+                if (clinician, t) in taken:
+                    continue
+                a = self._new(d.isoformat(), t, clinician, pid, rng.choice(self.clinic["visit_types"]), "system")
+                if past:
+                    end = "no_show" if rng.random() < 0.1 else "done"
+                    a["status"] = end
+                    a["history"].append({"at": f"{d.isoformat()}T{t}", "by": "system", "status": end})
+                out.append(a)
         return out
 
     @staticmethod
@@ -109,13 +142,17 @@ class Schedule:
 
     # ---- reads -----------------------------------------------------------
     def day(self, day: str) -> list[dict]:
-        return sorted((a for a in self._load() if a["date"] == day), key=lambda a: (a["time"], a["clinician"]))
+        return self.db.appointments(day)
+
+    def between(self, start: str, end: str, clinician: str | None = None) -> list[dict]:
+        return self.db.appointments(start, end, clinician)
 
     def get(self, appt_id: str) -> dict | None:
-        return next((a for a in self._load() if a["id"] == appt_id), None)
+        return self.db.appointment(appt_id)
 
     # ---- the only ways to change anything --------------------------------
-    def book(self, by: str, pid: str, day: str, time: str, clinician: str, visit_type: str) -> dict:
+    def book(self, by: str, pid: str, day: str, time: str, clinician: str, visit_type: str,
+             role: str | None = None) -> dict:
         c = self.clinic
         if pid not in self.patients:
             raise ScheduleError("Pick the patient from the search results.")
@@ -135,19 +172,17 @@ class Schedule:
         with self.lock:
             if time not in self.open_slots(day, clinician):
                 raise ScheduleError("That time was just taken or has passed. Pick another open time.")
-            items = self._load()
-            clash = next((a for a in items if a["date"] == day and a["patient_id"] == pid
+            clash = next((a for a in self.db.appointments(day) if a["patient_id"] == pid
                           and a["status"] in ACTIVE), None)
             if clash:
                 raise ScheduleError(f"This patient already has an appointment that day at {clash['time']}. "
                                     "Cancel or move that one first.")
             appt = self._new(day, time, clinician, pid, visit_type, by)
-            items.append(appt)
-            self._save(items)
+            self._save(appt, by, role, "booked", f"Booked {visit_type} on {day} at {time} with {clinician}")
         return appt
 
     def change_status(self, by: str, perms: list[str], appt_id: str, expected: str, to: str,
-                      checks: dict | None = None, reason: str | None = None) -> dict:
+                      checks: dict | None = None, reason: str | None = None, role: str | None = None) -> dict:
         need = TRANSITIONS.get((expected, to))
         if need is None:
             raise ScheduleError("That step isn't possible from here.")
@@ -155,8 +190,7 @@ class Schedule:
             raise ScheduleError("Your role can't do that step.")
         checks = checks or {}
         with self.lock:
-            items = self._load()
-            a = next((x for x in items if x["id"] == appt_id), None)
+            a = self.db.appointment(appt_id)
             if a is None:
                 raise ScheduleError("That appointment no longer exists. The list has been refreshed.")
             if a["status"] != expected:
@@ -179,14 +213,17 @@ class Schedule:
                 a["cancel_reason"] = reason
             a["status"] = to
             a["history"].append({"at": now.isoformat(timespec="minutes"), "by": by, "status": to})
-            self._save(items)
+            action = ("checked_in" if (expected, to) == ("booked", "arrived") else
+                      "check_in_undone" if (expected, to) == ("arrived", "booked") else "status_change")
+            summary = (f"{expected.replace('_', ' ')} -> {to.replace('_', ' ')}"
+                       + (f" ({reason})" if to == "cancelled" else ""))
+            self._save(a, by, role, action, summary)
         return a
 
-    def reminder(self, by: str, appt_id: str, action: str) -> dict:
+    def reminder(self, by: str, appt_id: str, action: str, role: str | None = None) -> dict:
         """prepare: fixed wording, no clinical detail. sent: a person confirms they sent it."""
         with self.lock:
-            items = self._load()
-            a = next((x for x in items if x["id"] == appt_id), None)
+            a = self.db.appointment(appt_id)
             if a is None:
                 raise ScheduleError("That appointment no longer exists.")
             if a["status"] != "booked":
@@ -204,9 +241,11 @@ class Schedule:
                 if r.get("sent_at"):
                     raise ScheduleError(f"Already marked sent by {r['sent_by']} at {r['sent_at']}.")
                 r.update(sent_by=by, sent_at=self.now().isoformat(timespec="minutes"))
+                a["reminder"] = r
             else:
                 raise ScheduleError("Unknown reminder step.")
-            self._save(items)
+            self._save(a, by, role, "reminder_" + ("prepared" if action == "prepare" else "sent"),
+                       "Reminder " + ("prepared" if action == "prepare" else "marked sent"))
         return a
 
     def reminder_text(self, a: dict) -> str:
