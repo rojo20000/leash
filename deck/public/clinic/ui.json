@@ -1,0 +1,49 @@
+{
+  "viewport": {
+    "width": 1600,
+    "height": 900
+  },
+  "patient": "syn-036",
+  "query": "Any medication interactions or allergy conflicts?",
+  "model": "qwen3.5:9b",
+  "input": {
+    "x": 1219,
+    "y": 800,
+    "width": 293.328125,
+    "height": 63
+  },
+  "response": {
+    "x": 1219,
+    "y": 176.796875,
+    "width": 363,
+    "height": 468.203125
+  },
+  "similarBox": {
+    "x": 312,
+    "y": 1444.25,
+    "width": 820,
+    "height": 180.25
+  },
+  "similar": [
+    {
+      "name": "Silas Moreau-Ellis",
+      "match": "100% match",
+      "why": "58 \u00c2\u00b7 female \u00c2\u00b7 Shares: COPD, Former smoker (40 pack-years)"
+    },
+    {
+      "name": "Imani Oyelaran",
+      "match": "100% match",
+      "why": "68 \u00c2\u00b7 female \u00c2\u00b7 Shares: COPD, Former smoker (40 pack-years)"
+    },
+    {
+      "name": "Avery Quillfeather",
+      "match": "13% match",
+      "why": "84 \u00c2\u00b7 male \u00c2\u00b7 Has: Atrial fibrillation, Heart failure with preserved ejection fraction"
+    }
+  ],
+  "vectors": null,
+  "videoSend": 2.08,
+  "videoAnswer": 9.63,
+  "reply": "Any medication interactions or allergy conflicts?Nothing needed maskingReady to readDraft answerBased on the patient record provided for **[PATIENT]**, here is the analysis regarding medication interactions and allergy conflicts:\n\n### Medication Interactions & Allergy Conflicts\n*   **Allergies:** The record states \"No known allergies.\" There are no documented conflicts between the prescribed medications (Tiotropium, Albuterol) and any listed allergies.\n*   **Medication Interactions:**\n    *   **Current Regimen:** Tiotropium (long-acting muscarinic antagonist) + Albuterol (short-acting beta-agonist).\n    *   **Interaction Status:** These two medications are standard first-line maintenance and rescue therapies for COPD. They do not have a known direct pharmacological interaction that contraindicates their use together.\n    *   **Clinical Context:** The patient is currently using the rescue inhaler (Albuterol) 4\u00e2\u20ac\u201c5 times daily. While frequent use of a rescue inhaler indicates poor control of symptoms (consistent with the recent SpO2 drop to 90% and FEV1 of 52%), this frequency itself is not a drug-drug interaction, but rather a marker of disease exacerbation requiring clinical review.\n\n### Missing Information & Items Needing Attention\nBased on the record provided, the following elements are missing or require immediate attention by the clinician:\n\n1.  **Acute Status Assessment:** The patient's oxygen saturation has declined progressively (94% \u00e2\u2020\u2019 92% \u00e2\u2020\u2019 90%) over the last 3 months, ",
+  "typingSpeedup": "0.5-5.0 s played at 3x (scripts/capture-clinic.mjs now types at 25 ms per key)"
+}
