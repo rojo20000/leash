@@ -18,6 +18,7 @@ from typing import Optional
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agent.tools import ToolExecutor, call_facts
@@ -370,23 +371,30 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None, clock=time.t
                 raise HTTPException(404, "unknown queue_id")
             if item["status"] != "pending":
                 raise HTTPException(409, "not pending")
-            result = None
+            result, fail = None, None  # fail = (reason code, HTTP status, error text): approved but not carried out
             if approve and item["kind"] == "approval":
                 try:
                     if item["tool"] not in READ_TOOLS:
                         audit_intent(item["call_id"], item["session_id"], item["tool"], _args_sha(item["args"]))
-                    result = minimized(item["tool"], run_tool(item["tool"], item["args"], item["session_id"]))[0]
+                    fresh = run_tool(item["tool"], item["args"], item["session_id"])
+                    # the document may have changed since the reviewer saw it: score the fresh text before release
+                    if item["tool"] == "read_document" and float(ml.injection_score(fresh.get("text", ""))) >= 0.5:
+                        fail = ("INJECTION_DETECTED", 409, "the document text now scores as an injection")
+                    else:
+                        result = minimized(item["tool"], fresh)[0]
                 except Exception as e:
-                    result = {"error": str(e)}
-            item["status"] = "approved" if approve else "denied"
+                    fail = ("EXECUTION_ERROR", 502, str(e))
+            item["status"] = "failed" if fail else "approved" if approve else "denied"
             item["reviewed_by"], item["reviewed_at"], item["note"] = body.reviewer, _now_iso(), body.note
             save_queue()
-            allow = approve and item["kind"] == "approval"
+            allow = approve and item["kind"] == "approval" and not fail
             get_audit().append(json.dumps({
                 "kind": "review", "ts": item["reviewed_at"], "call_id": item["call_id"], "queue_id": queue_id,
                 "decision": "allow" if allow else "block",
-                "reasons": ["HUMAN_APPROVED" if approve else "HUMAN_DENIED"], "reviewer": body.reviewer}))
-            return {"queue_id": queue_id, "status": item["status"], "result": result}
+                "reasons": ["HUMAN_APPROVED" if approve else "HUMAN_DENIED"] + ([fail[0]] if fail else []),
+                "reviewer": body.reviewer}))
+            out = {"queue_id": queue_id, "status": item["status"], "result": result}
+            return JSONResponse(dict(out, error=fail[2]), status_code=fail[1]) if fail else out
 
     @app.post("/v1/queue/{queue_id}/approve", dependencies=[Depends(reviewer_only)])
     def approve(queue_id: str, body: Review = Review()):

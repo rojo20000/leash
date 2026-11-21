@@ -45,13 +45,17 @@ def _env(monkeypatch, tmp_path):
     monkeypatch.setenv("LEASH_NEMOTRON_RECORDINGS", str(tmp_path / "rec"))
 
 
-@pytest.fixture
-def gw(tmp_path):
-    ehr = httpx.Client(base_url="http://ehr", transport=httpx.MockTransport(_fake_ehr))
+def make_gw(tmp_path, handler=_fake_ehr):
+    ehr = httpx.Client(base_url="http://ehr", transport=httpx.MockTransport(handler))
     now = [1000.0]  # fake server clock; call() sets it
     c = TestClient(create_app(ehr_client=ehr, runtime_dir=str(tmp_path), policy_path=POLICY, clock=lambda: now[0]))
     c.rt, c.now = tmp_path, now
     return c
+
+
+@pytest.fixture
+def gw(tmp_path):
+    return make_gw(tmp_path)
 
 
 def call(gw, tool, args, ts=1000.0, session="s1"):
@@ -293,3 +297,45 @@ def test_queue_file_is_replaced_atomically(gw, monkeypatch):  # A21
         gw.post("/v1/tool-call", json={"session_id": "s1", "tool": "send_email", "args": dict(MAIL, to=[ATTACKER])})
     monkeypatch.undo()
     assert len(json.loads((gw.rt / "queue.json").read_text())["items"]) == 1  # the old file is intact, not truncated
+
+
+def test_approve_records_a_failure_when_the_tool_fails(tmp_path):  # A22
+    down = []
+    gw = make_gw(tmp_path, lambda req: httpx.Response(503) if down else _fake_ehr(req))
+    ds = [call(gw, "read_record", {"patient_id": f"pt-{i:04d}", "resource_types": ["Patient"]}, ts=1000 + 25 * i)
+          for i in range(11)]
+    q = ds[10]["queue_id"]
+    assert ds[10]["decision"] == "escalate"
+    down.append(1)  # the EHR goes down between the escalation and the approval
+    r = gw.post(f"/v1/queue/{q}/approve", json={"reviewer": "dr.lee"}, headers=HDR)
+    assert r.status_code == 502 and r.json()["status"] == "failed" and r.json()["result"] is None
+    assert [i["queue_id"] for i in gw.get("/v1/queue?status=failed").json()["items"]] == [q]
+    assert gw.get("/v1/queue").json()["items"] == []
+    assert json.loads((gw.rt / "queue.json").read_text())["items"][0]["status"] == "failed"  # state is saved
+    last = _audit(gw)[-1]
+    assert last["kind"] == "review" and last["decision"] == "block"
+    assert last["reasons"] == ["HUMAN_APPROVED", "EXECUTION_ERROR"] and last["reviewer"] == "dr.lee"
+    assert gw.post(f"/v1/queue/{q}/approve", json={}, headers=HDR).status_code == 409  # failed is final
+    assert gw.get("/v1/audit/verify").json()["ok"] is True
+
+
+def test_approved_document_is_scored_again(tmp_path):  # A22: the text may have changed since the reviewer saw it
+    poisoned = []
+
+    def ehr(req):
+        if poisoned and req.url.path.endswith("/text"):
+            return httpx.Response(200, json={"document_id": "ref-0007", "patient_id": "pt-0007", "text": INJECTED})
+        return _fake_ehr(req)
+
+    gw = make_gw(tmp_path, ehr)
+    for i in range(4):
+        call(gw, "read_record", {"patient_id": f"pt-{i:04d}", "resource_types": ["Patient"]})
+    held = [call(gw, "read_document", {"document_id": "ref-0007"}) for _ in range(2)]  # fifth patient: ANOMALY hold
+    assert [d["decision"] for d in held] == ["escalate"] * 2 and "ANOMALY" in codes(held[0])
+    r = gw.post(f"/v1/queue/{held[0]['queue_id']}/approve", json={}, headers=HDR)  # unchanged text: released
+    assert r.status_code == 200 and r.json()["status"] == "approved" and "cardiology" in r.json()["result"]["text"]
+    poisoned.append(1)
+    r = gw.post(f"/v1/queue/{held[1]['queue_id']}/approve", json={}, headers=HDR)
+    assert r.status_code == 409 and r.json()["status"] == "failed" and "send_email" not in r.text
+    assert _audit(gw)[-1]["reasons"] == ["HUMAN_APPROVED", "INJECTION_DETECTED"]
+    assert _audit(gw)[-1]["decision"] == "block"

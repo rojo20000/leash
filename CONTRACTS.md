@@ -434,7 +434,7 @@ adds two audit lines, every other call one; `entries` in `/v1/audit/verify` coun
 | `GET /health` | | `{"status":"ok","core":"python","ml":"stub"}` |
 | `POST /v1/tool-call` | C5.2 request | C5.2 decision |
 | `GET /v1/decisions?limit=100` | | `{"decisions":[decision,...]}` oldest first, last `limit` |
-| `GET /v1/queue?status=pending` | status optional (`pending`/`approved`/`denied`/`all`, default `pending`) | `{"items":[item,...]}` |
+| `GET /v1/queue?status=pending` | status optional (`pending`/`approved`/`denied`/`failed`/`all`, default `pending`) | `{"items":[item,...]}` |
 | `POST /v1/queue/{queue_id}/approve` | `{"reviewer":"dr.lee","note":""}` | `{"queue_id":"q-0004","status":"approved","result":<tool output or null>}` |
 | `POST /v1/queue/{queue_id}/deny` | same | `{"queue_id":"q-0004","status":"denied","result":null}` |
 | `GET /v1/audit/verify` | | `{"ok":true,"first_bad":null,"reason":"","entries":42,"core":"python"}` |
@@ -442,6 +442,13 @@ adds two audit lines, every other call one; `entries` in `/v1/audit/verify` coun
 | `POST /v1/admin/reset` | | `{"status":"reset"}`; clears decisions, queue, audit log + head, session history, policy window |
 
 Unknown `queue_id` -> 404. Approving/denying a non-pending item -> 409.
+
+(Audit A22) Approving an `approval` item whose tool then fails does not record success: the item status becomes
+`failed` (final, like `approved`/`denied`; the agent must send the call again), the `review` audit record has
+`"decision":"block","reasons":["HUMAN_APPROVED","EXECUTION_ERROR"]`, and the answer is HTTP 502
+`{"queue_id":"q-0004","status":"failed","result":null,"error":"<short text>"}`. For an approved `read_document`
+the fresh text is scored with `injection_score` before release; `>= 0.5` -> the text is not returned, status
+`failed`, reasons `["HUMAN_APPROVED","INJECTION_DETECTED"]`, HTTP 409 with the same body shape.
 
 (Audit A2) `POST /v1/queue/{queue_id}/approve`, `POST /v1/queue/{queue_id}/deny` and `POST /v1/admin/reset` require
 the header `X-Leash-Token` equal to `$LEASH_REVIEW_TOKEN` (compared with `hmac.compare_digest`). Missing or wrong
