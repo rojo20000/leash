@@ -31,7 +31,7 @@ What it does not have: unique user identification, emergency access or automatic
 
 The standard asks for mechanisms that record and examine activity in systems that use electronic patient data.
 
-What Leash has: every decision (allow, block, hold) and every human review is appended to a JSONL audit log with the tool, the reason codes, the scores and the latency. Raw arguments and patient data are never written to it; only a SHA-256 hash of the arguments is. The dashboard shows the decision feed and the chain status, and `GET /v1/audit/verify` re-checks the log on demand.
+What Leash has: every decision (allow, block, hold) and every human review is appended to a JSONL audit log with the tool, the reason codes, the scores and the latency. Raw arguments and patient data are never written to it; only a SHA-256 hash of the arguments is. The dashboard shows the decision feed and the chain status, and `GET /v1/audit/verify` re-checks the log on demand. Resetting the gateway does not delete the log: the old file is kept under a new name and the new log starts with a record of the reset.
 
 ## 164.312(c)(1) Integrity: partial
 
@@ -45,7 +45,7 @@ Limits: this detects tampering, it does not prevent it. Someone who can rewrite 
 
 The standard asks for procedures to verify that a person or entity seeking access is the one claimed.
 
-Leash does not verify who a caller is. The gateway trusts the role and session id in a tool call, and the reviewer name on an approval is a free-text field. The approve, deny and reset routes do require a shared token (`LEASH_REVIEW_TOKEN`, sent as the `X-Leash-Token` header), so the agent cannot approve its own held calls or reset the audit log. The token is one secret shared by every reviewer: it does not identify a person, and anyone who holds it can still reset the log. A real deployment would put the gateway behind the hospital's identity system. This is the largest gap in the mapping.
+Leash does not verify who a caller is. The gateway trusts the role and session id in a tool call, and the reviewer name on an approval is a free-text field. The approve, deny and reset routes do require a shared token (`LEASH_REVIEW_TOKEN`, sent as the `X-Leash-Token` header), so the agent cannot approve its own held calls or reset the audit log. The token is one secret shared by every reviewer: it does not identify a person. A reset by a token holder clears the review queue but keeps the old audit log. A real deployment would put the gateway behind the hospital's identity system. This is the largest gap in the mapping.
 
 ## 164.312(e)(1) Transmission security: partial
 

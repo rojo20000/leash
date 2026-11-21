@@ -435,6 +435,10 @@ The `decision` (or `review`) record that follows is the outcome record for the s
 adds two audit lines, every other call one; `entries` in `/v1/audit/verify` counts all lines, and line numbers
 (`first_bad`) count intent lines too. Readers that want decisions must filter on `kind`.
 
+(Audit A2) Reset record, the first line of the log after `POST /v1/admin/reset`:
+`{"kind":"reset","ts":...,"archived":"audit-20261121T232949163236Z.jsonl"}` (`archived` is null when there was
+no log to keep).
+
 ### C5.4 HTTP API
 
 | Method, path | Body / params | Response |
@@ -447,7 +451,7 @@ adds two audit lines, every other call one; `entries` in `/v1/audit/verify` coun
 | `POST /v1/queue/{queue_id}/deny` | same | `{"queue_id":"q-0004","status":"denied","result":null}` |
 | `GET /v1/audit/verify` | | `{"ok":true,"first_bad":null,"reason":"","entries":42,"core":"python"}` |
 | `GET /v1/metrics` | | C5.5 |
-| `POST /v1/admin/reset` | | `{"status":"reset"}`; clears decisions, queue, audit log + head, session history, policy window |
+| `POST /v1/admin/reset` | | `{"status":"reset"}`; clears decisions, queue, session history, policy window. The audit log is never deleted (audit A2): `audit.jsonl` and its head file are renamed to `audit-<UTC time>.jsonl` (+ `.head`) in the runtime dir, where `verify_log` still checks them, and a new `audit.jsonl` starts with a `reset` record (C5.3) |
 
 Unknown `queue_id` -> 404. Approving/denying a non-pending item -> 409.
 
