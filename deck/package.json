@@ -1,0 +1,26 @@
+{
+  "name": "leash-deck",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview --port 4173 --strictPort",
+    "noise": "node scripts/noise.mjs",
+    "script-md": "node scripts/script-md.mjs",
+    "capture": "node scripts/capture-clinic.mjs",
+    "test": "playwright test",
+    "record": "node scripts/record.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.6"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "gsap": "^3.15.1"
+  }
+}
