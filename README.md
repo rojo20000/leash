@@ -31,7 +31,7 @@ flowchart LR
     A["Clinical agent<br/>Nemotron 3.5 Lightning<br/>(Ollama fallback)"] -->|every tool call| G
     subgraph G["Leash gateway (FastAPI)"]
         direction TB
-        P["1 Policy (Rust core)<br/>tools, resources, rate, email domains"] --> I["2 Injection check<br/>TF-IDF + Nemotron judge"]
+        P["1 Policy (Rust core)<br/>tools, resources, rate, email domains"] --> I["2 Injection check<br/>TF-IDF + Nemotron judge<br/>+ NemoGuard"]
         I --> M["3 Minimize<br/>Rust pre-scan + Presidio"]
         M --> C["4 Content check<br/>Nemotron judge, HIPAA policy"]
         C --> N["5 Anomaly score<br/>IsolationForest"]
@@ -46,9 +46,11 @@ flowchart LR
     L --> DB
 ```
 
-Order of checks: policy, then (for document reads) the injection checks, then minimization, then the content check, then the anomaly score, then the decision. The Nemotron reasoner runs only after the decision is final.
+Order of checks: policy, then (for document reads) the three injection detectors, then minimization, then the content check, then the anomaly score, then the decision. The Nemotron reasoner runs only after the decision is final.
 
-**The design rule: AI judgment where it helps humans decide, hard rules where safety requires them.** Nemotron output can only add caution, never remove it. A Nemotron detector can turn an allow into a hold for a human. Nothing it returns can unblock a call. The reasoner is advisory, and [a test](tests/test_gateway_nemotron.py) proves the decision, queue and audit records are identical whatever it returns. Details are in [docs/NEMOTRON.md](docs/NEMOTRON.md).
+**The design rule: AI judgment where it helps humans decide, hard rules where safety requires them.** Nemotron output can only add caution, never remove it. Of the three injection detectors, only TF-IDF can block; the Lightning judge and NVIDIA NemoGuard JailbreakDetect can only escalate to a human. Nothing a model returns can unblock a call. The reasoner is advisory, and [a test](tests/test_gateway_nemotron.py) proves the decision, queue and audit records are identical whatever it returns. Details are in [docs/NEMOTRON.md](docs/NEMOTRON.md).
+
+**NemoGuard, measured.** In eval round 5 NemoGuard JailbreakDetect flagged none of the 17 evaluation documents, including all 8 injected ones (scores between -0.82 and -0.99), so it changed no metric. It is built for direct jailbreak prompts aimed at a chatbot, not for instructions hidden inside clinical documents. It stays on because it covers that different attack class, costs about 364 ms p50 per document read, can only add caution, and `LEASH_NEMOGUARD=off` removes it.
 
 | Piece | What it is |
 |---|---|
@@ -81,7 +83,7 @@ make dashboard  # EHR :8001, gateway :8000 and Streamlit :8501 together (Ctrl+C 
 
 On Windows, if the window was closed or the process was started in the background, find each listener with `netstat -ano | findstr :8000` (and `:8001`, `:8501`) and stop it with `taskkill /PID <pid> /T /F`.
 
-`make help` lists every target. Optional: put `NVIDIA_API_KEY` in a git-ignored `.env` for live Nemotron calls. Without it, `make check` and `make demo` run on recorded Nemotron responses from real API calls. `make record` refreshes the recordings and needs the key.
+`make help` lists every target. Optional: put `NVIDIA_API_KEY` in a git-ignored `.env` for live Nemotron calls. Without it, `make check` and `make demo` run on recorded Nemotron responses from real API calls. `make record` refreshes the recordings and needs the key. The only off-machine destinations are `https://integrate.api.nvidia.com/v1` and `https://ai.api.nvidia.com/v1/security/nvidia/nemoguard-jailbreak-detect`, both carrying synthetic data only. Nemotron 3.5 Content Safety is not used: NVIDIA's page showed it unavailable and the API returned HTTP 404 for our key (11:28 and 13:58); the path exists behind `LEASH_NEMOTRON_SAFETY_MODEL` but has never had a live response.
 
 ## Results
 
@@ -123,7 +125,7 @@ Rust vs Python, n = 100000 iterations.
 
 ## Limitations
 
-- **Small Nemotron eval.** 40 labelled cases (24 dev, 16 holdout), and only 2 labelled over-disclosure positives. The content-safety judge still false-alarms on 3 clean cases per split and held 3 ordinary calls in the live run. One injected holdout document is missed by both detectors.
+- **Small Nemotron eval.** 40 labelled cases (24 dev, 16 holdout), and only 2 labelled over-disclosure positives. The content-safety judge still false-alarms on 3 clean cases per split and held 3 ordinary calls in the live run. Two of the three injected holdout documents are missed by every detector in the final state (combined holdout recall 0.333). The judge scored 0.667 in round 4 and 0.333 in round 5 with unchanged prompts, which is one document's difference between two live runs.
 - **The live agent is not deterministic.** It followed the hidden instruction in 1 of 3 unprotected runs, so the scripted replay is the demo of record.
 - **Rate limits.** The NVIDIA key returns HTTP 429 under burst traffic, and the gateway then falls back to local detectors. A lone first call can trip the anomaly model.
 - **Anomaly model.** The `exfil_email` and `off_role_resources` recalls come from a deterministic guard on features that were constant in training, not from the IsolationForest itself.

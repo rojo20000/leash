@@ -51,7 +51,7 @@ Leash does not authenticate callers. The gateway trusts the role and session id 
 
 The standard asks for technical measures that guard against unauthorized access to electronic patient data sent over a network.
 
-What Leash has: it limits where data may go. Email recipients must be on an allowed-domain list, the demo mail goes to a local file sink, and identifiers are replaced with typed placeholders before any request to a Nemotron model. The only off-machine destination is the NVIDIA hosted API, with synthetic data.
+What Leash has: it limits where data may go. Email recipients must be on an allowed-domain list, the demo mail goes to a local file sink, and identifiers are replaced with typed placeholders before any request to a Nemotron model. The only off-machine destinations are two NVIDIA hosted endpoints (`https://integrate.api.nvidia.com/v1` and the NemoGuard JailbreakDetect URL on `ai.api.nvidia.com`), with synthetic data.
 
 What it does not have: Leash does not add encryption to traffic between its own services; they run on localhost in the demo. In production the same Nemotron models can run on-premises, so patient data never has to leave the hospital.
 

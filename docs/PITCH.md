@@ -28,9 +28,9 @@ One line for the whole deck: **AI judgment where it helps humans decide, hard ru
 
 ## 5. Why Nemotron
 
-- Lightning runs the agent and a policy reasoner that explains every block and hold to the reviewer, grounded in stable rule ids. A second Lightning call, conditioned on our written policies, is a second injection detector and a HIPAA minimum-necessary check.
+- Lightning runs the agent and a policy reasoner that explains every block and hold to the reviewer, grounded in stable rule ids. A second Lightning call, conditioned on our written policies, is a second injection detector and a HIPAA minimum-necessary check. NVIDIA NemoGuard JailbreakDetect is a third injection detector, wired in by team decision; TF-IDF can block, the other two can only escalate.
 - Rule: Nemotron output can only add caution. It never unblocks a call, and the reasoner is advisory. `test_advisory_invariant` proves it.
-- We measured and revised: 40 labelled cases, four live rounds, holdout reasoner agreement 0.875 to 1.00, second-detector precision 0.60 to 1.00. We swapped two models on evidence. Say that the round 4 content-check fix came from review, and that the content check still false-alarms.
+- We measured and revised: 40 labelled cases, five live rounds, holdout reasoner agreement 0.875 to 1.00, second-detector precision 0.60 to 1.00. We swapped two models on evidence. Final-state combined injection recall is 1.00 on dev and 0.333 on holdout; the judge's holdout recall was 0.667 in round 4 and 0.333 in round 5 with unchanged prompts, which is one of 3 injected documents between two live runs. Say that the round 4 content-check fix came from review, and that the content check still false-alarms. Say that NemoGuard flagged none of the 17 evaluation documents (all 8 injected ones scored -0.82 to -0.99), so it changed no metric: it targets direct jailbreak prompts, not instructions hidden in documents. We keep it on as defence in depth (about 364 ms p50 per document read, escalate-only, `LEASH_NEMOGUARD=off` removes it).
 - Production: the same open models run on-premises, so patient data never leaves the hospital.
 
 ## 6. How Leash differs from OpenShell and NeMo Guardrails
@@ -88,18 +88,20 @@ Rust vs Python, n = 100000 iterations.
 
 **Holdout (16 cases)**
 
-| Round | TF-IDF precision / recall | Second detector (jailbreak) precision / recall | Combined precision / recall | Content safety tn / fp / tp / fn | Reasoner action agreement | Reasoner valid-JSON rate |
-|---|---|---|---|---|---|---|
-| Round 1 | 1.0 / 0.333 | 0.6 / 1.0 | 0.6 / 1.0 | 3 / 5 / 1 / 0 | 0.875 | 0.692 |
-| Round 2 | 1.0 / 0.333 | 0.0 / 0.0 | 1.0 / 0.333 | 8 / 0 / 0 / 1 | 0.625 | 1.0 |
-| Round 3 | 1.0 / 0.333 | 1.0 / 0.667 | 1.0 / 0.667 | 8 / 0 / 0 / 1 | 0.75 | 1.0 |
-| Round 4 | 1.0 / 0.333 | 1.0 / 0.667 | 1.0 / 0.667 | 5 / 3 / 1 / 0 | 1.0 | 1.0 |
+| Round | TF-IDF precision / recall | Lightning judge (jailbreak) precision / recall | NemoGuard precision / recall | Combined precision / recall | Content safety tn / fp / tp / fn | Reasoner action agreement | Reasoner valid-JSON rate |
+|---|---|---|---|---|---|---|---|
+| Round 1 | 1.0 / 0.333 | 0.6 / 1.0 | - | 0.6 / 1.0 | 3 / 5 / 1 / 0 | 0.875 | 0.692 |
+| Round 2 | 1.0 / 0.333 | 0.0 / 0.0 | - | 1.0 / 0.333 | 8 / 0 / 0 / 1 | 0.625 | 1.0 |
+| Round 3 | 1.0 / 0.333 | 1.0 / 0.667 | - | 1.0 / 0.667 | 8 / 0 / 0 / 1 | 0.75 | 1.0 |
+| Round 4 | 1.0 / 0.333 | 1.0 / 0.667 | - | 1.0 / 0.667 | 5 / 3 / 1 / 0 | 1.0 | 1.0 |
+| Round 5 | 1.0 / 0.333 | 1.0 / 0.333 | 0.0 / 0.0 | 1.0 / 0.333 | 5 / 3 / 1 / 0 | 1.0 | 1.0 |
 
 **Live latency per model**
 
 | Model | p50 ms | p95 ms | n | Source |
 |---|---|---|---|---|
-| nvidia/nemotron-3.5-lightning-30b-a3b | 703.6 | 1913.4 | 67 | live |
+| nvidia/nemotron-3.5-lightning-30b-a3b | 718.5 | 1399.0 | 66 | live |
+| nvidia/nemoguard-jailbreak-detect | 363.8 | 662.3 | 17 | live |
 
 ## 9. Cross-disciplinary impact
 
@@ -120,4 +122,5 @@ Rust vs Python, n = 100000 iterations.
 
 - "Why not just trust the model?" The agent followed the hidden instruction in 1 of 3 unprotected live runs.
 - "What if Nemotron is down?" Every Nemotron step has a local fallback, and the decision never depended on it.
+- "Does NemoGuard catch your attack?" No. It flagged 0 of 8 injected documents; it covers direct jailbreak prompts, a different attack class, and TF-IDF is what blocks ours.
 - "Is the eval big enough?" No: 40 cases, 2 over-disclosure positives. It is evidence of a loop, not a benchmark.

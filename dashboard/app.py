@@ -38,7 +38,8 @@ def served_by(d):
     if not n:
         return DASH
     parts = [f"{s.replace('content_safety', 'safety')}: {n[s].get('served_by', DASH)}"
-             for s in ("jailbreak", "content_safety", "reasoner") if n.get(s)]
+             + (f" (score {n[s]['score']:.2f})" if isinstance(n[s].get("score"), float) else "")
+             for s in ("jailbreak", "nemoguard", "content_safety", "reasoner") if n.get(s)]
     return " · ".join(parts) or DASH
 
 
@@ -182,7 +183,7 @@ else:
 st.subheader("Nemotron")
 nm = m.get("nemotron") or {}
 sb = nm.get("served_by") or {}
-st.dataframe([{"step": s, **(sb.get(s) or {})} for s in ("jailbreak", "content_safety", "reasoner")]
+st.dataframe([{"step": s, **(sb.get(s) or {})} for s in ("jailbreak", "nemoguard", "content_safety", "reasoner")]
              if sb else [{"step": DASH}], hide_index=True)
 st.dataframe([{"model": k, "p50": v.get("p50"), "p95": v.get("p95"), "n": v.get("n"), "source": v.get("source")}
               for k, v in (nm.get("latency_ms") or {}).items()] or [{"model": DASH}], hide_index=True)
@@ -195,6 +196,7 @@ if rounds:
         return r.get("holdout") or {}
     st.dataframe([{"round": r.get("round"),
                    "holdout injection recall (combined)": pct(((_h(r).get("injection") or {}).get("combined") or {}).get("recall")),
+                   "holdout nemoguard recall": pct(((_h(r).get("injection") or {}).get("nemoguard") or {}).get("recall")),
                    "content safety accuracy": pct(_h(r).get("content_safety_accuracy")),
                    "reasoner action agreement": pct(_h(r).get("reasoner_action_agreement"))} for r in rounds],
                  hide_index=True)

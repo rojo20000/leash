@@ -1,85 +1,254 @@
 {
  "counts": {
-  "allow": 5,
-  "block": 2,
-  "escalate": 2,
-  "total": 9
+  "allow": 17,
+  "block": 3,
+  "escalate": 0,
+  "total": 20
  },
  "rates": {
-  "allow": 0.5556,
-  "block": 0.2222,
-  "escalate": 0.2222
+  "allow": 0.85,
+  "block": 0.15,
+  "escalate": 0.0
  },
  "latency_ms": {
-  "p50": 1.9,
-  "p95": 4.1,
+  "p50": 8.5528,
+  "p95": 93.5777,
   "by_stage": {
    "policy": {
-    "p50": 0.04,
-    "p95": 0.05
+    "p50": 0.007,
+    "p95": 0.0118
    },
    "injection": {
     "p50": 0.0,
-    "p95": 0.4
-   },
-   "minimize": {
-    "p50": 0.5,
-    "p95": 9.0
-   },
-   "anomaly": {
-    "p50": 0.9,
-    "p95": 1.1
-   },
-   "audit": {
-    "p50": 0.2,
-    "p95": 0.3
+    "p95": 24.5344
    },
    "jailbreak": {
-    "p50": 0.6,
-    "p95": 0.6
+    "p50": 0.0,
+    "p95": 1.7778
+   },
+   "nemoguard": {
+    "p50": 0.0,
+    "p95": 0.4425
+   },
+   "minimize": {
+    "p50": 0.0,
+    "p95": 10.0129
    },
    "content_safety": {
-    "p50": 0.1,
-    "p95": 0.1
+    "p50": 1.4043,
+    "p95": 1.6907
+   },
+   "anomaly": {
+    "p50": 6.1812,
+    "p95": 6.7117
    },
    "reasoner": {
-    "p50": 640.1,
-    "p95": 812.4
+    "p50": 0.0,
+    "p95": 91.5005
+   },
+   "audit": {
+    "p50": 0.5094,
+    "p95": 1.2093
    }
   }
  },
  "core": "python",
  "ml": "real",
  "models": {
-  "injection": {
-   "precision": 1.0,
-   "recall": 0.853,
-   "f1": 0.921
-  },
   "anomaly": {
-   "precision": 0.958,
-   "recall": 0.911,
-   "f1": 0.934
-  },
-  "minimization": {
-   "precision": 1.0,
-   "recall": 1.0
+   "by_scenario": {
+    "bulk_read": {
+     "n": 1013,
+     "recall": 0.85
+    },
+    "exfil_email": {
+     "n": 63,
+     "recall": 1.0
+    },
+    "off_role_resources": {
+     "n": 137,
+     "recall": 1.0
+    },
+    "rapid_search": {
+     "n": 876,
+     "recall": 0.9623
+    }
+   },
+   "contamination": 0.02,
+   "f1": 0.9342,
+   "false_positive_rate_normal": 0.057,
+   "generated_at": "2026-11-21T20:19:32+00:00",
+   "k": 33.9319,
+   "n_test_abnormal": 2089,
+   "n_test_normal": 1457,
+   "precision": 0.9582,
+   "recall": 0.9114,
+   "seed": 1337,
+   "threshold": 0.5
   },
   "bench": {
+   "generated_at": "2026-11-21T19:44:59+00:00",
    "n": 100000,
+   "python": {
+    "audit_append_us": 490.046,
+    "policy_us": 12.363
+   },
    "quick": false,
    "rust": {
-    "policy_us": 0.4,
-    "audit_append_us": 6.1
-   },
-   "python": {
-    "policy_us": 3.2,
-    "audit_append_us": 21.0
+    "audit_append_us": 241.524,
+    "policy_us": 3.063
    },
    "speedup": {
-    "policy": 8.0,
-    "audit_append": 3.4
+    "audit_append": 2.03,
+    "policy": 4.04
    }
+  },
+  "bench_quick": {
+   "generated_at": "2026-11-21T20:20:38+00:00",
+   "n": 10000,
+   "python": {
+    "audit_append_us": 507.984,
+    "policy_us": 17.469
+   },
+   "quick": true,
+   "rust": {
+    "audit_append_us": 647.168,
+    "policy_us": 8.133
+   },
+   "speedup": {
+    "audit_append": 0.78,
+    "policy": 2.15
+   }
+  },
+  "demo": {
+   "attacker_email_reasoner": {
+    "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "recommended_action": "deny",
+    "risk_level": "critical",
+    "served_by": "replay"
+   },
+   "core": "rust",
+   "driver": "scripted",
+   "generated_at": "2026-11-21T20:20:51+00:00",
+   "ml": "real",
+   "nemotron_mode": "replay",
+   "protected_blocked": true,
+   "protected_counts": {
+    "allow": 17,
+    "block": 3,
+    "escalate": 0
+   },
+   "unprotected_leaked": true,
+   "verify_clean": true,
+   "verify_tampered": false
+  },
+  "gateway": {
+   "calls": 245,
+   "core": "rust",
+   "generated_at": "2026-11-21T18:59:14+00:00",
+   "latency_ms": {
+    "by_stage": {
+     "anomaly": {
+      "p50": 6.3675,
+      "p95": 6.7099
+     },
+     "audit": {
+      "p50": 0.3717,
+      "p95": 0.4955
+     },
+     "content_safety": {
+      "p50": 0.2466,
+      "p95": 0.3169
+     },
+     "injection": {
+      "p50": 0.0,
+      "p95": 1.3845
+     },
+     "jailbreak": {
+      "p50": 0.0,
+      "p95": 0.264
+     },
+     "minimize": {
+      "p50": 0.0349,
+      "p95": 8.12
+     },
+     "policy": {
+      "p50": 0.0078,
+      "p95": 0.0108
+     },
+     "reasoner": {
+      "p50": 0.0,
+      "p95": 0.5612
+     }
+    },
+    "p50": 7.3903,
+    "p95": 17.1404
+   },
+   "latency_ms_replay": {
+    "calls": 245,
+    "p50": 8.3679,
+    "p95": 19.5677,
+    "rates": {
+     "allow": 0.7143,
+     "block": 0.1224,
+     "escalate": 0.1633
+    }
+   },
+   "ml": "real",
+   "nemotron_mode": "off",
+   "rates": {
+    "allow": 0.7143,
+    "block": 0.1224,
+    "escalate": 0.1633
+   },
+   "sessions": 13,
+   "workload": "10 scripted-recording sessions x 20 calls + 3 bulk-read sessions x 15 read_record"
+  },
+  "injection": {
+   "f1": 0.9209,
+   "generated_at": "2026-11-21T20:19:26+00:00",
+   "hard_negative_false_positives": 0,
+   "n_test": 300,
+   "n_test_hard_negative": 150,
+   "n_train": 900,
+   "precision": 1.0,
+   "recall": 0.8533,
+   "seed": 1337,
+   "threshold": 0.5
+  },
+  "minimization": {
+   "by_kind": {
+    "DOB": {
+     "n_spans": 96,
+     "precision": 1.0,
+     "recall": 1.0
+    },
+    "EMAIL": {
+     "n_spans": 91,
+     "precision": 1.0,
+     "recall": 1.0
+    },
+    "MRN": {
+     "n_spans": 141,
+     "precision": 1.0,
+     "recall": 1.0
+    },
+    "PHONE": {
+     "n_spans": 145,
+     "precision": 1.0,
+     "recall": 1.0
+    },
+    "SSN": {
+     "n_spans": 99,
+     "precision": 1.0,
+     "recall": 1.0
+    }
+   },
+   "generated_at": "2026-11-21T20:19:39+00:00",
+   "n_notes": 240,
+   "n_spans": 572,
+   "precision": 1.0,
+   "recall": 1.0
   },
   "nemotron": {
    "eval": {
@@ -88,32 +257,460 @@
     "n_holdout": 16,
     "rounds": [
      {
-      "round": 1,
-      "holdout": {
+      "all_served_by_nemotron": false,
+      "dev": {
+       "content_safety_accuracy": 0.4167,
+       "content_safety_counts": {
+        "fn": 0,
+        "fp": 7,
+        "tn": 4,
+        "tp": 1
+       },
        "injection": {
         "combined": {
-         "precision": 0.95,
+         "precision": 0.7143,
+         "recall": 1.0
+        },
+        "jailbreak": {
+         "precision": 0.6667,
          "recall": 0.8
+        },
+        "tfidf": {
+         "precision": 1.0,
+         "recall": 1.0
         }
        },
-       "content_safety_accuracy": 0.81,
-       "reasoner_action_agreement": 0.75
+       "reasoner_action_agreement": 0.9231,
+       "reasoner_valid_json_rate": 0.65
+      },
+      "failed_dev_case_ids": [
+       "nc-001",
+       "nc-002",
+       "nc-006",
+       "nc-028",
+       "nc-032",
+       "nc-033",
+       "nc-036",
+       "nc-037"
+      ],
+      "holdout": {
+       "content_safety_accuracy": 0.4444,
+       "content_safety_counts": {
+        "fn": 0,
+        "fp": 5,
+        "tn": 3,
+        "tp": 1
+       },
+       "injection": {
+        "combined": {
+         "precision": 0.6,
+         "recall": 1.0
+        },
+        "jailbreak": {
+         "precision": 0.6,
+         "recall": 1.0
+        },
+        "tfidf": {
+         "precision": 1.0,
+         "recall": 0.3333
+        }
+       },
+       "reasoner_action_agreement": 0.875,
+       "reasoner_valid_json_rate": 0.6923
+      },
+      "injection_policy_sha256": "d92dc516981a343be15e783ea7ac68d37a3c1876f54e593ae91d7b033ee19c92",
+      "mode": "live",
+      "note": "some steps were not served by nemotron in this live round",
+      "prompt_sha256": "37ba29507636d1e22383b9306df2e467a28e4afcec4f91001143dd0ff7f797fa",
+      "round": 1,
+      "safety_policy_sha256": "88b75836acff683583e5c123756725c929c2b267d6cf32c8df0e2f9f87580300",
+      "served_by": {
+       "fallback": 11,
+       "nemotron": 62,
+       "replay": 0
+      },
+      "served_by_step": {
+       "content_safety": {
+        "nemotron": 23
+       },
+       "jailbreak": {
+        "nemotron": 17
+       },
+       "reasoner": {
+        "fallback:template": 11,
+        "nemotron": 22
+       }
       }
      },
      {
-      "round": 2,
-      "holdout": {
+      "all_served_by_nemotron": true,
+      "dev": {
+       "content_safety_accuracy": 0.9167,
+       "content_safety_counts": {
+        "fn": 1,
+        "fp": 0,
+        "tn": 11,
+        "tp": 0
+       },
        "injection": {
         "combined": {
-         "precision": 0.96,
-         "recall": 0.88
+         "precision": 1.0,
+         "recall": 1.0
+        },
+        "jailbreak": {
+         "precision": 0.0,
+         "recall": 0.0
+        },
+        "tfidf": {
+         "precision": 1.0,
+         "recall": 1.0
         }
        },
-       "content_safety_accuracy": 0.88,
-       "reasoner_action_agreement": 0.81
+       "reasoner_action_agreement": 0.9231,
+       "reasoner_valid_json_rate": 1.0
+      },
+      "failed_dev_case_ids": [
+       "nc-021"
+      ],
+      "holdout": {
+       "content_safety_accuracy": 0.8889,
+       "content_safety_counts": {
+        "fn": 1,
+        "fp": 0,
+        "tn": 8,
+        "tp": 0
+       },
+       "injection": {
+        "combined": {
+         "precision": 1.0,
+         "recall": 0.3333
+        },
+        "jailbreak": {
+         "precision": 0.0,
+         "recall": 0.0
+        },
+        "tfidf": {
+         "precision": 1.0,
+         "recall": 0.3333
+        }
+       },
+       "reasoner_action_agreement": 0.625,
+       "reasoner_valid_json_rate": 1.0
+      },
+      "injection_policy_sha256": "6705f6072aca143522c8292e21e3893b55a79e67a3c64ab7ec9bff81c6f11eec",
+      "mode": "live",
+      "prompt_sha256": "fb3d8995b4225c94133a0e660c9fbb89f2ab9880abc122a83944c4cf5b3ef5dd",
+      "round": 2,
+      "safety_policy_sha256": "e7d6d38e130e9c2703a94d24f0e0b3b0d5fade4ffb98e7817f297b7cfdd6dbe4",
+      "served_by": {
+       "fallback": 0,
+       "nemotron": 57,
+       "replay": 0
+      },
+      "served_by_step": {
+       "content_safety": {
+        "nemotron": 23
+       },
+       "jailbreak": {
+        "nemotron": 17
+       },
+       "reasoner": {
+        "nemotron": 17
+       }
+      }
+     },
+     {
+      "all_served_by_nemotron": true,
+      "dev": {
+       "content_safety_accuracy": 0.9167,
+       "content_safety_counts": {
+        "fn": 1,
+        "fp": 0,
+        "tn": 11,
+        "tp": 0
+       },
+       "injection": {
+        "combined": {
+         "precision": 1.0,
+         "recall": 1.0
+        },
+        "jailbreak": {
+         "precision": 1.0,
+         "recall": 1.0
+        },
+        "tfidf": {
+         "precision": 1.0,
+         "recall": 1.0
+        }
+       },
+       "reasoner_action_agreement": 0.9231,
+       "reasoner_valid_json_rate": 1.0
+      },
+      "failed_dev_case_ids": [
+       "nc-021"
+      ],
+      "holdout": {
+       "content_safety_accuracy": 0.8889,
+       "content_safety_counts": {
+        "fn": 1,
+        "fp": 0,
+        "tn": 8,
+        "tp": 0
+       },
+       "injection": {
+        "combined": {
+         "precision": 1.0,
+         "recall": 0.6667
+        },
+        "jailbreak": {
+         "precision": 1.0,
+         "recall": 0.6667
+        },
+        "tfidf": {
+         "precision": 1.0,
+         "recall": 0.3333
+        }
+       },
+       "reasoner_action_agreement": 0.75,
+       "reasoner_valid_json_rate": 1.0
+      },
+      "injection_policy_sha256": "6705f6072aca143522c8292e21e3893b55a79e67a3c64ab7ec9bff81c6f11eec",
+      "mode": "live",
+      "prompt_sha256": "fb3d8995b4225c94133a0e660c9fbb89f2ab9880abc122a83944c4cf5b3ef5dd",
+      "round": 3,
+      "safety_policy_sha256": "e7d6d38e130e9c2703a94d24f0e0b3b0d5fade4ffb98e7817f297b7cfdd6dbe4",
+      "served_by": {
+       "fallback": 0,
+       "nemotron": 58,
+       "replay": 0
+      },
+      "served_by_step": {
+       "content_safety": {
+        "nemotron": 23
+       },
+       "jailbreak": {
+        "nemotron": 17
+       },
+       "reasoner": {
+        "nemotron": 18
+       }
+      }
+     },
+     {
+      "all_served_by_nemotron": true,
+      "dev": {
+       "content_safety_accuracy": 0.75,
+       "content_safety_counts": {
+        "fn": 0,
+        "fp": 3,
+        "tn": 8,
+        "tp": 1
+       },
+       "injection": {
+        "combined": {
+         "precision": 1.0,
+         "recall": 1.0
+        },
+        "jailbreak": {
+         "precision": 1.0,
+         "recall": 0.8
+        },
+        "tfidf": {
+         "precision": 1.0,
+         "recall": 1.0
+        }
+       },
+       "reasoner_action_agreement": 1.0,
+       "reasoner_valid_json_rate": 1.0
+      },
+      "failed_dev_case_ids": [
+       "nc-005",
+       "nc-036",
+       "nc-038"
+      ],
+      "holdout": {
+       "content_safety_accuracy": 0.6667,
+       "content_safety_counts": {
+        "fn": 0,
+        "fp": 3,
+        "tn": 5,
+        "tp": 1
+       },
+       "injection": {
+        "combined": {
+         "precision": 1.0,
+         "recall": 0.6667
+        },
+        "jailbreak": {
+         "precision": 1.0,
+         "recall": 0.6667
+        },
+        "tfidf": {
+         "precision": 1.0,
+         "recall": 0.3333
+        }
+       },
+       "reasoner_action_agreement": 1.0,
+       "reasoner_valid_json_rate": 1.0
+      },
+      "injection_policy_sha256": "6705f6072aca143522c8292e21e3893b55a79e67a3c64ab7ec9bff81c6f11eec",
+      "mode": "live",
+      "note": "post-review fix: content safety served by Lightning in judge mode",
+      "prompt_sha256": "fb3d8995b4225c94133a0e660c9fbb89f2ab9880abc122a83944c4cf5b3ef5dd",
+      "round": 4,
+      "safety_policy_sha256": "059bd707d3f8b7221274c6b2516145a5004e3bd15a3a140387fac11004867ecf",
+      "served_by": {
+       "fallback": 0,
+       "nemotron": 67,
+       "replay": 0
+      },
+      "served_by_step": {
+       "content_safety": {
+        "nemotron": 23
+       },
+       "jailbreak": {
+        "nemotron": 17
+       },
+       "reasoner": {
+        "nemotron": 27
+       }
+      }
+     },
+     {
+      "all_served_by_nemotron": true,
+      "dev": {
+       "content_safety_accuracy": 0.8333,
+       "content_safety_counts": {
+        "fn": 0,
+        "fp": 2,
+        "tn": 9,
+        "tp": 1
+       },
+       "injection": {
+        "combined": {
+         "precision": 1.0,
+         "recall": 1.0
+        },
+        "combined_tfidf_jailbreak": {
+         "precision": 1.0,
+         "recall": 1.0
+        },
+        "jailbreak": {
+         "precision": 1.0,
+         "recall": 1.0
+        },
+        "nemoguard": {
+         "precision": 0.0,
+         "recall": 0.0
+        },
+        "tfidf": {
+         "precision": 1.0,
+         "recall": 1.0
+        }
+       },
+       "reasoner_action_agreement": 0.9231,
+       "reasoner_valid_json_rate": 1.0
+      },
+      "failed_dev_case_ids": [
+       "nc-005",
+       "nc-021",
+       "nc-036"
+      ],
+      "holdout": {
+       "content_safety_accuracy": 0.6667,
+       "content_safety_counts": {
+        "fn": 0,
+        "fp": 3,
+        "tn": 5,
+        "tp": 1
+       },
+       "injection": {
+        "combined": {
+         "precision": 1.0,
+         "recall": 0.3333
+        },
+        "combined_tfidf_jailbreak": {
+         "precision": 1.0,
+         "recall": 0.3333
+        },
+        "jailbreak": {
+         "precision": 1.0,
+         "recall": 0.3333
+        },
+        "nemoguard": {
+         "precision": 0.0,
+         "recall": 0.0
+        },
+        "tfidf": {
+         "precision": 1.0,
+         "recall": 0.3333
+        }
+       },
+       "reasoner_action_agreement": 1.0,
+       "reasoner_valid_json_rate": 1.0
+      },
+      "injection_policy_sha256": "6705f6072aca143522c8292e21e3893b55a79e67a3c64ab7ec9bff81c6f11eec",
+      "mode": "live",
+      "note": "adds NemoGuard JailbreakDetect as a third injection detector (team decision)",
+      "prompt_sha256": "fb3d8995b4225c94133a0e660c9fbb89f2ab9880abc122a83944c4cf5b3ef5dd",
+      "round": 5,
+      "safety_policy_sha256": "059bd707d3f8b7221274c6b2516145a5004e3bd15a3a140387fac11004867ecf",
+      "served_by": {
+       "fallback": 0,
+       "nemotron": 83,
+       "replay": 0
+      },
+      "served_by_step": {
+       "content_safety": {
+        "nemotron": 23
+       },
+       "jailbreak": {
+        "nemotron": 17
+       },
+       "nemoguard": {
+        "nemotron": 17
+       },
+       "reasoner": {
+        "nemotron": 26
+       }
       }
      }
     ]
+   },
+   "generated_at": "2026-11-21T20:14:10+00:00",
+   "latency_ms": {
+    "nvidia/nemoguard-jailbreak-detect": {
+     "n": 17,
+     "p50": 363.8,
+     "p95": 662.3,
+     "source": "live"
+    },
+    "nvidia/nemotron-3.5-lightning-30b-a3b": {
+     "n": 66,
+     "p50": 718.5,
+     "p95": 1399.0,
+     "source": "live"
+    }
+   },
+   "models": {
+    "jailbreak": {
+     "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "requested": "nvidia/nemoguard-jailbreak-detect",
+     "swapped": true,
+     "verified": true
+    },
+    "lightning": {
+     "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "requested": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "swapped": false,
+     "verified": true
+    },
+    "safety": {
+     "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "requested": "nvidia/nemotron-3.5-content-safety",
+     "swapped": true,
+     "verified": true
+    }
    }
   }
  },
@@ -122,25 +719,36 @@
   "served_by": {
    "jailbreak": {
     "nemotron": 0,
-    "replay": 5,
+    "replay": 4,
+    "fallback:local": 0
+   },
+   "nemoguard": {
+    "nemotron": 0,
+    "replay": 4,
     "fallback:local": 0
    },
    "content_safety": {
     "nemotron": 0,
-    "replay": 3,
-    "fallback:local": 3
+    "replay": 17,
+    "fallback:local": 0
    },
    "reasoner": {
     "nemotron": 0,
     "replay": 3,
-    "fallback:template": 1
+    "fallback:template": 0
    }
   },
   "latency_ms": {
    "nvidia/nemotron-3.5-lightning-30b-a3b": {
-    "p50": 540.0,
-    "p95": 690.0,
-    "n": 25,
+    "p50": 563.0,
+    "p95": 750.0,
+    "n": 24,
+    "source": "recorded"
+   },
+   "nvidia/nemoguard-jailbreak-detect": {
+    "p50": 341.0,
+    "p95": 345.0,
+    "n": 4,
     "source": "recorded"
    }
   },

@@ -50,26 +50,48 @@ def test_fixture_mode(monkeypatch):
     t = text(at)
     assert "FIXTURE MODE" in at.warning[0].value
     assert "EMAIL_DOMAIN_NOT_ALLOWED" in t and "send_email" in t
-    assert "chain intact (9 entries)" in t
+    assert "chain intact (20 entries)" in t
     q = json.loads((FX / "queue.json").read_text())["items"][0]
     assert q["reasoner"]["explanation"] in t
     assert "critical" in "".join(m.value for m in at.markdown)
     assert "email.allowed_domains" in t
     assert "Advisory only. The decision above comes from fixed policy; you make the final call." in t
-    assert "jailbreak: replay" in t and "safety: fallback:local" in t and "reasoner: nemotron" not in t
-    assert "reasoner: replay" in t
+    assert "jailbreak: replay" in t and "nemoguard: replay (score -0.91)" in t and "safety: replay" in t
+    assert "reasoner: replay" in t and "reasoner: nemotron" not in t
+    assert "nvidia/nemoguard-jailbreak-detect" in t
     m = json.loads((FX / "metrics.json").read_text())
     assert f"{m['latency_ms']['p50']:.2f}" in t and f"{m['latency_ms']['p95']:.2f}" in t
-    assert "55.6%" in "".join(str(x.value) for x in at.metric)
-    assert "not measured yet" in t
-    assert "nemotron-jailbreak-detect" not in json.dumps(m) and "nemotron-content-safety\"" not in json.dumps(m)
+    assert f"{m['rates']['allow'] * 100:.1f}%" in "".join(str(x.value) for x in at.metric)
+    assert "nemoguard" in t
     feed = at.dataframe[0].value
     legacy = feed[feed["session"] == "legacy-session"].iloc[0]
     assert legacy["served by"] == "-"
     labels = [b.label for b in at.button]
-    assert "Dismiss" in labels and "Confirm block" in labels and "Approve" in labels
+    assert "Dismiss" in labels and "Confirm block" in labels
     at.button(key="approve-q-0001").click().run()
     assert not at.exception
+
+
+def test_decisions_without_nemoguard(monkeypatch, tmp_path):
+    shutil.copytree(FX, tmp_path / "fx")
+    p = tmp_path / "fx" / "decisions.json"
+    d = json.loads(p.read_text())
+    for x in d["decisions"]:
+        (x.get("nemotron") or {}).pop("nemoguard", None)
+    p.write_text(json.dumps(d))
+    at = run(monkeypatch, tmp_path / "fx")
+    assert not at.exception
+    assert "nemoguard: " not in at.dataframe[0].value.to_string()
+
+
+def test_escalation_buttons(monkeypatch, tmp_path):
+    shutil.copytree(FX, tmp_path / "fx")
+    p = tmp_path / "fx" / "queue.json"
+    q = json.loads(p.read_text())
+    q["items"][0]["kind"] = "approval"
+    p.write_text(json.dumps(q))
+    at = run(monkeypatch, tmp_path / "fx")
+    assert {"Approve", "Deny"} <= {b.label for b in at.button}
 
 
 def test_gateway_unreachable(monkeypatch):

@@ -21,7 +21,7 @@
     "contamination": 0.02,
     "f1": 0.9342,
     "false_positive_rate_normal": 0.057,
-    "generated_at": "2026-11-21T20:19:32+00:00",
+    "generated_at": "2026-11-21T20:27:22+00:00",
     "k": 33.9319,
     "n_test_abnormal": 2089,
     "n_test_normal": 1457,
@@ -48,20 +48,20 @@
     }
   },
   "bench_quick": {
-    "generated_at": "2026-11-21T20:20:38+00:00",
+    "generated_at": "2026-11-21T20:27:59+00:00",
     "n": 10000,
     "python": {
-      "audit_append_us": 507.984,
-      "policy_us": 17.469
+      "audit_append_us": 330.356,
+      "policy_us": 11.068
     },
     "quick": true,
     "rust": {
-      "audit_append_us": 647.168,
-      "policy_us": 8.133
+      "audit_append_us": 245.242,
+      "policy_us": 3.08
     },
     "speedup": {
-      "audit_append": 0.78,
-      "policy": 2.15
+      "audit_append": 1.35,
+      "policy": 3.59
     }
   },
   "demo": {
@@ -73,7 +73,7 @@
     },
     "core": "rust",
     "driver": "scripted",
-    "generated_at": "2026-11-21T20:20:51+00:00",
+    "generated_at": "2026-11-21T20:28:05+00:00",
     "ml": "real",
     "nemotron_mode": "replay",
     "protected_blocked": true,
@@ -150,7 +150,7 @@
   },
   "injection": {
     "f1": 0.9209,
-    "generated_at": "2026-11-21T20:19:26+00:00",
+    "generated_at": "2026-11-21T20:27:18+00:00",
     "hard_negative_false_positives": 0,
     "n_test": 300,
     "n_test_hard_negative": 150,
@@ -188,7 +188,7 @@
         "recall": 1.0
       }
     },
-    "generated_at": "2026-11-21T20:19:39+00:00",
+    "generated_at": "2026-11-21T20:27:27+00:00",
     "n_notes": 240,
     "n_spans": 572,
     "precision": 1.0,
