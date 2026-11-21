@@ -35,7 +35,9 @@ def _resolve(value, results):
 
 
 def run_session(mode, driver, session_id, ehr_client, gateway_client, sink_path,
-                recording_path="demo/recordings/referrals.json"):
+                recording_path="demo/recordings/referrals.json", set_time=None):
+    """set_time(start + offset): optional hook, called before each protected call, that lets an in-process caller
+    move the clock it injected into the gateway (create_app(clock=...)). The gateway ignores client timestamps."""
     if mode not in ("unprotected", "protected"):
         raise ValueError(f"bad mode: {mode}")
     if mode == "protected" and gateway_client is None:
@@ -47,8 +49,10 @@ def run_session(mode, driver, session_id, ehr_client, gateway_client, sink_path,
     def call(tool, args, offset, served_by=None):
         decision = result = None
         if mode == "protected":
+            if set_time:
+                set_time(start + offset)
             r = gateway_client.post("/v1/tool-call", json={
-                "session_id": session_id, "role": ROLE, "tool": tool, "args": args, "ts": start + offset})
+                "session_id": session_id, "role": ROLE, "tool": tool, "args": args})
             r.raise_for_status()
             decision = r.json()
             result = _seen(decision)

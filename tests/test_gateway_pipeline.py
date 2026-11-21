@@ -45,13 +45,15 @@ def _env(monkeypatch, tmp_path):
 @pytest.fixture
 def gw(tmp_path):
     ehr = httpx.Client(base_url="http://ehr", transport=httpx.MockTransport(_fake_ehr))
-    c = TestClient(create_app(ehr_client=ehr, runtime_dir=str(tmp_path), policy_path=POLICY))
-    c.rt = tmp_path
+    now = [1000.0]  # fake server clock; call() sets it
+    c = TestClient(create_app(ehr_client=ehr, runtime_dir=str(tmp_path), policy_path=POLICY, clock=lambda: now[0]))
+    c.rt, c.now = tmp_path, now
     return c
 
 
 def call(gw, tool, args, ts=1000.0, session="s1"):
-    r = gw.post("/v1/tool-call", json={"session_id": session, "tool": tool, "args": args, "ts": ts})
+    gw.now[0] = ts
+    r = gw.post("/v1/tool-call", json={"session_id": session, "tool": tool, "args": args})
     assert r.status_code == 200
     return r.json()
 
@@ -186,3 +188,11 @@ def test_policy_step_failure_is_an_audited_block(gw, monkeypatch):  # A20
         assert r.status_code == 200 and r.json()["decision"] == "block"
         assert gw.get("/v1/audit/verify").json()["entries"] == 2 + i
     assert not (gw.rt / "email_sink.jsonl").exists()
+
+
+def test_request_ts_cannot_switch_off_the_rate_limit(gw):  # A3
+    ds = [gw.post("/v1/tool-call", json={
+        "session_id": "s1", "tool": "read_record", "ts": 1000.0 + 301 * i,
+        "args": {"patient_id": f"pt-{i:04d}", "resource_types": ["Patient"]}}).json() for i in range(15)]
+    assert [d["decision"] for d in ds[10:]] == ["escalate"] * 5
+    assert "RECORD_RATE_EXCEEDED" in codes(ds[-1])

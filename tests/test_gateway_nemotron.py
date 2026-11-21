@@ -33,8 +33,10 @@ def _env(monkeypatch, tmp_path):
 
 def make_gw(tmp_path, name="rt", ehr_client=None):
     ehr_client = ehr_client or httpx.Client(base_url="http://ehr", transport=httpx.MockTransport(_fake_ehr))
-    c = TestClient(create_app(ehr_client=ehr_client, runtime_dir=str(tmp_path / name), policy_path=POLICY))
-    c.rt = tmp_path / name
+    now = [1000.0]  # fake server clock; call() sets it
+    c = TestClient(create_app(ehr_client=ehr_client, runtime_dir=str(tmp_path / name), policy_path=POLICY,
+                              clock=lambda: now[0]))
+    c.rt, c.now = tmp_path / name, now
     return c
 
 
@@ -44,7 +46,8 @@ def gw(tmp_path):
 
 
 def call(gw, tool, args, ts=1000.0, session="s1", call_id=None):
-    body = {"session_id": session, "tool": tool, "args": args, "ts": ts}
+    gw.now[0] = ts
+    body = {"session_id": session, "tool": tool, "args": args}
     if call_id:
         body["call_id"] = call_id
     r = gw.post("/v1/tool-call", json=body)

@@ -1,5 +1,7 @@
-"""`make dashboard`: start the mock EHR (:8001) and the gateway (:8000), seed one scripted protected session, then
-run the Streamlit dashboard (:8501) in the foreground. Ctrl+C (or closing Streamlit) stops all three; the servers are
+"""`make dashboard`: start the mock EHR (:8001), seed one scripted protected session, start the gateway (:8000), then
+run the Streamlit dashboard (:8501) in the foreground. The session is seeded in this process on a simulated clock
+BEFORE the gateway starts (the gateway uses its own clock and ignores client timestamps); the gateway then loads the
+seeded audit log, decisions and queue from the runtime dir. Ctrl+C (or closing Streamlit) stops all three; the servers are
 child processes terminated in `finally`, so nothing is left running. Uses LEASH_NEMOTRON=replay unless set; Streamlit usage stats are off (no telemetry).
 Resets the gateway's runtime state (runtime/ audit log, decisions, queue) before seeding.
 """
@@ -29,6 +31,21 @@ def wait(url, proc, name):
     sys.exit(f"{name} did not become healthy at {url}")
 
 
+def seed(ehr_client, runtime_dir):
+    """Reset the gateway state in runtime_dir and replay the scripted session through an in-process gateway whose
+    clock follows the recording's offsets. Returns the run_session steps."""
+    from fastapi.testclient import TestClient
+    from agent.runner import run_session
+    from gateway.app import create_app
+    now = [time.time()]
+    g = TestClient(create_app(ehr_client=ehr_client, runtime_dir=runtime_dir, clock=lambda: now[0]))
+    ehr_client.post("/admin/reset")
+    g.post("/v1/admin/reset")
+    return run_session("protected", "scripted", "demo-protected", ehr_client, g, os.devnull,
+                       str(ROOT / "demo" / "recordings" / "referrals.json"),
+                       set_time=lambda t: now.__setitem__(0, t))
+
+
 def main():
     os.environ.setdefault("LEASH_NEMOTRON", "replay")
     os.environ.setdefault("LEASH_EHR_URL", EHR)
@@ -39,16 +56,11 @@ def main():
         ehr = subprocess.Popen(uv + ["ehr.app:app", "--port", "8001"], cwd=ROOT)
         procs.append(ehr)
         wait(EHR, ehr, "EHR")
+        with httpx.Client(base_url=EHR, timeout=60) as e:  # same runtime dir as the gateway child (cwd=ROOT)
+            steps = seed(e, str(ROOT / os.environ.get("LEASH_RUNTIME_DIR", "runtime")))
         gw = subprocess.Popen(uv + ["gateway.app:app", "--port", "8000"], cwd=ROOT)
         procs.append(gw)
         wait(GW, gw, "gateway")
-
-        from agent.runner import run_session
-        with httpx.Client(base_url=EHR, timeout=60) as e, httpx.Client(base_url=GW, timeout=120) as g:
-            e.post("/admin/reset")
-            g.post("/v1/admin/reset")
-            steps = run_session("protected", "scripted", "demo-protected", e, g, os.devnull,
-                                str(ROOT / "demo" / "recordings" / "referrals.json"))
         n = {k: sum(s["decision"]["decision"] == k for s in steps) for k in ("allow", "block", "escalate")}
         print(f"seeded protected session: {n}. Dashboard: http://127.0.0.1:8501  (Ctrl+C stops everything)", flush=True)
 

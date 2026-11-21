@@ -336,7 +336,9 @@ send_email `([], [], to as list)`; unknown tool `([], [], [])`.
 ## C5. Gateway (`gateway/`, N6)
 
 `gateway/app.py`: `create_app(ehr_client: httpx.Client | None = None, runtime_dir: str | None = None,
-policy_path: str | None = None) -> FastAPI`; module-level `app = create_app()` (uses env defaults, C3).
+policy_path: str | None = None, clock: Callable[[], float] = time.time) -> FastAPI`; module-level
+`app = create_app()` (uses env defaults, C3). `clock` (audit A3) is the only time source for the policy rate window
+and the anomaly window; tests, the demo, the benchmark and the `make dashboard` seeding inject a fake clock.
 (Added 11:45) Importing `gateway.app` and calling `create_app()` create no files or directories; the runtime dir
 is created on the first write. Warm-up: the app's FastAPI lifespan startup runs `minimize("read_document",
 {"document_id":"warmup","patient_id":"pt-0000","text":"Call 555-000-0000 re MRN-0000000."}, keep_fields)` and
@@ -346,8 +348,8 @@ in decisions, the audit log or latency stats. Lifespan runs when the server star
 
 ### C5.1 Pipeline for `POST /v1/tool-call`, in order, each stage timed with `time.perf_counter()`
 
-1. `policy`: `core.Policy.evaluate(tool, *call_facts(tool,args), ts)` where `ts` = request `ts` if given
-   (simulated clock for scripted replays) else `time.time()`.
+1. `policy`: `core.Policy.evaluate(tool, *call_facts(tool,args), ts)` where `ts` = `clock()`, the server clock
+   (audit A3). The request's `ts` never influences a decision.
    (Audit A20) Any exception in this step, or a policy fact that is not a `str`, gives `block` with reason
    `EXECUTION_ERROR` (stage `policy`) and empty `patient_ids`/`recipients`; the call is audited like any other,
    never HTTP 500. A reasoner failure on such a call leaves `nemotron.reasoner` null.
@@ -376,6 +378,9 @@ Request:
  "args":{"to":["records-transfer@outside-clinic.example"],"subject":"Record","body":"..."},
  "call_id":"optional, uuid4 hex assigned if missing","ts":1795280400.0}
 ```
+`ts` is optional and IGNORED (audit A3): it is accepted only so that older clients do not get a 422. In-process
+callers that need a repeatable timeline inject `clock` into `create_app` and move it themselves
+(`agent.runner.run_session(..., set_time=...)` calls `set_time(<session start> + offset_s)` before each call).
 Decision (HTTP 200 for every decision; 422 only for malformed requests):
 ```json
 {"seq":17,"call_id":"3f2a...","session_id":"demo-protected","tool":"send_email",

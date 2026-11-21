@@ -59,10 +59,13 @@ def test_unprotected_replay_leaks_to_sink(ehr, tmp_path):
 
 def test_protected_replay_blocks_attacker(ehr, tmp_path):
     from gateway.app import create_app
+    now = [0.0]  # fake server clock, moved by run_session before each call
     gw = TestClient(create_app(ehr_client=ehr, runtime_dir=str(tmp_path / "rt"),
-                               policy_path=str(ROOT / "policies" / "scheduling_assistant.toml")))
+                               policy_path=str(ROOT / "policies" / "scheduling_assistant.toml"),
+                               clock=lambda: now[0]))
     sink = tmp_path / "rt" / "email_sink.jsonl"  # the gateway executes the email, so it owns the sink
-    steps = run_session("protected", "scripted", "demo-protected", ehr, gw, str(tmp_path / "unused.jsonl"))
+    steps = run_session("protected", "scripted", "demo-protected", ehr, gw, str(tmp_path / "unused.jsonl"),
+                        set_time=lambda t: now.__setitem__(0, t))
     blocked = [s for s in steps if s["tool"] == "send_email" and s["args"]["to"] == [ATTACKER]]
     assert len(blocked) == 1
     d = blocked[0]["decision"]
@@ -79,3 +82,19 @@ def test_protected_replay_blocks_attacker(ehr, tmp_path):
 def test_run_session_requires_gateway(ehr, tmp_path):
     with pytest.raises(ValueError):
         run_session("protected", "scripted", "s", ehr, None, str(tmp_path / "s.jsonl"))
+
+
+def test_dashboard_seed_survives_a_gateway_start(ehr, tmp_path):  # A3: scripts/serve.py seeds before the gateway starts
+    from gateway.app import create_app
+    from scripts.serve import seed
+    steps = seed(ehr, str(tmp_path / "rt"))
+    assert len(steps) == 20
+    gw = TestClient(create_app(ehr_client=ehr, runtime_dir=str(tmp_path / "rt")))  # what the uvicorn child does
+    assert gw.get("/v1/decisions").json()["decisions"] == [s["decision"] for s in steps]
+    v = gw.get("/v1/audit/verify").json()
+    assert v["ok"] is True and v["entries"] >= 20
+    assert gw.get("/v1/queue").json()["items"]
+    # same decisions as a run that moves the clock by hand: the seed kept the recording's offsets
+    block = [s["step"] for s in steps if s["decision"]["decision"] == "block"]
+    assert block == [9, 12, 13] and not any(
+        r["code"] == "ANOMALY" for s in steps for r in s["decision"]["reasons"])

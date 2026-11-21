@@ -41,7 +41,7 @@ class ToolCall(BaseModel):
     tool: str
     args: dict = {}
     call_id: Optional[str] = None
-    ts: Optional[float] = None
+    ts: Optional[float] = None  # accepted so old clients do not break; ignored (server clock decides, A3)
 
 
 class Review(BaseModel):
@@ -60,7 +60,7 @@ def _pct(vals, q):
     return s[min(len(s) - 1, int(q * len(s)))]
 
 
-def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
+def create_app(ehr_client=None, runtime_dir=None, policy_path=None, clock=time.time) -> FastAPI:
     core = load_core()
     ml, ml_name = load_ml()
     rt = Path(runtime_dir or os.environ.get("LEASH_RUNTIME_DIR", "runtime"))  # created on first write
@@ -123,7 +123,7 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
         lat = {k: 0.0 for k in STAGES}
         t_start = time.perf_counter()
         call_id = req.call_id or uuid.uuid4().hex
-        ts = req.ts if req.ts is not None else time.time()
+        ts = clock()  # never the request's ts: the client must not choose the rate and anomaly windows
         tool, args = req.tool, req.args
         reasons, scores, redactions, output = [], {"injection": None, "anomaly": None}, [], None
         nem = {"mode": nemotron.mode(), "jailbreak": None, "nemoguard": None, "content_safety": None, "reasoner": None}
