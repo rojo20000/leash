@@ -14,7 +14,10 @@ from __future__ import annotations
 import json
 import random
 from datetime import date, timedelta
+from collections.abc import Mapping
 from pathlib import Path
+
+from .db import ClinicDB
 
 TODAY = date(2026, 11, 21)
 
@@ -176,36 +179,74 @@ def enrich(p: dict) -> None:
     p["language"] = rng.choice(LANGUAGES)
 
 
+class PatientMap(Mapping):
+    """The patients table as a read-only dict (id -> record), reloaded whenever the database changes.
+
+    Writes never go through this map: use EHR.add_patient / EHR.save_patient.
+    """
+
+    def __init__(self, db: ClinicDB):
+        self.db, self._seen, self._cache = db, -1, {}
+
+    def _data(self) -> dict:
+        if self._seen != self.db.version:
+            version = self.db.version
+            self._cache = {p["id"]: p for p in self.db.all_patients()}
+            self._seen = version
+        return self._cache
+
+    def __getitem__(self, pid):
+        return self._data()[pid]
+
+    def __iter__(self):
+        return iter(list(self._data()))
+
+    def __len__(self):
+        return len(self._data())
+
+
 class EHR:
-    def __init__(self, path: Path):
+    """Patients, stored in the clinic database (data/clinic.db).
+
+    On first start an empty database is filled from data/patients.json if it exists
+    (otherwise from generate()); the JSON file is left as it was and no longer written.
+    """
+
+    def __init__(self, path: Path, db: ClinicDB | None = None):
         self.path = path
-        if not path.exists():
-            path.write_text(json.dumps(generate(), indent=1))
-        self.patients = {p["id"]: p for p in json.loads(path.read_text())}
-        if any("insurance" not in p for p in self.patients.values()):
-            for p in self.patients.values():
-                enrich(p)
-            path.write_text(json.dumps(list(self.patients.values()), indent=1))
+        self.db = db or ClinicDB(path.parent / "clinic.db")
+        if self.db.count("patients") == 0:
+            if path.exists():
+                found, how = json.loads(path.read_text()), f"Imported from {path.name}"
+            else:
+                found, how = generate(), "Generated synthetic patient"
+            for p in found:
+                if "insurance" not in p:
+                    enrich(p)
+            self.db.write_many([("patient", p, "imported", how) for p in found], "system", "system")
+        self.patients = PatientMap(self.db)
 
     def save(self) -> None:
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(list(self.patients.values()), indent=1))
-        tmp.replace(self.path)  # atomic: a crash never leaves half a database
+        """Kept for old callers; every write is already saved by add_patient / save_patient."""
 
-    def add_patient(self, v: dict) -> dict:
-        n = len(self.patients) + 1
-        while f"syn-{n:03d}" in self.patients:
-            n += 1
-        pid = f"syn-{n:03d}"
-        p = {"resourceType": "Patient", "id": pid, "synthetic": True, "scenario": "registered",
-             "mrn": f"SYN{100000 + n * 7919 % 900000}", "name": {"given": v["given"], "family": v["family"]},
-             "sex": v["sex"], "birthDate": v["birthDate"], "age": v["age"], "phone": v["phone"],
-             "address": v["address"], "conditions": [], "medications": [], "allergies": ["No known allergies"],
-             "observations": [], "notes": [], "attention": [], "insurance": v["insurance"],
-             "preferred_contact": v["preferred_contact"], "language": v["language"]}
-        self.patients[pid] = p
-        self.save()
+    def add_patient(self, v: dict, by: str | None = None, role: str | None = None) -> dict:
+        with self.db.lock:  # pick the id and insert it without anyone else in between
+            n = len(self.patients) + 1
+            while f"syn-{n:03d}" in self.patients:
+                n += 1
+            pid = f"syn-{n:03d}"
+            p = {"resourceType": "Patient", "id": pid, "synthetic": True, "scenario": "registered",
+                 "mrn": f"SYN{100000 + n * 7919 % 900000}", "name": {"given": v["given"], "family": v["family"]},
+                 "sex": v["sex"], "birthDate": v["birthDate"], "age": v["age"], "phone": v["phone"],
+                 "address": v["address"], "conditions": [], "medications": [], "allergies": ["No known allergies"],
+                 "observations": [], "notes": [], "attention": [], "insurance": v["insurance"],
+                 "preferred_contact": v["preferred_contact"], "language": v["language"]}
+            self.db.write("patient", p, "registered", by, role, "Registered as a new patient")
         return p
+
+    def save_patient(self, p: dict, by: str | None, role: str | None, action: str, summary: str) -> dict:
+        """Save a changed record (a chart entry, for example) with who did it and why."""
+        return self.db.write("patient", p, action, by, role, summary)
 
     def front_desk(self, p: dict, fields: list[str]) -> dict:
         """The front-desk view of a patient, built from an allow-list (never by removing clinical fields)."""
@@ -235,7 +276,8 @@ class EHR:
         return sorted(out, key=lambda s: (-s["attention"], s["name"]))
 
     def get(self, pid: str) -> dict | None:
-        return self.patients.get(pid)
+        """A fresh copy of one record, read from the database (safe to change; save with save_patient)."""
+        return self.db.patient(pid)
 
     @staticmethod
     def model_context(p: dict) -> tuple[str, list[dict]]:
