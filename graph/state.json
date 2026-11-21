@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21T14:30-06:00",
+  "updated": "2026-11-21T14:37-06:00",
   "schedule": {
     "stage0_due": "11:50",
     "stage1_due": "15:30",
@@ -31,6 +31,12 @@
       "at": "13:46",
       "commit": "f7fbb72",
       "check": "make check exit 0: cargo test 11 passed; pytest 100 passed, 3 skipped; demo totals 17 allow, 3 block, 0 escalate; PASS 1-5"
+    },
+    "stage4": {
+      "status": "passed",
+      "at": "14:30",
+      "commit": "0497e95 (checked); final commit follows",
+      "check": "clean worktree, no key: make setup exit 0, make check exit 0: cargo test 11 passed; pytest 105 passed, 3 skipped; bench --quick policy 3.77x, audit append 1.32x; demo 17 allow / 3 block / 0 escalate; PASS 1-5"
     }
   },
   "nodes": {
@@ -141,10 +147,10 @@
     },
     "N15": {
       "name": "final",
-      "status": "running",
+      "status": "passed",
       "iteration": 1,
-      "last_check": "",
-      "reviewer_notes": "Fresh-eyes fixes done and committed (3054d45): .gitattributes eol=lf; README notes on results.json regeneration, stopping the dashboard, and LEASH_CORE=py make check (run, PASS 1-5). FINAL STEPS HELD until N20 and N21 land: clean-worktree make check, PROGRESS.md with the final output, final commit. Leftover: empty folder ../leash-diag from the overseer's scratch worktree (outside the repo; left for the team to delete)."
+      "last_check": "clean git worktree of 0497e95 with no key, no .env, no .venv: make setup exit 0, make check exit 0 (11 cargo tests; 105 passed, 3 skipped; PASS 1-5). Full output in graph/final_make_check.txt and PROGRESS.md",
+      "reviewer_notes": "Fresh-eyes fixes committed (3054d45). After the final run only metrics/results.json shows as modified in the worktree (timestamps and quick-benchmark timings); data/corpus/corpus.jsonl no longer does. Worktree removed. Leftover for the team: empty folder ../leash-diag next to the repo (from the overseer's earlier scratch worktree; Windows refused the delete)."
     },
     "N1b": {
       "name": "replan_nemotron",
@@ -194,7 +200,19 @@
       "iteration": 1,
       "last_check": "N21, N12 and N13 checks print ok; dashboard tests 6 passed; make check 105 passed, 3 skipped, demo PASS 1-5 (node run)",
       "reviewer_notes": "Overseer verified: every table number in README.md, docs/PITCH.md and docs/NEMOTRON.md is in metrics/results.json (five rounds, NemoGuard column and latency row); the first three NEMOTRON.md paragraphs are verbatim in SUBMISSION.md; docs state that NemoGuard flagged 0 of 17 documents including all 8 injected ones, that the judge's holdout recall was 0.667 in round 4 and 0.333 in round 5 with unchanged prompts, and that final combined holdout recall is 0.333; nothing listens on 8000/8001/8501/9333. Dashboard shows the nemoguard detector and still renders older decisions; screenshots retaken at 14:24."
+    },
+    "N22": {
+      "name": "clinic_assistant_vectorstore",
+      "status": "blocked",
+      "iteration": 0,
+      "last_check": "",
+      "reviewer_notes": "Team scope change at 14:08 (spec in graph/MISSION.md ADDENDUM 2). Blocked before planning: /mnt/project-files/medical-local-ai/ is not reachable from this Windows session (no /mnt, WSL has only docker-desktop, no medical-local-ai folder found). Team asked for a path on this machine. Not planned, not started; first to be cut if time runs short."
     }
   },
-  "clock_note": "Timestamps written before 11:33 in this file and DECISIONS.md were estimates and run up to ~12 minutes fast; actual: key supplied 11:28, N5/N6 passed 11:30."
+  "clock_note": "Timestamps written before 11:33 in this file and DECISIONS.md were estimates and run up to ~12 minutes fast; actual: key supplied 11:28, N5/N6 passed 11:30.",
+  "final": {
+    "leash_build": "complete",
+    "final_check": "graph/final_make_check.txt",
+    "open": "N22 Clinic Assistant vector store blocked on a reachable path"
+  }
 }
