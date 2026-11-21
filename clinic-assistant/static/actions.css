@@ -1,0 +1,34 @@
+/* Assistant actions (2.12): proposal cards, the help popover and the Home list. Uses app.css tokens only. */
+.act-card { max-width: 100%; width: min(640px, 100%); }
+.act-body { white-space: normal; }
+.act-summary { margin: 0 0 8px; }
+.act-changes { border-collapse: collapse; margin: 4px 0 10px; font-size: 13.5px; width: 100%; }
+.act-changes th { text-align: left; font-weight: 600; color: var(--ink-2); padding: 4px 10px 4px 0; text-transform: capitalize; white-space: nowrap; vertical-align: top; }
+.act-changes td { padding: 4px 6px; border-top: 1px solid var(--rule); vertical-align: top; }
+.act-changes th { border-top: 1px solid var(--rule); }
+.act-before { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--rule-2); }
+.act-arrow { color: var(--ink-3); width: 1em; }
+.act-after { color: var(--ink); font-weight: 600; }
+.act-draft { width: 100%; font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--paper); border: 1px solid var(--rule); border-radius: 6px; padding: 8px; color: var(--ink); resize: vertical; margin: 0 0 8px; }
+.act-draft:not([readonly]) { background: var(--sheet); border-color: var(--accent); }
+.act-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; margin: 4px 0 8px; }
+.tier.act-muted { color: var(--ink-3); }
+.act-note { font-size: 13px; }
+.act-result { background: var(--ok-tint); border-radius: 6px; padding: 8px 10px; font-size: 13.5px; }
+.act-bar { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.act-bar label { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--ink-2); display: inline-flex; align-items: center; gap: 6px; }
+.act-msg { margin: 6px 0 0; }
+.act-msg:empty { display: none; }
+.act-options { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.act-options .act-picked { border-color: var(--accent); color: var(--accent); }
+.act-help { position: relative; margin: 6px 0 0; }
+.act-help-btn { font-size: 12.5px; }
+.act-pop { position: absolute; z-index: 20; bottom: calc(100% + 6px); left: 0; right: 0; max-width: 480px; max-height: 60vh; overflow-y: auto; background: var(--sheet); border: 1px solid var(--rule-2); border-radius: 8px; box-shadow: var(--shadow-2); padding: 12px 14px; }
+.act-pop ul { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.act-pop li { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.act-pop-title { font-weight: 600; font-size: 13.5px; }
+.act-pop-kind { font-size: 12px; color: var(--ink-3); }
+.act-pop .chip { text-align: left; }
+.act-home { margin-top: 8px; }
+.act-home-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.act-home .act-card { width: 100%; }

@@ -124,4 +124,4 @@ results: "Human front end: Clinic Assistant" in the repo's top-level `README.md`
 MOCK_LLM=1 python3 -m unittest        # or, from the repo root: make clinic-check
 ```
 
-84 tests (1 skipped), about 30 seconds, no network, no Ollama.
+98 tests (1 skipped), about 30 seconds, no network, no Ollama.

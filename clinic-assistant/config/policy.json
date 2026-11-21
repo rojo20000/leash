@@ -175,6 +175,15 @@
       "\\b(diagnos\\w*|medication\\w*|medicine\\w*|meds|dose|dosage|prescri\\w*|symptom\\w*|allerg\\w*|lab\\w*|results?|condition\\w*|treatment\\w*|blood pressure|pain|sick|side effects?|pregnan\\w*|refill\\w*)\\b"
     ]
   },
+  "assistant_actions": {
+    "_comment": "2.12. The assistant turns chat commands into proposals; nothing changes until a person whose role has the listed permission approves (app/actions.py). Clinical drafts can only be proposed by clinical roles. Changing a pin_field or adding to the chart needs the confidential PIN.",
+    "permissions": {"reschedule": "book", "book": "book", "cancel": "book", "fill_slot": "book",
+                    "update_contact": "register_patient", "remind": "send_reminder",
+                    "handover": "edit_chart", "referral": "draft_message"},
+    "clinical": ["handover", "referral"],
+    "propose_permissions": ["chat", "frontdesk_chat"],
+    "pin_fields": ["phone", "address", "member_id"]
+  },
   "confidential": {
     "_comment": "DEMO ONLY. These fields stay hidden on every screen until the PIN is typed, every time, and each reveal is logged. 1234 is a demo PIN; a real clinic would use each person's own PIN or badge tap.",
     "pin": "1234",

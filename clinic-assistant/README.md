@@ -15,6 +15,12 @@ and has not been validated for clinical use.
 - **Three one-click attack prompts** (indirect prompt injection, an unsafe stop-your-blood-thinner instruction, and bait for identifiers and a made-up patient). The fixed filters let all three through; the reviewer catches them. Under each answer a box says what the reviewer caught, before or after the model, or that it wasn't checked. Conversations show the reviewer's verdicts.
 - **Judge script**: `docs/DEMO.md` (3 minutes, works offline with `MOCK_LLM=1`). New demo account `admin_kai` (admin); clinical leads can now also see the Network page.
 
+## New in 2.13: assistant actions (approve before anything changes)
+
+- **The assistant can do the chores, not just answer.** Type a command in any assistant box: "Move Desmond F. from Tuesday to Wednesday 10am", "Book syn-007 tomorrow at 9:20 with Dr Osei", "Cancel syn-004's appointment tomorrow", "Fill the 11:00 slot tomorrow with Dr Lee", "Change syn-012's phone to 555-0199", "Remind syn-007 about their appointment", and for clinicians "Draft a handover for syn-004" or "Draft a referral for syn-003 to cardiology for rising INR". "What can the assistant do?" under each box lists the examples for your role.
+- **It only proposes.** You get a card with the change (before -> after) and Approve / Edit / Reject. Nothing is written until a person whose role allows it approves (front desk: scheduling and contact details; clinicians: chart and referral drafts; auditors, admins and network engineers: none), with the PIN for confidential fields and chart notes. Approval writes through the normal paths, so `change_log` shows the approver.
+- **Checked like answers.** Each proposal goes past the guardrails and the Nemotron reviewer: red blocks it, amber holds it until the approver confirms. Two matching patients or a taken slot gives a "pick one" card with choices; it never guesses. Details, flow chart and the not-yet-built list: `NOTES.md` -> "Assistant actions (v2.13)".
+
 ## New in 2.11: a second model reviews every answer (NVIDIA Nemotron)
 
 - **What it does.** Every doctor-assistant and front-desk-assistant turn now goes past a separate local reviewer model twice: **before** the chat model (the masked question plus the minimized record or schedule) and **after** it (the answer). It looks for prompt injection, unsafe clinical advice, identifiers, invented patients and out-of-scope requests, and answers `green`, `amber` or `red`.
@@ -158,6 +164,7 @@ app/ehr.py           patients (read and written through app/db.py), synthetic ge
 app/schedule.py      appointments, booking and check-in rules
 app/network.py       network view (no patient data)
 app/reviewer.py      the reviewer model (Nemotron via Ollama), before and after the chat model
+app/actions.py       assistant actions: chat commands -> proposals -> human approval
 scripts/verify_db.py database counts and change-log check
 app/users.py         accounts and password hashing
 static/              the web page (no external scripts)

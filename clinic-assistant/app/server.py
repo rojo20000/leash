@@ -36,7 +36,9 @@ from .vectorstore import Embedder, VectorStore, index_all, reindex
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"),
-          "/app.css": ("app.css", "text/css")}
+          "/app.css": ("app.css", "text/css"),
+          # ---- assistant actions (2.12) ----
+          "/actions.js": ("actions.js", "text/javascript"), "/actions.css": ("actions.css", "text/css")}
 SECURITY_HEADERS = {
     "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; form-action 'self'",
     "X-Content-Type-Options": "nosniff",
@@ -188,6 +190,9 @@ class App:
         self.pin_fails: dict[str, list[float]] = {}
         self.lock = threading.Lock()
         self.rng = random.SystemRandom()
+        # ---- assistant actions (2.12): proposals the assistant makes, applied only on human approval ----
+        from .actions import Actions
+        self.actions = Actions(self)
 
     # ---- helpers -------------------------------------------------------
     def similar_cases(self, sess: dict, pid: str) -> list[dict]:
@@ -955,6 +960,10 @@ def make_handler(app: App):
                 app.audit.write("audit_viewed", s["user"])
                 return self.send(200, {"entries": app.audit.read(), "verify": app.audit.verify(),
                                        "vectors": app.vectors.status(), "database": app.db.status()})
+            # ---- assistant actions (2.12): logic in app/actions.py ----
+            if path == "/api/actions" or path.startswith("/api/actions/"):
+                return self.send(*app.actions.handle_get(s, path))
+            # ---- end assistant actions ----
             self.send(404, {"error": "Not found."})
 
         def do_POST(self):
@@ -1083,6 +1092,11 @@ def make_handler(app: App):
                     return self.send(400, {"error": "enabled must be true or false."})
                 app.reviewer.set_demo(data["enabled"], s["user"])
                 return self.send(200, {**app.reviewer.status(), "can_toggle": True, "scenarios": DEMO_SCENARIOS})
+
+            # ---- assistant actions (2.12): logic in app/actions.py ----
+            if path.startswith("/api/actions/"):
+                return self.send(*app.actions.handle_post(s, path, data))
+            # ---- end assistant actions ----
 
             if path == "/api/chat/clear":
                 s["history"] = []
