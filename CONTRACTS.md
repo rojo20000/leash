@@ -825,6 +825,8 @@ SCHEMA = {"type": "object", "additionalProperties": False,
                  "policy_rule_ids": {"type": "array", "items": {"enum": list(RULE_IDS)}, "minItems": 1,
                                      "maxItems": 4, "uniqueItems": True},
                  "recommended_action": {"enum": ACTIONS}}}
+# (Revised 12:30, N8) The NVIDIA API rejects "uniqueItems" in a structured-output schema (HTTP 400). chat_json is
+# sent WIRE_SCHEMA = SCHEMA without "uniqueItems"; the reply is validated locally against the full SCHEMA.
 
 def build_context(tool: str, args: dict, minimized_output: dict | None, decision: str, reasons: list[dict],
                   scores: dict, nemotron_signals: dict, policy_path: str) -> dict
@@ -948,6 +950,12 @@ refreshes the recordings (`make record`). `--assert` adds assertion 5: if `demo/
 any file, the protected send_email to the attacker has `nemotron.reasoner.served_by == "replay"`; otherwise it
 prints `SKIP 5 (no Nemotron recordings)`. Assertions 1-4 pass in every mode, including `LEASH_NEMOTRON=off`.
 `--live` runs the Lightning agent (Ollama fallback) with `LEASH_NEMOTRON=live`.
+(Revised 12:30, N8) Assertion 5 expects `"nemotron"` instead of `"replay"` when `LEASH_NEMOTRON=live` (that is
+`make record`), and prints SKIP under `LEASH_NEMOTRON=off`. Make targets: `make check` exports
+`LEASH_NEMOTRON=replay`; root `conftest.py` sets `LEASH_NEMOTRON=replay` for every test when it is unset;
+`make dashboard` runs `scripts/serve.py` (EHR, gateway, a seeded scripted protected session in `runtime/`, then
+Streamlit; Ctrl+C stops all). The demo writes key `demo` with the four C6.4 booleans plus `driver`,
+`nemotron_mode`, `core`, `ml`, `protected_counts` and `attacker_email_reasoner`.
 
 ### C10.10 Ownership additions (supersede C9 where they conflict)
 

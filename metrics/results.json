@@ -21,7 +21,7 @@
     "contamination": 0.02,
     "f1": 0.9342,
     "false_positive_rate_normal": 0.057,
-    "generated_at": "2026-11-21T17:29:06+00:00",
+    "generated_at": "2026-11-21T18:10:57+00:00",
     "k": 33.9319,
     "n_test_abnormal": 2089,
     "n_test_normal": 1457,
@@ -31,25 +31,47 @@
     "threshold": 0.5
   },
   "bench": {
-    "generated_at": "2026-11-21T17:55:49+00:00",
+    "generated_at": "2026-11-21T18:11:33+00:00",
     "n": 10000,
     "python": {
-      "audit_append_us": 281.764,
-      "policy_us": 16.296
+      "audit_append_us": 284.045,
+      "policy_us": 21.715
     },
     "quick": true,
     "rust": {
-      "audit_append_us": 221.301,
-      "policy_us": 3.011
+      "audit_append_us": 213.995,
+      "policy_us": 3.05
     },
     "speedup": {
-      "audit_append": 1.27,
-      "policy": 5.41
+      "audit_append": 1.33,
+      "policy": 7.12
     }
+  },
+  "demo": {
+    "attacker_email_reasoner": {
+      "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+      "recommended_action": "deny",
+      "risk_level": "critical",
+      "served_by": "replay"
+    },
+    "core": "rust",
+    "driver": "scripted",
+    "generated_at": "2026-11-21T18:11:40+00:00",
+    "ml": "real",
+    "nemotron_mode": "replay",
+    "protected_blocked": true,
+    "protected_counts": {
+      "allow": 8,
+      "block": 3,
+      "escalate": 9
+    },
+    "unprotected_leaked": true,
+    "verify_clean": true,
+    "verify_tampered": false
   },
   "injection": {
     "f1": 0.9209,
-    "generated_at": "2026-11-21T17:29:01+00:00",
+    "generated_at": "2026-11-21T18:10:53+00:00",
     "hard_negative_false_positives": 0,
     "n_test": 300,
     "n_test_hard_negative": 150,
@@ -87,7 +109,7 @@
         "recall": 1.0
       }
     },
-    "generated_at": "2026-11-21T17:29:11+00:00",
+    "generated_at": "2026-11-21T18:11:01+00:00",
     "n_notes": 240,
     "n_spans": 572,
     "precision": 1.0,

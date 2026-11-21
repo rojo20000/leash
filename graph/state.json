@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21T11:50-06:00",
+  "updated": "2026-11-21T11:57-06:00",
   "schedule": {
     "stage0_due": "11:50",
     "stage1_due": "15:30",
@@ -13,6 +13,12 @@
       "status": "passed",
       "at": "11:26",
       "commit": "f916a54"
+    },
+    "stage1": {
+      "status": "passed",
+      "at": "11:56",
+      "commit": "b09e7cc",
+      "check": "cargo test: 11 passed; pytest: 96 passed, 3 skipped on LEASH_CORE=py LEASH_ML=stub LEASH_NEMOTRON=off and on Rust core + real ML + LEASH_NEMOTRON=replay; bench --quick: policy 5.41x, audit append 1.27x"
     }
   },
   "nodes": {
@@ -74,8 +80,8 @@
     },
     "N8": {
       "name": "integration",
-      "status": "pending",
-      "iteration": 0,
+      "status": "running",
+      "iteration": 1,
       "last_check": "",
       "reviewer_notes": ""
     },
@@ -144,10 +150,10 @@
     },
     "N17": {
       "name": "nemotron_reasoner",
-      "status": "running",
+      "status": "passed",
       "iteration": 1,
-      "last_check": "",
-      "reviewer_notes": "gateway integration + reasoner; depends on N16 and N6; never cut"
+      "last_check": "off mode: 37 passed; replay mode: 37 passed (tests/test_gateway_*.py tests/test_reasoner_*.py), no key, no network",
+      "reviewer_notes": "Overseer re-ran both runs and the protected scripted replay on Rust core + real ML with Nemotron off: 17 allow, 3 block (INJECTION_DETECTED on ref-0042, RESOURCE_NOT_ALLOWED on the five-type read, EMAIL_DOMAIN_NOT_ALLOWED on the attacker email), 0 escalations, 0 sink lines to the attacker, audit verify ok (20 entries), added latency p50 13.8 ms / p95 138 ms. Blocked decisions carry nemotron.reasoner (template fallback in off mode, advisory: true). test_advisory_invariant present and passing. Live reasoner for the attacker email: risk critical, action deny, rule email.allowed_domains, served_by nemotron, 1456 ms. Deviation: the API rejects uniqueItems in the JSON schema (HTTP 400), so the request omits it and the full schema is validated locally; planner to fix C10.6 wording in N8. No recordings written under demo/recordings/nemotron/calls/ yet."
     },
     "N18": {
       "name": "nemotron_eval",

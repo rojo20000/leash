@@ -16,6 +16,7 @@ ATTACKER = "records-transfer@outside-clinic.example"
 def _env(monkeypatch):
     monkeypatch.setenv("LEASH_CORE", "py")
     monkeypatch.setenv("LEASH_ML", "stub")
+    monkeypatch.setenv("LEASH_NEMOTRON", "off")  # hermetic: committed recordings belong to the demo (N8)
 
 
 @pytest.fixture
