@@ -24,12 +24,17 @@ _PATTERNS = [
 ]
 _COMPILED = [(tag, re.compile(p)) for tag, p in _PATTERNS]
 
+HIDDEN_CHARS = re.compile("[​-‏‪-‮⁠-⁤﻿\U000e0000-\U000e007f]")
+# Presidio type -> the tag the patterns above use. Only these types are requested: asked for
+# everything, Presidio masks ages, "3 days ago" and "tomorrow" as DATE_TIME.
+_PRESIDIO_TAGS = {"PERSON": "NAME", "PHONE_NUMBER": "PHONE", "EMAIL_ADDRESS": "EMAIL",
+                  "US_SSN": "SSN", "LOCATION": "ADDRESS"}
+
 try:  # optional, much better at free-text names
     from presidio_analyzer import AnalyzerEngine  # type: ignore
-    from presidio_anonymizer import AnonymizerEngine  # type: ignore
-    _analyzer, _anonymizer = AnalyzerEngine(), AnonymizerEngine()
+    _analyzer = AnalyzerEngine()
 except Exception:  # not installed: patterns only
-    _analyzer = _anonymizer = None
+    _analyzer = None
 
 
 def presidio_available() -> bool:
@@ -40,10 +45,17 @@ def mask(text: str) -> tuple[str, list[str]]:
     """Return (masked_text, list of tags that were found)."""
     found: list[str] = []
     if _analyzer is not None:
-        results = _analyzer.analyze(text=text, language="en")
-        if results:
-            found += sorted({r.entity_type for r in results})
-            text = _anonymizer.anonymize(text=text, analyzer_results=results).text
+        spans: list[list] = []  # [start, end, tag], overlapping results merged
+        for r in sorted(_analyzer.analyze(text=text, language="en", entities=list(_PRESIDIO_TAGS)),
+                        key=lambda r: (r.start, -r.end)):
+            if spans and r.start < spans[-1][1]:
+                spans[-1][1] = max(spans[-1][1], r.end)
+            else:
+                spans.append([r.start, r.end, _PRESIDIO_TAGS[r.entity_type]])
+        for start, end, tag in reversed(spans):
+            found.append(tag)
+            # Hidden characters inside a masked span stay, so the guardrail check still sees them.
+            text = text[:start] + f"[{tag}]" + "".join(HIDDEN_CHARS.findall(text[start:end])) + text[end:]
     for tag, rx in _COMPILED:
         if rx.search(text):
             found.append(tag)
