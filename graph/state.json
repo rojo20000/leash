@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21T13:50-06:00",
+  "updated": "2026-11-21T13:55-06:00",
   "schedule": {
     "stage0_due": "11:50",
     "stage1_due": "15:30",
@@ -28,8 +28,8 @@
     },
     "stage3": {
       "status": "passed",
-      "at": "13:49",
-      "commit": "(see git log: 'stage 3')",
+      "at": "13:46",
+      "commit": "f7fbb72",
       "check": "make check exit 0: cargo test 11 passed; pytest 100 passed, 3 skipped; demo totals 17 allow, 3 block, 0 escalate; PASS 1-5"
     }
   },
@@ -120,22 +120,22 @@
     },
     "N12": {
       "name": "docs",
-      "status": "pending",
-      "iteration": 0,
-      "last_check": "",
-      "reviewer_notes": ""
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "the brief's check prints ok (README has mermaid, make demo, METRICS_TABLE; NEMOTRON.md's first three paragraphs appear verbatim in SUBMISSION.md; PITCH.md has 'Why Nemotron' and the OpenShell slide)",
+      "reviewer_notes": "Overseer re-ran the check and read README.md in full and the opening of docs/NEMOTRON.md: setup is 4 commands (clone, cd, make setup, make check) plus make demo / make dashboard; limitations section states the eval size, false alarms, the missed holdout document, the 1-of-3 live leak, rate limits and the measurement caveats; no key in any doc. HIPAA: all 7 citations verified through eCFR's read-only versioner API (version dated 2025-01-01) because the public pages returned a bot check; 164.312(d) marked not provided, (a)(1), (c)(1), (e)(1) and 164.308(a)(1)(ii)(D) marked partial. PITCH.md has 10 slides. Clone URL is a <repo-url> placeholder (repo not pushed; on the hand checklist). The OpenShell / NeMo Guardrails slide uses the team's wording and tells the team to confirm it against NVIDIA's docs."
     },
     "N13": {
       "name": "tables",
-      "status": "pending",
-      "iteration": 0,
-      "last_check": "",
-      "reviewer_notes": ""
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "the brief's check prints ok",
+      "reviewer_notes": "Overseer checked by script that every number in the METRICS_TABLE and NEMOTRON_TABLE sections of README.md, docs/PITCH.md and docs/NEMOTRON.md is in metrics/results.json (README 38 numbers, PITCH 38 + 58, NEMOTRON 138; only non-match is the model name's '3.5'). Tables: gateway rates and latency with the workload caption, detectors held-out, anomaly recall by scenario, Rust vs Python from key bench (n=100000), eval rounds 1-4 for dev and holdout with content-safety counts, live latency. Minimization F1 is n/a (not in results.json). The four DEMO_SCRIPT.md quotes now match the Rust-core output."
     },
     "N14": {
       "name": "fresh_eyes",
-      "status": "pending",
-      "iteration": 0,
+      "status": "running",
+      "iteration": 1,
       "last_check": "",
       "reviewer_notes": ""
     },
