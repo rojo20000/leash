@@ -248,7 +248,14 @@ def test_chat_json(monkeypatch):
     assert not r.ok and r.error == "invalid_json" and r.data is None
 
 
-def test_safety_swap_on_404(monkeypatch):
+def test_safety_guard_model_only_when_forced(monkeypatch):  # was test_safety_swap_on_404 (chain fall-through, A75)
+    monkeypatch.setenv("LEASH_NEMOTRON_SAFETY_MODEL", GUARD)
+    live(monkeypatch, lambda req: guard_resp("User Safety: unsafe\nSafety Categories: S1"))
+    r = nm.content_safety("hello")
+    assert r.ok and r.model == GUARD and r.data["flagged"] and r.data["categories"] == ["S1"]
+
+
+def test_safety_main_model_down_is_not_ok(monkeypatch):  # A75: no fall to the guard model, which cannot cite S1/S2
     models = []
 
     def h(req):
@@ -256,12 +263,12 @@ def test_safety_swap_on_404(monkeypatch):
         models.append(m)
         if m == L:
             return httpx.Response(404, json={"detail": "Specified function in account is not found"})
-        return guard_resp("User Safety: unsafe\nSafety Categories: S1")
+        return guard_resp('{"User Safety": "unsafe", "Safety Categories": "PII/Privacy"}')
 
     live(monkeypatch, h)
-    r = nm.content_safety("hello")
-    assert r.ok and r.model == GUARD and r.swapped_from == L and models == [L, GUARD]
-    assert nm.resolve_model("safety")[0] == GUARD
+    r = nm.content_safety("Your MRN-0000042 chart: diabetes, metformin.")
+    assert not r.ok and r.data is None and r.error == "model_unavailable" and r.served_by == "unavailable"
+    assert models == [L]
 
 
 def test_safety_judge_default(monkeypatch):
