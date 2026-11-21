@@ -7,18 +7,20 @@
   <link rel="stylesheet" href="/app.css">
 </head>
 <body>
-  <div class="strip"><span>Prototype. Made-up patients only. Runs entirely on this computer.</span>
-    <span id="mock-banner" class="strip-warn" hidden>Practice mode: Ollama isn't running, so answers are placeholders. Open Ollama and restart the app for real answers.</span></div>
+  <div class="topnote" role="note"><span>Prototype. Made-up patients only. Runs entirely on this computer.</span>
+    <span id="mock-banner" class="topnote-warn" hidden>Practice mode: Ollama isn't running, so answers are placeholders. Open Ollama and restart the app for real answers.</span></div>
 
   <main id="login-view" class="login" hidden>
     <h1>Clinic Assistant</h1>
-    <p class="muted">Demo accounts, all with the password chosen when the app was first started:</p>
+    <p class="lede-sm">A private assistant for clinic staff. It runs on this computer and only sees made-up patients.</p>
+    <p class="muted">Sign in with your demo account. All of them use the password chosen when the app was first started.</p>
     <dl class="accounts">
       <dt>dr_lee</dt><dd>Doctor: full chart, today's patients, the assistant</dd>
       <dt>desk_sam</dt><dd>Front desk: schedule, check-in, booking, reminders</dd>
       <dt>nurse_kim</dt><dd>Nurse: charts and rooming patients</dd>
       <dt>lead_ana</dt><dd>Clinical lead: reviews stopped requests</dd>
-      <dt>auditor_ray</dt><dd>Auditor: the audit log</dd>
+      <dt>auditor_ray</dt><dd>Auditor: the audit log and quality checks</dd>
+      <dt>net_ops</dt><dd>Network engineer: what the app connects to</dd>
     </dl>
     <form id="login-form">
       <label>Username <input id="login-user" autocomplete="username" required></label>
@@ -52,6 +54,7 @@
       <header class="page-head">
         <h1 id="home-hello">Hello</h1>
         <p id="home-summary" class="lede"></p>
+        <div id="home-start" class="start" hidden></div>
       </header>
       <div class="home-grid">
         <section>
@@ -74,12 +77,32 @@
           <h2>What you can see</h2>
           <p>Names, dates of birth, contact details, insurance and appointment times. Clinical records are not available to the front desk, and the front desk assistant only knows the schedule. Clinical questions go to a nurse or clinician.</p>
         </aside>
-        <aside class="guide" data-perm="chat,review_red,view_audit">
+        <aside class="guide" data-roles="auditor,admin">
+          <h2>Your job here</h2>
+          <ol class="howto">
+            <li>Open the Audit log. Every sign-in, record opened, answer and change is listed, newest first.</li>
+            <li>Check the line at the top says the log is intact. It is hash-chained, so an edited or deleted line is detected.</li>
+            <li>Random quality checks of assistant answers wait for you in Needs review. Mark each one fine or a problem.</li>
+            <li>Conversations shows every question asked of the assistant, with what changed afterwards.</li>
+          </ol>
+          <p class="fine">You can't open patient records or ask the assistant. That keeps the review independent.</p>
+        </aside>
+        <aside class="guide" data-roles="network_engineer">
+          <h2>Your job here</h2>
+          <ol class="howto">
+            <li>Open Network. It shows every service the app talks to and whether each one is up.</li>
+            <li>The app never calls out to the internet. The outbound panel lists the checks that show it.</li>
+            <li>If the local model is down, answers fall back to practice mode. Restart Ollama on this computer.</li>
+          </ol>
+          <p class="fine">You see connections only, never patient data.</p>
+        </aside>
+        <aside class="guide" data-perm="chat">
           <h2>How this works</h2>
           <ol class="howto">
             <li>Open a patient. The list starts with whoever has the most to check.</li>
             <li>Ask about them in the panel beside the record, or tap one of the suggested questions. Names and contact details are taken out before the model sees anything.</li>
             <li>Read the label on the answer before you use it.</li>
+            <li data-perm="review_red">As clinical lead, you also decide on stopped requests in Needs review.</li>
           </ol>
           <h2>Answer labels</h2>
           <dl class="key">
@@ -95,7 +118,7 @@
     <section id="tab-schedule" class="tab page wide" hidden>
       <div class="row-between sched-head">
         <div>
-          <h2 id="sched-title">Schedule</h2>
+          <h2 class="page-title" id="sched-title">Schedule</h2>
           <p id="sched-counts" class="muted"></p>
         </div>
         <div class="sched-controls">
@@ -152,7 +175,7 @@
       <div class="cal-main">
         <div class="row-between cal-head">
           <div>
-            <h2 id="cal-title">Calendar</h2>
+            <h2 class="page-title" id="cal-title">Calendar</h2>
             <p id="cal-counts" class="muted"></p>
           </div>
           <div class="sched-controls">
@@ -256,7 +279,7 @@
 
     <section id="tab-chat" class="tab page">
       <div class="row-between">
-        <h2>Ask a general question</h2>
+        <h2 class="page-title">Ask a general question</h2>
         <button id="chat-clear" class="ghost small-btn">New conversation</button>
       </div>
       <p class="muted">For questions that aren't about one patient. To ask about a patient, open them from Patients instead.</p>
@@ -272,7 +295,7 @@
     <section id="tab-conversations" class="tab page wide" hidden>
       <div class="row-between sched-head">
         <div>
-          <h2>Conversations</h2>
+          <h2 class="page-title">Conversations</h2>
           <p id="conv-sub" class="muted">Every question asked of the assistant and what it answered, newest first.</p>
         </div>
         <div class="sched-controls">
@@ -289,7 +312,7 @@
 
     <section id="tab-review" class="tab page" hidden>
       <div class="row-between">
-        <h2>Needs review</h2>
+        <h2 class="page-title">Needs review</h2>
         <button id="review-refresh" class="ghost">Refresh</button>
       </div>
       <p class="muted">Anything that needs a person to look at it. Each item says what to do.</p>
@@ -300,7 +323,7 @@
     </section>
 
     <section id="tab-outbox" class="tab page" hidden>
-      <h2>Messages to other people</h2>
+      <h2 class="page-title">Messages to other people</h2>
       <p class="muted">The assistant never contacts anyone itself.</p>
       <ol class="flow" aria-label="How a message goes out">
         <li>You describe the message</li><li>The assistant drafts it</li><li>A clinician approves or edits</li><li>A person sends it the usual way</li>
@@ -316,7 +339,7 @@
 
     <section id="tab-audit" class="tab page" hidden>
       <div class="row-between">
-        <h2>Audit log</h2>
+        <h2 class="page-title">Audit log</h2>
         <button id="audit-refresh" class="ghost">Refresh</button>
       </div>
       <p id="audit-verify"></p>
@@ -332,7 +355,7 @@
     <section id="tab-network" class="tab page wide" hidden>
       <div class="row-between sched-head">
         <div>
-          <h2>Network</h2>
+          <h2 class="page-title">Network</h2>
           <p id="net-sub" class="muted">Every connection the app makes, and proof it can't reach the internet.</p>
         </div>
         <div class="sched-controls">

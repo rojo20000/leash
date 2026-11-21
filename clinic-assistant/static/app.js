@@ -53,6 +53,11 @@ function icon(kind) {
   svg.append(path); return svg;
 }
 
+// An empty state that says what will appear here and how it gets there.
+function emptyLine(title, how) {
+  const p = el("p", "empty-line"); p.append(el("strong", null, title), document.createTextNode(` ${how}`)); return p;
+}
+
 function reasonList(reasons) {
   const ul = el("ul", "reasons");
   reasons.forEach((r) => ul.append(el("li", null, r)));
@@ -71,6 +76,7 @@ async function start() {
   $("who-name").textContent = me.user;
   $("who-role").textContent = me.role.replace("_", " ");
   $("who-model").textContent = `Local model: ${me.model}`;
+  $("who-role").title = `Local model: ${me.model}`;
   document.querySelectorAll("[data-perm],[data-roles]").forEach((n) => { n.hidden = !allowed(n); });
   const group = $("draft-group"); group.replaceChildren();
   Object.entries(me.recipient_groups).forEach(([k, v]) => {
@@ -104,7 +110,16 @@ $("logout").addEventListener("click", async () => {
 // ---- tabs ----------------------------------------------------------------
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) => { t.hidden = t.id !== `tab-${name}`; });
-  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll("#tabs button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.tab === name);
+    if (b.dataset.tab === name) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
+  });
+  const on = document.querySelector("#tabs button.active");
+  if (on) {  // only scroll the tab row when the active tab is out of view (phones)
+    const nav = $("tabs"), l = on.offsetLeft - nav.offsetLeft, r = l + on.offsetWidth;
+    if (l < nav.scrollLeft) nav.scrollLeft = Math.max(0, l - 16);
+    else if (r > nav.scrollLeft + nav.clientWidth) nav.scrollLeft = r - nav.clientWidth + 32;
+  }
   if (name === "home") loadHome();
   if (name === "patients") loadPatients();
   if (name === "schedule") loadSchedule();
@@ -200,13 +215,29 @@ async function loadHome() {
     if (n && Array.isArray(n.nodes)) {
       const down = n.nodes.filter((x) => x.status === "down").length, eg = (n.egress || {}).outbound_internet || "unknown";
       if (down) said.push(`${down} service${down > 1 ? "s" : ""} down`);
-      rows.push(todoRow(`Network: ${n.nodes.length - down} of ${n.nodes.length} services up`, `Outbound internet ${eg}`,
+      rows.push(todoRow(`Network: ${n.nodes.length - down} of ${n.nodes.length} services up`, (EGRESS_WORD[eg] || `outbound internet ${eg}`).replace(/^./, (c) => c.toUpperCase()),
         "Network", () => showTab("network"), down || eg === "allowed" ? "urgent-row" : ""));
     }
   }
   loadDbStatus();
+  homeStart();
   $("home-summary").textContent = said.length ? `${said.join(", ")}.` : "Nothing is waiting for you.";
   box.replaceChildren(...(rows.length ? rows : [el("p", "muted", "You're all caught up.")]));
+}
+
+// One sentence and one button per role: where to start.
+function homeStart() {
+  const box = $("home-start");
+  const go = (text, label, tab) => {
+    const b = el("button", null, label); b.type = "button"; b.onclick = () => showTab(tab);
+    box.replaceChildren(el("p", null, text), b); box.hidden = false;
+  };
+  if (can("check_in")) go("Start with today's schedule. Check people in as they arrive; booking and reminders are on the same page.", "Open today's schedule", "schedule");
+  else if (can("review_red") && can("chat")) go("Start with Needs review: stopped requests wait for a clinical lead to decide.", "Open Needs review", "review");
+  else if (can("view_patients") && can("view_schedule")) go("Start with today's calendar. Click any appointment to see the patient's record beside it.", "Open today's calendar", "calendar");
+  else if (can("view_audit")) go("Start with the audit log: everything people and the assistant did, in order, tamper-evident.", "Open the audit log", "audit");
+  else if (can("view_network")) go("Start with Network: what the app connects to, and the checks that show nothing leaves this computer.", "Open Network", "network");
+  else box.hidden = true;
 }
 
 async function refreshCount() {
@@ -456,13 +487,13 @@ function pinBox(pid, onShown, label = "Show") {
     try { const v = await api("/api/reveal", { patient_id: pid, pin: pin.value }); onShown(v); }
     catch (err) { msg.textContent = err.message; pin.value = ""; pin.focus(); }
   };
-  f.append(pin, go, msg); return f;
+  f.append(el("span", "pin-label", "PIN"), pin, go, msg); return f;
 }
 function identBlock(pid, locked) {
   const box = el("div", "ident-box");
   if (!locked.length) return box;
   const lockedLine = () => {
-    box.replaceChildren(el("span", "muted", `${locked.map((k) => FIELD_LABEL[k] || k).join(", ")}: hidden`),
+    box.replaceChildren(el("span", "muted", `Hidden until you type your PIN: ${locked.map((k) => FIELD_LABEL[k] || k).join(", ")}`),
       pinBox(pid, (v) => {
         const dl = el("dl", "facts inline");
         Object.entries(v).forEach(([k, val]) => dl.append(el("dt", null, FIELD_LABEL[k] || k), el("dd", null, val || "none")));
@@ -698,8 +729,8 @@ async function loadReviews() {
   const todo = items.filter((i) => i.can_act), done = items.filter((i) => !i.can_act);
   $("todo-n").textContent = todo.length ? `(${todo.length})` : "";
   $("done-n").textContent = done.length ? `(${done.length})` : "";
-  $("review-todo").replaceChildren(...(todo.length ? todo.map(reviewCard) : [el("p", "muted", "Nothing needs you right now.")]));
-  $("review-done").replaceChildren(...(done.length ? done.map(reviewCard) : [el("p", "muted", "Nothing here yet.")]));
+  $("review-todo").replaceChildren(...(todo.length ? todo.map(reviewCard) : [emptyLine("Nothing needs you right now.", "Answers held for you to read, stopped requests and random quality checks show up here, each with what to do.")]));
+  $("review-done").replaceChildren(...(done.length ? done.map(reviewCard) : [emptyLine("Nothing here yet.", "Items move here once they've been reviewed, or while they wait on someone else.")]));
 }
 $("review-refresh").addEventListener("click", () => { loadReviews(); refreshCount(); });
 
@@ -707,7 +738,7 @@ $("review-refresh").addEventListener("click", () => { loadReviews(); refreshCoun
 async function loadOutbox() {
   const list = $("outbox-list"); list.replaceChildren();
   const items = await api("/api/outbox");
-  if (!items.length) list.append(el("p", "muted", "No drafts yet."));
+  if (!items.length) list.append(emptyLine("No drafts yet.", can("draft_message") ? "Describe a message above and the assistant drafts it. A clinician approves it, then a person sends it." : "Drafts from nurses and clinicians wait here for your approval."));
   items.forEach((it) => {
     const box = el("div", `draft review ${it.tier || "green"}`);
     const head = el("div", "row-between");
@@ -791,7 +822,7 @@ $("audit-refresh").addEventListener("click", loadAudit);
 
 // ---- schedule: front desk and the clinic day ------------------------------
 const sched = { day: null, clin: null, data: null, open: null };
-const STATUS_WORD = { booked: "Booked", arrived: "Checked in", in_room: "With clinician", done: "Done",
+const STATUS_WORD = { booked: "Booked", arrived: "Checked in", in_room: "In room", done: "Done",
   cancelled: "Cancelled", no_show: "No-show" };
 const STATUS_TONE = { booked: "", arrived: "amber", in_room: "green", done: "done", cancelled: "off", no_show: "off" };
 const fmtDay = (iso, today) => {
@@ -835,7 +866,7 @@ async function loadSchedule() {
   const rows = d.appointments.filter((a) => !sched.clin || a.clinician === sched.clin);
   const n = (st) => rows.filter((a) => a.status === st).length;
   $("sched-counts").textContent = rows.length
-    ? [`${rows.length} appointments`, `${n("booked")} booked`, `${n("arrived")} checked in`, `${n("in_room")} with clinician`,
+    ? [`${rows.length} appointments`, `${n("booked")} booked`, `${n("arrived")} checked in`, `${n("in_room")} in room`,
        `${n("done")} done`, n("cancelled") + n("no_show") ? `${n("cancelled") + n("no_show")} cancelled or no-show` : ""].filter(Boolean).join(" · ")
     : "No appointments.";
   const body = $("sched-body"); body.replaceChildren();
@@ -1134,7 +1165,7 @@ async function loadCalendar() {
   const n = (st) => all.filter((a) => a.status === st).length;
   $("cal-counts").textContent = all.length
     ? [plural(all.length, "appointment"), n("booked") && `${n("booked")} booked`, n("arrived") && `${n("arrived")} checked in`,
-       n("in_room") && `${n("in_room")} with clinician`, n("done") && `${n("done")} done`,
+       n("in_room") && `${n("in_room")} in room`, n("done") && `${n("done")} done`,
        n("cancelled") + n("no_show") && `${n("cancelled") + n("no_show")} cancelled or no-show`].filter(Boolean).join(" · ")
     : "No appointments.";
   const body = $("cal-body");
@@ -1533,7 +1564,8 @@ function drawConversations() {
   const tier = $("conv-tier").value;
   const rows = conv.items.filter((c) => !tier || c.tier === tier);
   const list = $("conv-list");
-  if (!rows.length) { list.replaceChildren(el("p", "muted conv-empty", conv.items.length ? "Nothing matches these filters." : "No conversations yet.")); return; }
+  if (!rows.length) { list.replaceChildren(conv.items.length ? el("p", "muted conv-empty", "Nothing matches these filters.")
+    : emptyLine("No conversations yet.", "Every question asked in Ask a question, beside a patient's record or at the front desk is logged here with its answer.")); return; }
   list.replaceChildren(...rows.map((c) => {
     const box = el("div", `conv${conv.open === c.id ? " open" : ""}`);
     const b = el("button", "conv-row"); b.type = "button"; b.setAttribute("aria-expanded", String(conv.open === c.id));
@@ -1588,6 +1620,8 @@ $("conv-tier").addEventListener("change", drawConversations);
 $("conv-refresh").addEventListener("click", loadConversations);
 
 // ---- network: what the app talks to, and that it can't reach the internet ------
+// Outbound internet in words. "unknown" means the public probe is off by design: the app never calls out.
+const EGRESS_WORD = { blocked: "no outbound internet", allowed: "outbound internet ALLOWED", unknown: "outbound internet not tested (the app never calls out)" };
 const NET_TONE = { up: "green", down: "red", disabled: "off", unknown: "amber" };
 const NET_WORD = { up: "Up", down: "Down", disabled: "Disabled", unknown: "Unknown" };
 const netState = (st) => el("span", `state ${NET_TONE[st] || "amber"}`, NET_WORD[st] || st || "Unknown");
@@ -1605,7 +1639,7 @@ async function loadNetwork() {
   nodes.forEach((n) => { label[n.id] = n.label || n.id; });
   const up = nodes.filter((n) => n.status === "up").length;
   const eg = (d.egress || {}).outbound_internet || "unknown";
-  $("net-sub").textContent = `${up} of ${plural(nodes.length, "service")} up · outbound internet ${eg}.`;
+  $("net-sub").textContent = `${up} of ${plural(nodes.length, "service")} up · ${EGRESS_WORD[eg] || `outbound internet ${eg}`}.`;
   $("net-checked").textContent = d.checked_at ? `Checked ${whenText(d.checked_at)} · refreshes every 10 s` : "Refreshes every 10 s";
   $("net-diagram").replaceChildren(netDiagram(nodes, edges));
   const td = (t, cls) => el("td", cls, t === undefined || t === null ? "" : String(t));
@@ -1620,9 +1654,9 @@ async function loadNetwork() {
       td(e.last_seen ? whenText(e.last_seen) : "never", "muted"), td(e.calls_24h ?? "", "num")); return tr;
   }) : [(() => { const tr = el("tr"); const c = td("No links reported.", "muted"); c.colSpan = 7; tr.append(c); return tr; })()]));
   // egress
-  const box = $("net-egress"); box.className = `net-egress ${eg}`;
-  box.replaceChildren(icon(eg === "blocked" ? "ok" : eg === "allowed" ? "blocked" : "warn"), el("span", null,
-    eg === "blocked" ? "No outbound internet from the app" : eg === "allowed" ? "Outbound internet is allowed" : "Outbound internet not confirmed"));
+  const box = $("net-egress"); box.className = `net-egress ${eg === "unknown" ? "untested" : eg}`;
+  box.replaceChildren(icon(eg === "allowed" ? "blocked" : "ok"), el("span", null,
+    eg === "blocked" ? "No outbound internet from the app" : eg === "allowed" ? "Outbound internet is allowed" : "Not tested: the app never calls out"));
   const checks = (d.egress || {}).checks || [];
   $("net-checks").replaceChildren(...(checks.length ? checks.map((c) => {
     const li = el("li"); li.append(icon(c.ok ? "ok" : "blocked"));

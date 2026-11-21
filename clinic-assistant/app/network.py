@@ -167,7 +167,7 @@ def status(app) -> dict:
 
     # --- egress ---
     others = [u for u in _urls(pol) if not _local(urlparse(u).hostname)]
-    probe_addr = net.get("public_probe", "1.1.1.1:443")
+    probe_addr = net.get("public_probe", "")
     reach = _public_probe(probe_addr) if probe_addr else None
     checks = [
         {"name": "Model server is on this machine", "ok": _local(model_host),
