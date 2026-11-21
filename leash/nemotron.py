@@ -122,9 +122,11 @@ def _recordings():
 def mode():
     load_dotenv()
     _base_url()
-    m = os.environ.get("LEASH_NEMOTRON", "").lower()
+    m = os.environ.get("LEASH_NEMOTRON", "").strip().lower()
     if m in ("live", "replay", "off"):
         return m
+    if m:  # a typo ("false", "offline") must not fall through to live
+        raise ValueError("LEASH_NEMOTRON must be live, replay or off")
     return "live" if os.environ.get("NVIDIA_API_KEY") else "replay"
 
 

@@ -80,6 +80,39 @@ def test_mode(monkeypatch):
     assert nm.config()["base_url"] == "http://127.0.0.1:9/v1"
 
 
+def test_mode_rejects_unknown_values(monkeypatch):  # A76: a typo must not mean "live"
+    monkeypatch.setenv("NVIDIA_API_KEY", FAKE)
+    for bad in ("false", "0", "offline"):
+        monkeypatch.setenv("LEASH_NEMOTRON", bad)
+        with pytest.raises(ValueError, match="LEASH_NEMOTRON must be live, replay or off"):
+            nm.mode()
+    monkeypatch.setenv("LEASH_NEMOTRON", "replay ")
+    assert nm.mode() == "replay"
+    monkeypatch.setenv("LEASH_NEMOTRON", "")  # empty = unset: unchanged
+    assert nm.mode() == "live"
+
+
+@pytest.fixture(scope="class", params=["false", "0", "offline", "live", "replay ", "OFF"])
+def outer_mode(request):  # class scope: set before conftest's function-scoped autouse fixture runs
+    mp = pytest.MonkeyPatch()
+    mp.setenv("LEASH_NEMOTRON", request.param)
+    yield request.param
+    mp.undo()
+
+
+class TestPytestGuard:  # A76: conftest.py forces replay for every value except replay/off
+    @pytest.fixture(autouse=True)
+    def env(self):  # replaces the module's env fixture, which would delete LEASH_NEMOTRON
+        yield
+
+    def test_guard(self, outer_mode, monkeypatch, tmp_path):
+        want = outer_mode.strip().lower() if outer_mode.strip().lower() in ("replay", "off") else "replay"
+        assert os.environ["LEASH_NEMOTRON"].strip().lower() == want
+        monkeypatch.setattr(nm, "DOTENV_PATH", tmp_path / "missing.env")
+        monkeypatch.setenv("LEASH_NEMOTRON", "live")  # an opt-in live test can still choose live afterwards
+        assert nm.mode() == "live"
+
+
 def test_live_chat_records_and_hides_key(monkeypatch, tmp_path, caplog, capsys):
     seen = {}
 
