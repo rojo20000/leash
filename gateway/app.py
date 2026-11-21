@@ -135,11 +135,17 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
         def add(code, stage, detail=""):
             reasons.append({"code": code, "stage": stage, "detail": detail})
 
-        # 1 policy
+        # 1 policy (a failure here is an audited block, never an HTTP 500)
         t0 = time.perf_counter()
-        rtypes, pids, recips = call_facts(tool, args)
-        pids = [p for p in pids if p]
-        dec, code, detail = policy.evaluate(tool, rtypes, pids, recips, ts)
+        try:
+            rtypes, pids, recips = call_facts(tool, args)
+            pids = [p for p in pids if p]
+            if not all(isinstance(v, str) for seq in (rtypes, pids, recips) for v in seq):
+                raise TypeError("non-string policy fact")
+            dec, code, detail = policy.evaluate(tool, rtypes, pids, recips, ts)
+        except Exception as e:  # noqa: BLE001
+            rtypes, pids, recips = [], [], []
+            dec, code, detail = "block", "EXECUTION_ERROR", f"bad call arguments ({type(e).__name__})"
         mark("policy", t0)
         if dec != "allow":
             add(code, "policy", detail)
@@ -263,15 +269,18 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
         reason_obj = None
         if decision != "allow":
             t0 = time.perf_counter()
-            if tool == "read_document" and any(r["code"] == "INJECTION_DETECTED" for r in reasons):
-                shown = ml.minimize(tool, raw, keep_fields)[0]  # prescan-redacted text for the reviewer
-            else:
-                shown = output if tool in READ_TOOLS else None
-            ctx = reasoner.build_context(tool, args, shown, decision, reasons, scores, signals, policy_path)
             try:
-                reason_obj = reasoner.explain(ctx)
-            except Exception:  # noqa: BLE001
-                reason_obj = reasoner.template(ctx, error="exception")
+                if tool == "read_document" and any(r["code"] == "INJECTION_DETECTED" for r in reasons):
+                    shown = ml.minimize(tool, raw, keep_fields)[0]  # prescan-redacted text for the reviewer
+                else:
+                    shown = output if tool in READ_TOOLS else None
+                ctx = reasoner.build_context(tool, args, shown, decision, reasons, scores, signals, policy_path)
+                try:
+                    reason_obj = reasoner.explain(ctx)
+                except Exception:  # noqa: BLE001
+                    reason_obj = reasoner.template(ctx, error="exception")
+            except Exception:  # noqa: BLE001  advisory only: no explanation, but the call is still audited
+                reason_obj = None
             nem["reasoner"] = reason_obj
             mark("reasoner", t0)
 

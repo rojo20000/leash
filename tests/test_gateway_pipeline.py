@@ -163,3 +163,26 @@ def test_ml_loader_never_falls_back_silently(monkeypatch):  # A7
         load_ml()
     monkeypatch.setenv("LEASH_ML", "stub")
     assert load_ml()[1] == "stub"
+
+
+def test_policy_step_failure_is_an_audited_block(gw, monkeypatch):  # A20
+    import gateway.app as ga
+    real = ga.call_facts
+
+    def boom(tool, args):
+        raise TypeError("bad facts")
+
+    monkeypatch.setattr(ga, "call_facts", boom)
+    r = gw.post("/v1/tool-call", json={"session_id": "s1", "tool": "read_record", "args": {"patient_id": 42}})
+    assert r.status_code == 200
+    d = r.json()
+    assert d["decision"] == "block" and codes(d) == ["EXECUTION_ERROR"] and d["reasons"][0]["stage"] == "policy"
+    assert d["result"] is None
+    audit = [json.loads(x) for x in (gw.rt / "audit.jsonl").read_text().splitlines()]
+    assert len(audit) == 1 and audit[0]["reasons"] == ["EXECUTION_ERROR"] and audit[0]["patient_ids"] == []
+    monkeypatch.setattr(ga, "call_facts", real)  # real call_facts: malformed facts still give a recorded block, whatever the code
+    for i, args in enumerate(({"to": 5}, {"to": [None]}, {"to": [1.5], "subject": "s", "body": "b"})):
+        r = gw.post("/v1/tool-call", json={"session_id": "s1", "tool": "send_email", "args": args})
+        assert r.status_code == 200 and r.json()["decision"] == "block"
+        assert gw.get("/v1/audit/verify").json()["entries"] == 2 + i
+    assert not (gw.rt / "email_sink.jsonl").exists()

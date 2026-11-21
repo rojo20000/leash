@@ -348,6 +348,9 @@ in decisions, the audit log or latency stats. Lifespan runs when the server star
 
 1. `policy`: `core.Policy.evaluate(tool, *call_facts(tool,args), ts)` where `ts` = request `ts` if given
    (simulated clock for scripted replays) else `time.time()`.
+   (Audit A20) Any exception in this step, or a policy fact that is not a `str`, gives `block` with reason
+   `EXECUTION_ERROR` (stage `policy`) and empty `patient_ids`/`recipients`; the call is audited like any other,
+   never HTTP 500. A reasoner failure on such a call leaves `nemotron.reasoner` null.
 2. `execute` (only if policy did not block, and only for read tools `search_patients`, `read_record`,
    `read_document`): run `ToolExecutor.execute` to get the output to inspect.
 3. `injection`: for `read_document` output, `injection_score(output["text"])`; `>= 0.5` -> block `INJECTION_DETECTED`.
