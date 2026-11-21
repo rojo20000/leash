@@ -1,6 +1,6 @@
 # Clinic Assistant: a restricted local medical AI (prototype)
 
-> **In the Leash repo:** this folder is Clinic Assistant v2.5, the human-facing front end for Leash. `data/clinic.db` and `data/vectors.sqlite` are committed synthetic snapshots; check them with `python3 scripts/verify_db.py` and `python3 scripts/verify_stores.py`. Planning and handoff docs are in `handoff/`.
+> **In the Leash repo:** this folder is Clinic Assistant v2.6, the human-facing front end for Leash. `data/clinic.db` and `data/vectors.sqlite` are committed synthetic snapshots; check them with `python3 scripts/verify_db.py` and `python3 scripts/verify_stores.py`. Planning and handoff docs are in `handoff/`.
 
 A small web app that puts a **gatekeeper** between people and a local AI model.
 Nobody talks to the model directly. Every request is signed in, masked, checked,

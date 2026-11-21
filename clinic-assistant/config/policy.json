@@ -215,6 +215,6 @@
   "network": {
     "_comment": "Network view (network_engineer role). leash_url: optional local policy gateway, empty = disabled. public_probe: a public address tried once a minute (1 second timeout) to report whether this machine can reach the internet; the app itself never uses it. Empty = don't probe.",
     "leash_url": "",
-    "public_probe": "1.1.1.1:443"
+    "public_probe": ""
   }
 }

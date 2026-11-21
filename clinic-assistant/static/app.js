@@ -81,7 +81,7 @@ async function start() {
   if (opts) regSetup();
   const h = new Date().getHours();
   sched.day = null; sched.clin = null;
-  cal.clin = null; cal.anchor = null; cal.view = "week"; closeCalPanel(false);
+  cal.clin = null; cal.anchor = null; cal.view = null; cal.lastKey = null; closeCalPanel(false);
   $("home-hello").textContent = `${h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"}, ${me.user}`;
   // A role that only looks after the network starts there.
   showTab(canNetwork() && !can("chat,view_schedule,view_patients,view_audit,frontdesk_chat") ? "network" : "home");
@@ -1060,7 +1060,7 @@ $("desk-form").addEventListener("submit", (e) => { e.preventDefault(); const t =
 enterToSend($("desk-input"), $("desk-form"));
 
 // ---- calendar: browse appointments and open any patient from them ------------
-const cal = { view: "week", anchor: null, guessed: false, today: null, clin: null, names: {}, data: null,
+const cal = { view: null, anchor: null, guessed: false, lastKey: null, today: null, clin: null, names: {}, data: null,
   sel: null, opener: null, req: 0, panelReq: 0 };
 const pad2 = (n) => String(n).padStart(2, "0");
 const isoOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
@@ -1088,10 +1088,16 @@ function clinEntries(c) {
   return Object.entries(c || {});
 }
 
-document.querySelector(".cal-key").replaceChildren(...CAL_ORDER.map((st) => el("span", `state ${STATUS_TONE[st]}`, STATUS_WORD[st])));
+// The key shows the same tints as the strips, each with its word.
+document.querySelector(".cal-key").replaceChildren(...CAL_ORDER.map((st) => {
+  const k = el("span", "key-item"); k.append(el("span", `key-sw s-${st}`), el("span", null, st === "in_room" ? "In room now" : STATUS_WORD[st])); return k;
+}));
+const calMobile = window.matchMedia("(max-width: 720px)");
+calMobile.addEventListener("change", () => { if (!$("tab-calendar").hidden) loadCalendar(); });
 
 async function loadCalendar() {
   if (!cal.anchor) { cal.anchor = isoOf(new Date()); cal.guessed = true; }
+  if (!cal.view) cal.view = "day";  // opens on today's board (the demo clinic also runs weekends)
   const [from, to] = calRange(); const req = ++cal.req;
   let d;
   try {
@@ -1106,7 +1112,10 @@ async function loadCalendar() {
   cal.today = d.today || isoOf(new Date());
   if (cal.guessed) {  // first load: use the clinic's "today", not this browser's
     cal.guessed = false;
-    if (cal.today !== cal.anchor) { cal.anchor = cal.today; return loadCalendar(); }
+    if (cal.today !== cal.anchor) {
+      cal.anchor = cal.today;
+      return loadCalendar();
+    }
   }
   cal.data = d;
   const days = d.days || [];
@@ -1129,19 +1138,24 @@ async function loadCalendar() {
        n("cancelled") + n("no_show") && `${n("cancelled") + n("no_show")} cancelled or no-show`].filter(Boolean).join(" · ")
     : "No appointments.";
   const body = $("cal-body");
+  const key = `${cal.view}|${from}|${cal.clin}|${calMobile.matches}`, fresh = key !== cal.lastKey;
+  const oldScroll = body.querySelector(".board-scroll"), keep = oldScroll ? oldScroll.scrollTop : 0;
+  cal.lastKey = key;
+  body.classList.toggle("fill", cal.view !== "month" && !(cal.view === "week" && calMobile.matches));
   if (cal.view === "day") {
     $("cal-title").textContent = fmtDay(cal.anchor, cal.today);
-    body.replaceChildren(calDay(byDate[cal.anchor] || []));
+    body.replaceChildren(calDayBoard(cal.anchor, byDate[cal.anchor] || [], d));
   } else if (cal.view === "week") {
     const [m, s] = [from, to];
     $("cal-title").textContent = m.slice(0, 7) === s.slice(0, 7)
       ? `${fmtD(m, { month: "long", day: "numeric" })} to ${fmtD(s, { day: "numeric" })}, ${s.slice(0, 4)}`
       : `${fmtD(m, { month: "short", day: "numeric" })} to ${fmtD(s, { month: "short", day: "numeric" })}, ${s.slice(0, 4)}`;
-    body.replaceChildren(calWeek(from, byDate));
+    body.replaceChildren(calMobile.matches ? calWeek(from, byDate) : calWeekBoard(from, byDate, d));
   } else {
     $("cal-title").textContent = fmtD(cal.anchor, { month: "long", year: "numeric" });
     body.replaceChildren(calMonth(from, byDate));
   }
+  boardScroll(body, fresh, keep);
 }
 
 // One appointment in the week grid: time and name, then a status square, the word and the visit type.
@@ -1181,25 +1195,6 @@ function calWeek(from, byDate) {
   return grid;
 }
 
-function calDay(list) {
-  const box = el("div", "cal-day");
-  if (!list.length) { box.append(el("p", "muted cal-empty", "Nothing booked for this day.")); return box; }
-  list.forEach((a) => {
-    const b = el("button", `cal-cell cal-row ${a.status}${cal.sel === a.id ? " on" : ""}`); b.type = "button"; b.dataset.id = a.id;
-    const who = el("span", "cal-who"); who.append(el("strong", null, a.patient.name || "Patient"));
-    const p = a.patient;
-    const sub = p.age !== undefined ? `${p.age} ${p.sex}${p.conditions && p.conditions.length ? ` · ${p.conditions.join(", ")}` : ""}`
-      : `${p.insurance ? p.insurance.plan : ""}${p.preferred_contact ? ` · prefers ${p.preferred_contact.toLowerCase()}` : ""}`;
-    who.append(el("span", "muted", sub));
-    if (p.attention) who.append(el("span", "flag-count", `${p.attention} to check`));
-    b.append(el("span", "cal-time", a.time), who, el("span", "cal-visit", a.visit_type),
-      el("span", "cal-with", a.clinician_name || a.clinician), el("span", `state ${STATUS_TONE[a.status] || ""}`, STATUS_WORD[a.status] || a.status));
-    b.onclick = () => openCalAppt(a, b);
-    box.append(b);
-  });
-  return box;
-}
-
 function calMonth(from, byDate) {
   const grid = el("div", "cal-month");
   const head = el("div", "cal-month-head"); head.setAttribute("aria-hidden", "true");
@@ -1226,9 +1221,178 @@ function calMonth(from, byDate) {
   return grid;
 }
 
+// ---- the board: appointments as strips on a ruled time grid ------------------
+// One column per clinician (day) or per day (week). Strips sit at their start time, 2.4px a minute,
+// so one 20-minute slot is 48px. Status is a tint AND a word on every strip.
+const BOARD_PX = 2.4;
+const STRIP_WORD = { ...STATUS_WORD, in_room: "In room now" };
+const toMin = (hhmm) => { const [h, m] = String(hhmm).split(":").map(Number); return h * 60 + m; };
+const hhmm = (m) => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
+const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
+const shortName = (name) => {
+  const parts = String(name || "Patient").trim().split(/\s+/);
+  return parts.length > 1 ? `${parts[0]} ${parts[parts.length - 1][0]}.` : parts[0];
+};
+const LIVE = (a) => a.status !== "cancelled" && a.status !== "no_show";
+const FLAG_PATHS = { check: "M8 3v6M8 12v.5", allergy: "M8 2.5l5.5 10h-11z" };
+function flagIcon(kind) {
+  const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", "0 0 16 16"); svg.setAttribute("aria-hidden", "true");
+  const p = document.createElementNS(ns, "path"); p.setAttribute("d", FLAG_PATHS[kind]); svg.append(p); return svg;
+}
+
+// Clinic hours and slot length: from the payload when the server sends them, otherwise the clinic defaults.
+function boardFrame(d, appts) {
+  const hours = (d && d.hours) || ["08:00", "17:00"], slot = (d && d.slot_minutes) || 20;
+  let start = toMin(hours[0]), end = toMin(hours[1]);
+  appts.forEach((a) => { const m = toMin(a.time); start = Math.min(start, Math.floor(m / 60) * 60); end = Math.max(end, m + slot); });
+  return { start, end, slot, lunch: d && d.lunch ? d.lunch.map(toMin) : null };
+}
+
+// Side-by-side lanes for appointments that overlap in one column (e.g. a cancelled slot rebooked).
+function packLanes(list, slot) {
+  const items = list.map((a) => ({ a, s: toMin(a.time), e: toMin(a.time) + slot })).sort((p, q) => p.s - q.s || LIVE(q.a) - LIVE(p.a));
+  let cluster = [], end = -1;
+  const flush = () => {
+    const lanes = [];
+    cluster.forEach((it) => { let i = lanes.findIndex((e) => e <= it.s); if (i < 0) { i = lanes.length; lanes.push(0); } lanes[i] = it.e; it.lane = i; });
+    cluster.forEach((it) => { it.n = lanes.length; }); cluster = [];
+  };
+  items.forEach((it) => { if (cluster.length && it.s >= end) flush(); cluster.push(it); end = Math.max(end, it.e); });
+  flush();
+  return items;
+}
+
+function strip(it, f, withClin) {
+  const a = it.a, p = a.patient || {};
+  const b = el("button", `cal-cell strip s-${a.status}${it.n > 1 ? " split" : ""}${cal.sel === a.id ? " on" : ""}`);
+  b.type = "button"; b.dataset.id = a.id; b.setAttribute("aria-pressed", String(cal.sel === a.id));
+  b.style.top = `${(it.s - f.start) * BOARD_PX + 1}px`;
+  b.style.height = `${f.slot * BOARD_PX - 3}px`;
+  b.style.left = `calc(4px + (100% - 8px) * ${it.lane} / ${it.n})`;
+  b.style.width = `calc((100% - 8px) / ${it.n} - ${it.n > 1 ? 3 : 0}px)`;
+  const word = STRIP_WORD[a.status] || a.status;
+  const flags = [];
+  if (p.attention) flags.push(["check", String(p.attention), `${p.attention} thing${p.attention > 1 ? "s" : ""} to check`]);
+  if (Array.isArray(p.allergies) && p.allergies.length) flags.push(["allergy", "", `Allergy: ${p.allergies.join(", ")}`]);
+  b.setAttribute("aria-label", [`${a.time}, ${p.name || "Patient"}`, a.visit_type, withClin ? `with ${a.clinician_name || a.clinician}` : "",
+    word, ...flags.map((x) => x[2])].filter(Boolean).join(", "));
+  const body = el("span", "body");
+  body.append(el("span", "name", shortName(p.name)), el("span", "meta", `${word} · ${a.visit_type}${withClin ? ` · ${a.clinician_name || a.clinician}` : ""}`));
+  b.append(el("span", "t", a.time), body);
+  if (flags.length) {
+    const fl = el("span", "flags"); fl.setAttribute("aria-hidden", "true");
+    flags.forEach(([k, n, title]) => { const s = el("span", `flag ${k}`); s.title = title; s.append(flagIcon(k)); if (n) s.append(el("span", null, n)); fl.append(s); });
+    b.append(fl);
+  }
+  b.onclick = () => (cal.sel === a.id ? closeCalPanel() : openCalAppt(a, b));
+  return b;
+}
+
+// cols: [{ key, title, today, list, capacity, onHead }]; nowCols: keys of columns that get the now line.
+function board(cols, f, opts) {
+  const wrap = el("div", `board${opts.narrow ? " narrow" : ""}`); wrap.style.setProperty("--cols", cols.length);
+  const head = el("div", "board-head"); head.append(el("span", "board-corner"));
+  cols.forEach((c) => {
+    const live = c.list.filter(LIVE).length, pct = Math.min(100, Math.round((live / Math.max(1, c.capacity)) * 100));
+    const h = el(c.onHead ? "button" : "div", `col-head${c.today ? " today" : ""}${c.onHead ? " cal-cell" : ""}`);
+    if (c.onHead) { h.type = "button"; h.onclick = c.onHead; h.title = "Open this day"; }
+    const top = el("span", "col-head-top"); top.append(el("span", "col-title", c.title), el("span", "cap", `${plural(live, "visit")} · ${pct}% booked`));
+    const g = el("span", `gauge${pct >= 85 ? " full" : ""}`); g.setAttribute("role", "meter");
+    g.setAttribute("aria-valuemin", "0"); g.setAttribute("aria-valuemax", "100"); g.setAttribute("aria-valuenow", String(pct));
+    g.setAttribute("aria-label", `${c.label || c.title}: ${pct}% of slots booked`);
+    const fill = el("i"); fill.style.width = `${pct}%`; g.append(fill);
+    h.append(top, g); head.append(h);
+  });
+  const scroll = el("div", "board-scroll");
+  const grid = el("div", "board-grid"); grid.style.height = `${(f.end - f.start) * BOARD_PX + 12}px`;
+  const hrs = el("div", "hours"); hrs.setAttribute("aria-hidden", "true");
+  for (let m = Math.ceil(f.start / 60) * 60; m <= f.end; m += 60) {
+    const s = el("span", "hour-label", hhmm(m)); s.style.top = `${Math.max(8, (m - f.start) * BOARD_PX)}px`; hrs.append(s);
+  }
+  grid.append(hrs);
+  cols.forEach((c) => {
+    const lane = el("div", `lane${c.today ? " today" : ""}`); lane.setAttribute("role", "group"); lane.setAttribute("aria-label", `${c.label || c.title} schedule`);
+    for (let m = f.start; m < f.end; m += f.slot) {
+      const r = el("span", `rule${m % 60 === 0 ? " hour" : ""}`); r.style.top = `${(m - f.start) * BOARD_PX}px`; lane.append(r);
+    }
+    if (f.lunch) {
+      const l = el("div", "lunch"); l.style.top = `${(f.lunch[0] - f.start) * BOARD_PX}px`; l.style.height = `${(f.lunch[1] - f.lunch[0]) * BOARD_PX}px`;
+      l.append(el("span", null, "Lunch")); lane.append(l);
+    }
+    packLanes(c.list, f.slot).forEach((it) => lane.append(strip(it, f, opts.withClin)));
+    if (!c.list.length) lane.append(el("span", "lane-empty", "Nothing booked"));
+    if (opts.nowCols.includes(c.key) && !opts.span) lane.append(nowLine(f, false));
+    grid.append(lane);
+  });
+  if (opts.span && opts.nowCols.length) grid.append(nowLine(f, true));
+  if (!opts.span && opts.nowCols.length) grid.append(nowTag(f));
+  scroll.append(grid); wrap.append(head, scroll);
+  return wrap;
+}
+// The red "now" line: across every column (day), or only today's column with the time in the gutter (week).
+function nowLine(f, span) {
+  const n = el("div", `now-line${span ? " span" : ""}`); n.dataset.start = f.start; n.dataset.end = f.end;
+  if (span) n.append(el("span", "now-tag"));
+  return n;
+}
+function nowTag(f) { const t = el("span", "now-tag gutter"); t.dataset.start = f.start; t.dataset.end = f.end; return t; }
+function updateNow() {
+  const m = nowMin();
+  document.querySelectorAll("#cal-body .now-line, #cal-body .now-tag.gutter").forEach((n) => {
+    const st = +n.dataset.start, en = +n.dataset.end;
+    n.hidden = m < st || m > en;
+    n.style.top = `${(Math.min(Math.max(m, st), en) - st) * BOARD_PX}px`;
+    if (n.classList.contains("now-line")) n.setAttribute("aria-label", `Now, ${hhmm(m)}`);
+  });
+  document.querySelectorAll("#cal-body .now-tag").forEach((t) => { t.textContent = hhmm(m); });
+  // the hour label under the now tag steps aside
+  document.querySelectorAll("#cal-body .board-grid").forEach((g) => {
+    const n = g.querySelector(".now-line:not([hidden]), .now-tag.gutter:not([hidden])"), y = n ? parseFloat(n.style.top) : null;
+    g.querySelectorAll(".hour-label").forEach((l) => { l.style.visibility = y !== null && Math.abs(parseFloat(l.style.top) - y) < 14 ? "hidden" : ""; });
+  });
+}
+setInterval(() => { if (me && !$("tab-calendar").hidden) updateNow(); }, 30000);
+
+function calDayBoard(iso, list, d) {
+  const clins = clinEntries(d.clinicians).filter(([id]) => !cal.clin || id === cal.clin);
+  const f = boardFrame(d, list);
+  const capacity = Math.floor((f.end - f.start) / f.slot);
+  const extra = list.filter((a) => !clins.some(([id]) => id === a.clinician));  // a clinician not in the list
+  const cols = clins.map(([id, name]) => ({ key: id, title: name, label: name, list: list.filter((a) => a.clinician === id), capacity }));
+  if (extra.length) cols.push({ key: "other", title: "Other", list: extra, capacity });
+  return board(cols, f, { nowCols: iso === cal.today ? cols.map((c) => c.key) : [], span: true, withClin: false });
+}
+
+function calWeekBoard(from, byDate, d) {
+  const days = Array.from({ length: 7 }, (_, i) => addDays(from, i));
+  const all = days.flatMap((x) => byDate[x] || []);
+  const f = boardFrame(d, all);
+  const nClin = cal.clin ? 1 : Math.max(1, clinEntries(d.clinicians).length);
+  const capacity = Math.floor((f.end - f.start) / f.slot) * nClin;
+  const cols = days.map((iso) => ({ key: iso, today: iso === cal.today, list: byDate[iso] || [], capacity,
+    title: `${fmtD(iso, { weekday: "short" })} ${fmtD(iso, { day: "numeric" })}`,
+    label: `${fmtD(iso, { weekday: "long", day: "numeric", month: "long" })}${iso === cal.today ? ", today" : ""}`,
+    onHead: () => { cal.view = "day"; cal.anchor = iso; loadCalendar(); } }));
+  return board(cols, f, { nowCols: days.includes(cal.today) ? [cal.today] : [], span: false, withClin: !cal.clin, narrow: true });
+}
+
+// Open at the present moment with a little of the past above it; otherwise at the first visit.
+function boardScroll(body, fresh, keep) {
+  const sc = body.querySelector(".board-scroll"); if (!sc) return;
+  if (!fresh) { sc.scrollTop = keep; return; }
+  updateNow();
+  const now = body.querySelector(".now-line:not([hidden])");
+  const first = body.querySelector(".strip");
+  sc.scrollTop = now ? Math.max(0, now.offsetTop - 120) : first ? Math.max(0, first.offsetTop - 24) : 0;
+}
+
 // ---- the side panel: appointment, full record and every change -------------
 function markCalSel() {
-  document.querySelectorAll("#cal-body [data-id]").forEach((b) => b.classList.toggle("on", b.dataset.id === cal.sel));
+  document.querySelectorAll("#cal-body [data-id]").forEach((b) => {
+    b.classList.toggle("on", b.dataset.id === cal.sel);
+    if (b.classList.contains("strip")) b.setAttribute("aria-pressed", String(b.dataset.id === cal.sel));
+  });
 }
 
 async function openCalAppt(a, opener) {
@@ -1236,7 +1400,7 @@ async function openCalAppt(a, opener) {
   const req = ++cal.panelReq, pid = apptPid(a), p = a.patient || {};
   $("tab-calendar").classList.add("with-panel"); $("cal-panel").hidden = false;
   $("cal-panel-title").textContent = p.name || "Appointment";
-  $("cal-panel-when").textContent = `${fmtD(a.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })} at ${a.time}`;
+  $("cal-panel-when").textContent = `${fmtD(a.date, { weekday: "long", day: "numeric", month: "long", year: "numeric" })}, ${a.time} to ${hhmm(toMin(a.time) + ((cal.data && cal.data.slot_minutes) || 20))}`;
   const dl = $("cal-appt"); dl.replaceChildren();
   const fact = (k, v) => { if (v === undefined || v === null || v === "") return; const dd = el("dd"); if (v instanceof Node) dd.append(v); else dd.textContent = v; dl.append(el("dt", null, k), dd); };
   fact("Status", el("span", `state ${STATUS_TONE[a.status] || ""}`, STATUS_WORD[a.status] || a.status));
