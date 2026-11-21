@@ -14,7 +14,8 @@ from app.users import UserStore
 ROOT = Path(__file__).resolve().parent
 USERS = ROOT / "data" / "users.json"
 DEMO = [("dr_lee", "clinician"), ("desk_sam", "receptionist"), ("nurse_kim", "nurse"), ("lead_ana", "clinical_lead"),
-        ("auditor_ray", "auditor"), ("net_ops", "network_engineer")]
+        ("auditor_ray", "auditor"), ("net_ops", "network_engineer"),
+        ("admin_kai", "admin")]
 
 
 def has_accounts(path: Path) -> bool:

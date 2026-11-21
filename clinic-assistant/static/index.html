@@ -9,6 +9,7 @@
 <body>
   <div class="topnote" role="note"><span>Prototype. Made-up patients only. Runs entirely on this computer.</span>
     <span id="mock-banner" class="topnote-warn" hidden title="Ollama isn't running, so answers are placeholders. Open Ollama and restart the app for real answers.">Practice mode: answers are placeholders. <span class="more">Open Ollama and restart the app for real answers.</span></span></div>
+  <div id="reviewer-off-banner" class="demo-banner" role="status" hidden><strong>Reviewer is OFF (demo).</strong> Answers are not checked by Nemotron.<span id="reviewer-off-by" class="by"></span></div>
 
   <main id="login-view" class="login" hidden>
     <h1>Clinic Assistant</h1>
@@ -21,6 +22,7 @@
       <dt>lead_ana</dt><dd>Clinical lead: reviews stopped requests</dd>
       <dt>auditor_ray</dt><dd>Auditor: the audit log and quality checks</dd>
       <dt>net_ops</dt><dd>Network engineer: what the app connects to</dd>
+      <dt>admin_kai</dt><dd>Admin: audit log, stopped requests, reviewer demo switch</dd>
     </dl>
     <form id="login-form">
       <label>Username <input id="login-user" autocomplete="username" required></label>
@@ -314,6 +316,17 @@
       </div>
       <p class="muted">For questions that aren't about one patient. To ask about a patient, open them from Patients instead.</p>
       <p class="inline-key"><span class="tier green">Ready to read</span> shown as a draft <span class="tier amber">Check first</span> read the warning, then open it <span class="tier red">Stopped</span> a clinical lead looks at it</p>
+      <details id="demo-panel" class="demo-panel" data-perm="toggle_reviewer">
+        <summary>Demo scenarios: the Nemotron reviewer, before and after</summary>
+        <div class="demo-body">
+          <div class="demo-switch">
+            <button id="reviewer-toggle" type="button" class="ghost small-btn" aria-pressed="true">Reviewer: on</button>
+            <span id="reviewer-status" class="muted"></span>
+          </div>
+          <p class="muted">Each prompt gets past the fixed safety filters. Run them with the reviewer off, then on.</p>
+          <ol id="demo-scenarios" class="demo-scenarios"></ol>
+        </div>
+      </details>
       <div id="chat-log" class="chat-log" aria-live="polite" data-empty="Ask anything clinical, for example: Summarise this note for a handover. Identifiers are masked before the model sees your text."></div>
       <form id="chat-form" class="composer">
         <textarea id="chat-input" rows="3" placeholder="e.g. Summarise this note for a handover: ..." required></textarea>

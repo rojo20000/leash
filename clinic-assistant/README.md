@@ -9,6 +9,12 @@ answered on this computer only, checked again, and written to a tamper-evident l
 **Prototype. Use synthetic (made-up) patient data only.** It is not a medical device
 and has not been validated for clinical use.
 
+## New in 2.12: a before-and-after demo of the reviewer
+
+- **Demo switch**: a clinical lead or admin can switch the Nemotron reviewer off and on at runtime (Ask a question > Demo scenarios, or `GET`/`POST /api/reviewer`). It's stored in `data/clinic.db`, never in `config/policy.json`, and every flip is in the audit log (`reviewer_toggled`, who, from, to). While it's off, every screen shows an amber bar "Reviewer is OFF (demo)", and every answer's checks say "Reviewer: switched off for demo by <name>".
+- **Three one-click attack prompts** (indirect prompt injection, an unsafe stop-your-blood-thinner instruction, and bait for identifiers and a made-up patient). The fixed filters let all three through; the reviewer catches them. Under each answer a box says what the reviewer caught, before or after the model, or that it wasn't checked. Conversations show the reviewer's verdicts.
+- **Judge script**: `docs/DEMO.md` (3 minutes, works offline with `MOCK_LLM=1`). New demo account `admin_kai` (admin); clinical leads can now also see the Network page.
+
 ## New in 2.11: a second model reviews every answer (NVIDIA Nemotron)
 
 - **What it does.** Every doctor-assistant and front-desk-assistant turn now goes past a separate local reviewer model twice: **before** the chat model (the masked question plus the minimized record or schedule) and **after** it (the answer). It looks for prompt injection, unsafe clinical advice, identifiers, invented patients and out-of-scope requests, and answers `green`, `amber` or `red`.
@@ -40,7 +46,7 @@ and has not been validated for clinical use.
 - **Error-proofed flows**: buttons stay off until inputs are valid, only open times can be booked, check-in needs the identity checks, steps can't be skipped, two people can't change the same appointment at once, and anything that can't be undone needs a second press.
 - **Faster answers**: the model is loaded when the app starts and kept loaded for 30 minutes; answers are capped in length.
 
-See `docs/DEMO-SCRIPT.md` for an 8-minute walkthrough.
+See `docs/DEMO.md` for the 3-minute reviewer demo for judges, and `docs/DEMO-SCRIPT.md` for an 8-minute walkthrough.
 
 ## What it enforces
 
@@ -123,7 +129,7 @@ python3 run.py
 
 No model yet? Start with `MOCK_LLM=1 python3 run.py` to click through the app with a stand-in model.
 
-Run the checks: `python3 -m unittest -v` (55 tests, uses the stand-in model and a stand-in reviewer).
+Run the checks: `python3 -m unittest -v` (59 tests, uses the stand-in model and a stand-in reviewer).
 
 Optional upgrades:
 - Better name detection: `pip install presidio-analyzer presidio-anonymizer && python3 -m spacy download en_core_web_lg`. The app uses it automatically when installed.

@@ -94,7 +94,9 @@
       "register_patient",
       "edit_chart",
       "view_history",
-      "view_all_conversations"
+      "view_all_conversations",
+      "toggle_reviewer",
+      "view_network"
     ],
     "auditor": [
       "view_audit",
@@ -107,7 +109,8 @@
       "review_red",
       "view_history",
       "view_all_conversations",
-      "view_network"
+      "view_network",
+      "toggle_reviewer"
     ],
     "receptionist": [
       "view_schedule",
@@ -235,6 +238,7 @@
     "host": "",
     "timeout_s": 20,
     "fail_mode": "hold",
-    "when_model_missing": "skip"
+    "when_model_missing": "skip",
+    "_demo": "For demos, a clinical lead or admin can switch the reviewer off and on at runtime (Ask a question > Demo scenarios, or POST /api/reviewer). That switch is stored in data/clinic.db and audited; this file is never changed by it."
   }
 }

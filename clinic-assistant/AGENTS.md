@@ -5,7 +5,7 @@ People can read the same files; nothing here is agent-only.
 
 ## What this is
 
-Clinic Assistant (V3, app version in `app/__init__.py`, currently 2.11) is the human-facing front end
+Clinic Assistant (V3, app version in `app/__init__.py`, currently 2.12) is the human-facing front end
 for Leash. Staff sign in, see synthetic patients and today's schedule, and ask a **local** model
 questions. Every request goes through a gatekeeper: role check, identifier masking, guardrails,
 a second local reviewer model (NVIDIA Nemotron via Ollama), green / amber / red tiers, and
@@ -38,10 +38,11 @@ Run from `clinic-assistant/`. On Windows use `python` instead of `python3`.
 | One-command setup (accounts, data, checks) | `CLINIC_DEMO_PASSWORD='<12+ chars>' python3 scripts/bootstrap.py` |
 | Start with a stand-in model (no Ollama) | `MOCK_LLM=1 python3 run.py` |
 | Start with real local models | `python3 run.py` (needs Ollama, see SETUP.md) |
-| All tests (stand-in model and reviewer) | `MOCK_LLM=1 python3 -m unittest` (80 tests, 1 skipped) or `make clinic-check` from the repo root |
+| All tests (stand-in model and reviewer) | `MOCK_LLM=1 python3 -m unittest` (84 tests, 1 skipped) or `make clinic-check` from the repo root |
 | Reset data to the shared synthetic state | `python3 scripts/reset_demo_data.py` (backs up first, keeps accounts) |
 | Verify every chain | `python3 scripts/reset_demo_data.py --check`, `python3 scripts/verify_db.py`, `python3 scripts/verify_stores.py` |
 | Real-model smoke test on a temp copy | `python3 live_check.py` |
+| Reviewer before/after demo (3 minutes) | see `docs/DEMO.md` (sign in as `lead_ana`) |
 | Integrated mode through the Leash gateway | `CLINIC_LEASH=1 MOCK_LLM=1 python3 run.py` (Leash stack running) |
 
 Done means: the tests pass, `reset_demo_data.py --check` reports every chain OK, and the app starts
@@ -54,7 +55,7 @@ and answers `GET /api/version`.
 | `app/server.py` | HTTP server, sessions, roles, every `/api/*` route, the request pipeline |
 | `app/db.py` | `data/clinic.db`: patients, appointments, `change_log`, `conversations` (hash-chained, append-only) |
 | `app/vectorstore.py` | `data/vectors.sqlite`: similar cases + reworded-injection detection (hash-chained, append-only) |
-| `app/reviewer.py` | Nemotron reviewer, before and after the chat model; fail closed. Design: `docs/REVIEWER.md` |
+| `app/reviewer.py` | Nemotron reviewer, before and after the chat model; fail closed; runtime demo switch stored in `clinic.db`. Design: `docs/REVIEWER.md`, demo: `docs/DEMO.md` |
 | `app/guardrails.py`, `app/privacy.py` | Input/output checks; identifier masking |
 | `app/llm.py` | Local-only Ollama client; `MOCK_LLM=1` stand-in |
 | `app/network.py` | Network view: who talks to whom, model calls from the audit log, store health |

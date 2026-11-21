@@ -84,6 +84,8 @@ async function start() {
     const o = el("option", null, `${k}: ${v}`); o.value = k; group.append(o);
   });
   $("mock-banner").hidden = !me.mock;
+  showReviewer(me.reviewer);
+  if (can("toggle_reviewer")) loadReviewer();
   opts = await api("/api/chart/options").catch(() => null);
   if (opts) regSetup();
   const h = new Date().getHours();
@@ -421,10 +423,77 @@ function showAnswer(r, log = $("chat-log")) {
     body.append(el("p", null, r.reasons.join(" ")));
   }
   const answer = log.lastElementChild;
-  if (r.trace) addTrace(r.trace, log);
+  if (r.trace) { addTrace(r.trace, log); reviewerReadout(r.trace, log); }
   // Show the start of the answer; the log (or the page) scrolls for the rest.
   answer.scrollIntoView({ block: answer.offsetHeight > log.clientHeight ? "start" : "nearest" });
 }
+
+// ---- reviewer: what Nemotron said about this answer, and the demo switch -------
+function reviewerReadout(trace, log) {
+  const steps = trace.filter((t) => t.step.startsWith("Reviewer"));
+  if (!steps.length) return;
+  const box = el("div", "rv-readout");
+  const off = steps.find((t) => t.step === "Reviewer");
+  if (off) {
+    box.classList.add("off");
+    const line = el("div", "line"); line.append(icon("warn"), el("span", null, `Not checked: reviewer ${off.detail}`));
+    box.append(line);
+  } else {
+    let caught = false;
+    steps.forEach((t) => {
+      const when = t.step.includes("before") ? "before model" : "after model";
+      const [tier, ...rest] = t.detail.split(": ");
+      const why = rest.join(": ").replace(/ \(\d+ ms, [^)]*\)$/, "");
+      const line = el("div", "line");
+      if (t.status === "ok") line.append(icon("ok"), el("span", null, `Reviewer (${when}): no concerns`));
+      else if (tier === "off") line.append(icon("warn"), el("span", null, `Not checked (${when}): ${why}`));
+      else { caught = true; line.append(icon(t.status), el("span", null, `Caught by reviewer (${when}, ${tier}): ${why}`)); }
+      box.append(line);
+    });
+    box.classList.add(caught ? "caught" : steps.some((t) => t.status !== "ok") ? "off" : "clear");
+  }
+  log.append(box);
+}
+
+function showReviewer(r) {
+  if (!r) return;
+  const off = r.state === "off" && (r.enabled === false || r.demo_off);
+  $("reviewer-off-banner").hidden = !off;
+  $("reviewer-off-by").textContent = off && r.changed_by ? `Switched off by ${r.changed_by}.` : "";
+  const t = $("reviewer-toggle");
+  if (t && r.enabled !== undefined) {
+    t.textContent = `Reviewer: ${r.enabled ? "on" : "off"} (demo)`;
+    t.setAttribute("aria-pressed", String(!!r.enabled));
+    $("reviewer-status").textContent = `${r.model}: ${r.message || r.state}`
+      + (r.changed_by ? ` Last switched by ${r.changed_by}, ${shortWhen(r.changed_at)} UTC.` : "");
+  }
+}
+
+async function loadReviewer() {
+  let r;
+  try { r = await api("/api/reviewer"); } catch { return; }
+  showReviewer(r);
+  const list = $("demo-scenarios");
+  list.replaceChildren(...(r.scenarios || []).map((sc, i) => {
+    const li = el("li"); const txt = el("div");
+    txt.append(el("strong", null, `${i + 1}. ${sc.title}`), el("span", "muted", sc.tests));
+    const b = el("button", "small-btn", "Run"); b.type = "button";
+    b.onclick = () => {
+      if ($("chat-form").querySelector("button").disabled) return;
+      ask($("chat-log"), $("chat-input"), $("chat-form").querySelector("button"), { message: sc.prompt });
+    };
+    li.append(b, txt); return li;
+  }));
+}
+
+$("reviewer-toggle").addEventListener("click", async () => {
+  const t = $("reviewer-toggle"); t.disabled = true;
+  try {
+    const r = await api("/api/reviewer", { enabled: t.getAttribute("aria-pressed") !== "true" });
+    showReviewer(r);
+  } catch (err) { alert(err.message); }
+  t.disabled = false;
+});
 
 // Enter sends, Shift+Enter adds a line.
 function enterToSend(textarea, form) {
@@ -1630,6 +1699,14 @@ const conv = { items: [], users: new Set(), patients: new Set(), names: {}, open
 const CONV_TIER = { green: "Ready to read", amber: "Check first", red: "Stopped", error: "Not sent", redirect: "Redirected" };
 fillSelect($("conv-tier"), [["", "Any result"], ...Object.entries(CONV_TIER)]);
 const convTier = (t) => el("span", `tier ${t === "redirect" ? "amber" : t}`, CONV_TIER[t] || t || "unknown");
+// Result column: the final label, and under it what the reviewer said before / after the model.
+function convResult(c) {
+  const box = el("span", "conv-result"); box.append(convTier(c.tier));
+  const rv = c.reviewer_pre_tier || c.reviewer_post_tier
+    ? `Reviewer ${c.reviewer_pre_tier || "-"} / ${c.reviewer_post_tier || "-"}${c.reviewer_ok === false ? " (unavailable)" : ""}`
+    : "Reviewer off";
+  box.append(el("span", "conv-rv", rv)); return box;
+}
 const shortWhen = (iso) => (iso ? iso.replace("T", " ").slice(0, 16) : "");
 
 async function loadConversations() {
@@ -1670,7 +1747,7 @@ function drawConversations() {
     b.append(el("span", "conv-when", shortWhen(c.at)),
       el("span", "conv-who", `${c.user || "?"}${c.role ? ` · ${c.role.replace("_", " ")}` : ""}`),
       el("span", `conv-pt${pname ? "" : " none"}`, pname || "General"),
-      el("span", "conv-q", c.question || ""), convTier(c.tier));
+      el("span", "conv-q", c.question || ""), convResult(c));
     b.onclick = () => { conv.open = conv.open === c.id ? null : c.id; drawConversations(); };
     box.append(b);
     if (conv.open === c.id) box.append(convDetail(c));
@@ -1691,6 +1768,10 @@ function convDetail(c) {
   fact("Model", c.model);
   if (typeof c.duration_ms === "number") fact("Time taken", c.duration_ms >= 1000 ? `${(c.duration_ms / 1000).toFixed(1)} s` : `${c.duration_ms} ms`);
   fact("What the model was given", c.context_summary);
+  if (c.reviewer_pre_tier || c.reviewer_post_tier)
+    fact("Reviewer (Nemotron)", `before model: ${c.reviewer_pre_tier || "not run"} · after model: ${c.reviewer_post_tier || "not run"}`
+      + (c.reviewer_ok === false ? " · unavailable, held" : ""));
+  else fact("Reviewer (Nemotron)", "not checked (off)");
   d.append(el("div", "label", "Details"), facts);
   d.append(el("div", "label", "Changes made after this answer"));
   const ch = c.changes || [];
