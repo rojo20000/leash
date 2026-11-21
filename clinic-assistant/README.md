@@ -1,5 +1,7 @@
 # Clinic Assistant: a restricted local medical AI (prototype)
 
+> **Team setup (Leash repo):** start with [`SETUP.md`](SETUP.md). Agents: read [`AGENTS.md`](AGENTS.md) first. Limits and roadmap: [`NOTES.md`](NOTES.md). `data/clinic.db` and `data/vectors.sqlite` are the shared synthetic snapshot.
+
 A small web app that puts a **gatekeeper** between people and a local AI model.
 Nobody talks to the model directly. Every request is signed in, masked, checked,
 answered on this computer only, checked again, and written to a tamper-evident log.
