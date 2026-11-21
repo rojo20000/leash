@@ -85,6 +85,25 @@ On Windows, if the window was closed or the process was started in the backgroun
 
 `make help` lists every target. Optional: put `NVIDIA_API_KEY` in a git-ignored `.env` for live Nemotron calls. Without it, `make check` and `make demo` run on recorded Nemotron responses from real API calls. `make record` refreshes the recordings and needs the key. The only off-machine destinations are `https://integrate.api.nvidia.com/v1` and `https://ai.api.nvidia.com/v1/security/nvidia/nemoguard-jailbreak-detect`, both carrying synthetic data only. Nemotron 3.5 Content Safety is not used: NVIDIA's page showed it unavailable and the API returned HTTP 404 for our key (11:28 and 13:58); the path exists behind `LEASH_NEMOTRON_SAFETY_MODEL` but has never had a live response.
 
+## Human front end: Clinic Assistant
+
+`clinic-assistant/` is a clinician-facing web app by Sal Jimenez: Python standard library only, served on `http://127.0.0.1:8642`, with a local model through Ollama or a stand-in (`MOCK_LLM=1`). Its own setup, including accounts (`python manage_users.py add <name> clinician`), is in [`clinic-assistant/README.md`](clinic-assistant/README.md).
+
+**Integrated mode.** When on, a signed-in clinician, nurse or clinical lead can search Leash's synthetic patients and open one through the Leash gateway (`POST /v1/tool-call`) from a "Leash" tab. Each request carries a request id (`call_id`) that appears in both Clinic Assistant's audit log and Leash's decision feed and audit log. It is **off by default** (`leash.enabled: false` in `clinic-assistant/config/policy.json`) and outside `make check`. To switch it on for one run without editing the file, start the Leash stack with `make dashboard`, then:
+
+```bash
+cd clinic-assistant && CLINIC_LEASH=1 MOCK_LLM=1 python run.py
+```
+
+What you will see: the role policy allows the scheduling view (Patient, Encounter, DocumentReference) and blocks a full-chart request by design (`RESOURCE_NOT_ALLOWED`, with Leash's advisory explanation). Leash's behaviour check was trained on the scheduling agent, so a patient search, and a record opened within a minute of one, is usually **held for review** (scores 0.870, 0.583 and 0.635 against a threshold of 0.5). Opening a record by id without a recent search is **allowed** and returns the minimized record plus what Leash removed. If the gateway is down you get an error; Clinic Assistant never falls back to its own records. Held calls wait in the approval queue in the dashboard at `http://127.0.0.1:8501`.
+
+**Honest limits (future work):**
+- One role policy for every Clinic Assistant role: each is sent as `scheduling_assistant`.
+- No behaviour model for a human front end.
+- Approving a held call in the Leash dashboard runs it in Leash; it does not return the record to Clinic Assistant.
+
+Tests: `make clinic-check` runs Clinic Assistant's own suite with the stand-in model. It is not part of `make check`.
+
 ## Results
 
 Every number comes from `metrics/results.json`, produced by the seeded scripts in `make data` and `make check`.

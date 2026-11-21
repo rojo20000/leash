@@ -23,6 +23,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from . import VERSION, llm, network, privacy
+from . import leash_client
 from .audit import AuditLog
 from .db import ClinicDB
 from .ehr import EHR
@@ -548,6 +549,37 @@ class App:
     def can(self, sess: dict, perm: str) -> bool:
         return perm in self.policy["roles"].get(sess["role"], [])
 
+    def leash_status(self) -> dict:
+        return {"enabled": leash_client.enabled(self.policy),
+                "dashboard_url": self.policy.get("leash", {}).get("dashboard_url", "http://127.0.0.1:8501")}
+
+    def leash_call(self, sess: dict, tool: str, args: dict, view=None, patient_id=None):
+        """Route one lookup through the Leash gateway (C12.4); one audit entry, no local fallback."""
+        call_id, session_id = uuid.uuid4().hex, "clinic-assistant:" + sess["user"]
+        audit = dict(call_id=call_id, tool=tool, view=view, patient_id=patient_id,
+                     role_sent=leash_client.LEASH_ROLE, session_id=session_id)
+        try:
+            d = leash_client.tool_call(self.policy, tool, args, session_id, call_id)
+        except leash_client.LeashError as e:
+            self.audit.write("leash_tool_call", sess["user"], decision="unavailable", reasons=[],
+                             queue_id=None, results=None, error=str(e), **audit)
+            return 502, {"state": "unavailable", "call_id": call_id, "error":
+                         f"Leash gateway unavailable: {e}. Nothing was shown from Clinic Assistant's own records."}
+        allow = d["decision"] == "allow"
+        result = d.get("result") if allow else None
+        reasons = d.get("reasons") or []
+        r = ((d.get("nemotron") or {}).get("reasoner")) or None
+        reasoner = {k: r.get(k) for k in ("explanation", "risk_level", "policy_rule_ids",
+                                          "recommended_action", "served_by")} if isinstance(r, dict) else None
+        n = len(result["patients"]) if allow and tool == "search_patients" and isinstance(result, dict) else None
+        self.audit.write("leash_tool_call", sess["user"], decision=d["decision"],
+                         reasons=[x["code"] for x in reasons], queue_id=d.get("queue_id"),
+                         results=n, error="", **audit)
+        return 200, {"state": d["decision"], "call_id": call_id, "tool": tool, "view": view,
+                     "patient_id": patient_id, "reasons": reasons, "result": result,
+                     "redactions": d.get("redactions") or [], "queue_id": d.get("queue_id"),
+                     "reasoner": reasoner, "dashboard_url": self.leash_status()["dashboard_url"]}
+
     def rate_ok(self, user: str) -> bool:
         t, limit = time.time(), self.policy["server"]["max_requests_per_minute"]
         with self.lock:
@@ -793,7 +825,8 @@ def make_handler(app: App):
                                        "model": app.policy["model"]["chat_model"],
                                        "presidio": privacy.presidio_available(), "version": VERSION,
                                        "clinic": app.policy["clinic"]["name"],
-                                       "mock": llm_is_mock(), "reviewer": app.reviewer.state()})
+                                       "mock": llm_is_mock(), "reviewer": app.reviewer.state(),
+                                       "leash": app.leash_status()})
             if path == "/api/reviews":
                 return self.send(200, app.visible_reviews(s))
             if path == "/api/db/status":
@@ -1050,6 +1083,25 @@ def make_handler(app: App):
                 if r["tier"] == "red" and r["requester"] == s["user"]:
                     r = {**r, "answer": None}
                 return self.send(200, r)
+
+            if path in ("/api/leash/search", "/api/leash/open"):
+                if not app.can(s, "view_patients"):
+                    return self.send(403, {"error": "Your role cannot open patient records."})
+                if not leash_client.enabled(app.policy):
+                    return self.send(404, {"error": "Integrated mode is off."})
+                if path == "/api/leash/search":
+                    q = str(data.get("q", "")).strip()
+                    if not 1 <= len(q) <= 80:
+                        return self.send(400, {"error": "Enter a name of 1 to 80 characters."})
+                    return self.send(*app.leash_call(s, "search_patients", {"name": q}))
+                pid, view = str(data.get("patient_id", "")), data.get("view")
+                if not re.fullmatch(r"pt-\d{4}", pid):
+                    return self.send(400, {"error": "Bad patient id."})
+                if view not in ("scheduling", "full"):
+                    return self.send(400, {"error": "View must be scheduling or full."})
+                types = leash_client.SCHEDULING_TYPES if view == "scheduling" else leash_client.FULL_TYPES
+                return self.send(*app.leash_call(s, "read_record", {"patient_id": pid, "resource_types": types},
+                                                 view, pid))
 
             if path == "/api/outbox/draft":
                 if not app.can(s, "draft_message"):

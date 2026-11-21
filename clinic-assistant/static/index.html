@@ -46,6 +46,7 @@
       </div>
       <div class="nav-group"><p class="nav-label">Patients</p>
         <button data-tab="patients" data-perm="view_patients"><svg class="nav-ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5.4" r="2.6"/><path d="M2.8 13.6c.8-2.7 2.8-4.1 5.2-4.1s4.4 1.4 5.2 4.1"/></svg><span class="nl">Patients</span></button>
+        <button id="tab-btn-leash" data-tab="leash" data-perm="view_patients"><svg class="nav-ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h6.5"/><circle cx="11.5" cy="8" r="2"/><path d="M3 5.5v5"/></svg><span class="nl">Leash</span></button>
         <button data-tab="chat" data-perm="chat"><svg class="nav-ic" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3.5h11v7.2H7.3L4.2 13v-2.3H2.5z"/></svg><span class="nl">Ask a question</span></button>
         <button data-tab="conversations" data-perm="chat,frontdesk_chat,view_all_conversations"><svg class="nav-ic" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.6"/><path d="M8 5v3.3l2.2 1.4"/></svg><span class="nl">Conversations</span></button>
       </div>
@@ -285,6 +286,25 @@
         </form>
         <p class="hint">Enter to send · Shift+Enter for a new line</p>
       </aside>
+    </section>
+
+    <section id="tab-leash" class="tab page" hidden>
+      <h2>Patients through Leash</h2>
+      <p class="muted">Records here come from Leash's synthetic records system through the Leash gateway. Leash applies one role policy (a scheduling assistant) to every Clinic Assistant role, so the scheduling view is the most it will return and a full-chart request is blocked by design. Leash's behaviour check was trained on a scheduling agent, so patient searches are often held for review in the Leash dashboard; opening a record by its id is the direct route.</p>
+      <form id="leash-search-form" class="draft-form">
+        <label>Find a patient <input id="leash-q" type="search" placeholder="Name or part of a name" autocomplete="off" required></label>
+        <button type="submit">Search through Leash</button>
+      </form>
+      <div id="leash-open-row" class="draft-form">
+        <label>Open by patient id <input id="leash-pid" type="text" placeholder="pt-0042" autocomplete="off"></label>
+        <span class="leash-btns">
+          <button type="button" id="leash-open-sched" class="ghost small-btn">Scheduling view</button>
+          <button type="button" id="leash-open-full" class="ghost small-btn">Full chart</button>
+        </span>
+      </div>
+      <p id="leash-error" class="error" role="alert"></p>
+      <ul id="leash-results" class="leash-results"></ul>
+      <div id="leash-result" aria-live="polite"></div>
     </section>
 
     <section id="tab-chat" class="tab page">

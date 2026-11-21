@@ -322,3 +322,26 @@ First check, without changing anything, that this session can read /mnt/project-
 </node_requirements>
 
 Log the scope change and the new nodes in DECISIONS.md. When the node passes, tell me what changed and how to see it: python3 manage_users.py add dr_lee clinician, then MOCK_LLM=1 python3 run.py, then open http://127.0.0.1:8642.
+
+---------------------------------------------------------------------------------------------------------
+
+# ADDENDUM 3 (team, 16:05): run on localhost and connect Clinic Assistant to Leash
+
+The team's words: "Run the project on localhost." and "and connect the UI sal made."
+
+State at 16:08: the Leash stack is running (mock EHR 127.0.0.1:8001, gateway 127.0.0.1:8000 with Rust core, real
+ML and Nemotron in replay mode, Streamlit dashboard 127.0.0.1:8501) and Clinic Assistant is running standalone on
+127.0.0.1:8642 with MOCK_LLM. The two are not connected: Clinic Assistant has no code that calls the gateway.
+
+The design for the connection is Sal's handoff note, already in the repo:
+`clinic-assistant/handoff/LEASH_OVERSEER_HANDOFF.md` (sections `<why>`, `<how_it_connects>`, `<suggested_nodes>`,
+`<limits>`). That note is the scope. In short: an "integrated mode" behind a policy flag that is off by default;
+Clinic Assistant becomes a Leash client that sends `POST /v1/tool-call` to the gateway when a signed-in user looks
+up or opens a patient record; allow shows the minimized record, block shows a red result with Leash's reasoner
+explanation, escalate shows "Waiting for review in Leash" (the item is in Leash's existing approval queue); each
+side keeps its own audit chain and both entries carry the same request id; if the gateway is unreachable Clinic
+Assistant fails closed. The note asks to leave the gateway, the Rust core and the demo recordings unchanged, to
+keep the new tests out of `make check` behind a separate target, and to cut this work before anything on the
+never-cut list. Clinic Assistant stays Python 3.8+ standard library only, 127.0.0.1 only, no cloud calls.
+Safety rule from the N22 incident: every test directory comes from `tempfile.mkdtemp()` and every cleanup refuses
+any path outside the system temp directory.
