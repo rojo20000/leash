@@ -147,6 +147,19 @@ def test_content_safety_local_fallback(gw):
     assert d["decision"] == "allow" and d["nemotron"]["content_safety"]["flagged"] is False
 
 
+def test_judge_clear_does_not_remove_local_hold(gw, monkeypatch):  # A8
+    flag(monkeypatch, "content_safety", False)  # the judge answers ok, not flagged
+    mail = {"to": ["pt-0007@patients.example.org"], "subject": "Result", "body": "Your MRN-0000042 is ready."}
+    for body in (mail["body"], "SSN 123-45-6789 on file."):
+        d = call(gw, "send_email", dict(mail, body=body))
+        assert d["decision"] == "escalate" and codes(d) == ["CONTENT_SAFETY_FLAGGED"]
+        cs = d["nemotron"]["content_safety"]
+        assert cs["served_by"] == "replay" and cs["flagged"] is True and cs["categories"] == ["PII/Privacy"]
+    assert not (gw.rt / "email_sink.jsonl").exists()
+    d = call(gw, "send_email", dict(mail, body="See you soon."))
+    assert d["decision"] == "allow" and d["nemotron"]["content_safety"]["categories"] == []
+
+
 def test_remote_flags_only_escalate(gw, monkeypatch):
     # a "safe" verdict cannot turn a policy block into anything else
     flag(monkeypatch, "content_safety", False)

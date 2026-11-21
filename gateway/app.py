@@ -202,12 +202,13 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None) -> FastAPI:
                     f"Tool: {tool}\nDestination: {', '.join(recips) or 'none'}\n"
                     f"Content: {json.dumps(x, sort_keys=True)[:4000]}")
             r = nemotron.content_safety(text)
-            if r.ok:
-                flagged, cats = bool(r.data["flagged"]), list(r.data["categories"])
-            else:  # local fallback: identifiers in an outgoing email
-                body_text = f"{args.get('subject', '')} {args.get('body', '')}"
-                flagged = tool == "send_email" and any(k in ("SSN", "MRN") for k, _, _ in core.prescan(body_text))
-                cats = ["PII/Privacy"] if flagged else []
+            # local rule (identifiers in an outgoing email) always runs: a judge "clear" cannot remove this hold
+            body_text = f"{args.get('subject', '')} {args.get('body', '')}"
+            local = tool == "send_email" and any(k in ("SSN", "MRN") for k, _, _ in core.prescan(body_text))
+            flagged = local or bool(r.ok and r.data["flagged"])
+            cats = list(r.data["categories"]) if r.ok else []
+            if local and "PII/Privacy" not in cats:
+                cats.append("PII/Privacy")
             nem["content_safety"] = {"served_by": r.served_by if r.ok else "fallback:local",
                                      "model": r.model if r.ok else "", "flagged": flagged, "categories": cats,
                                      "latency_ms": round(r.latency_ms, 1)}
