@@ -326,3 +326,23 @@ nodes:
       - dashboard renders nemoguard wherever it renders jailbreak and content_safety, and still renders decisions without it
       - three screenshots in docs/img retaken with Edge headless over the DevTools protocol
     max_iterations: 2
+
+  # 14:50 ADDENDUM 2 (team): Clinic Assistant vector store, designed by Sal Jimenez and already in the snapshot.
+  # Validate-and-fill-gaps node in the separate clinic-assistant/ app (CONTRACTS.md C11). Runs beside N12-N15.
+  - id: N22
+    name: clinic_vectorstore
+    stage: 4
+    agent: implementer
+    depends_on: [N15]
+    owns: [clinic-assistant/tests/test_vectorstore.py, "clinic-assistant/config/policy.json#vectors", clinic-assistant/app/vectorstore.py, "clinic-assistant/app/server.py (startup indexing, similar_cases, /api/audit vectors status; only on a test-exposed defect)", "clinic-assistant/static/** (similar cases and audit status parts; only on a test-exposed defect)", "clinic-assistant/app/schedule.py#reminder_text (authorized strftime fix only)"]
+    reads: [CONTRACTS.md, graph/MISSION.md, "clinic-assistant/** except clinic-assistant/data/**"]
+    brief: graph/briefs/N22.md
+    check: "cd clinic-assistant && MOCK_LLM=1 python -m unittest -v && MOCK_LLM=1 python -c \"import tempfile; from pathlib import Path; from app.server import App; a=App(data_dir=Path(tempfile.mkdtemp())); s=a.vectors.status(); v=a.audit.verify(); print(s); print(v); assert s['embedder']=='hashing-1024' and s['collections']=={'injection_examples': 12, 'patient_profiles': 40} and s['ok'] is True and s['rows']==52 and v['ok'] is True\" && test -z \"$(git status --short data)\" && echo ok"
+    acceptance:
+      - check prints ok; unittest reports OK with the 29 existing tests plus the 7 in tests/test_vectorstore.py (0 errors on Windows)
+      - tests/test_vectorstore.py has the six team-listed tests plus the short-chat-question test, each on its own temp data_dir, stdlib only
+      - config/policy.json vectors has a per-setting comment for ollama_embed_model, injection_similarity and similar_cases; no ollama:nomic-embed-text key; json.load still parses it
+      - app/schedule.py diff is only the reminder_text date/time formatting; reminder text is unchanged on Linux
+      - git status --short clinic-assistant/data is empty and the data/ sha256 listing matches before and after
+      - Leash make check still passes from the repo root
+    max_iterations: 2

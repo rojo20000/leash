@@ -1011,3 +1011,57 @@ Streamlit; Ctrl+C stops all). The demo writes key `demo` with the four C6.4 bool
 | `demo/recordings/**` except `demo/recordings/nemotron/**` | N6 (passed; frozen) |
 | files under `demo/recordings/nemotron/calls/` and `models.json` | written only by `leash/nemotron.py` in live mode, by whichever node runs live (N16, N17, N8 `make record`, N10, N18); never edited by hand |
 | `ml/eval/**`, `tests/test_nemotron_eval.py`, `leash/prompts/*.txt` (Stage 3 only), key `nemotron` in results.json | N18 (Stage 3) |
+
+## C11. Clinic Assistant vector store (added 14:50, N22; team spec in graph/MISSION.md ADDENDUM 2)
+
+Separate app in `clinic-assistant/`; nothing here touches Leash paths. Designed by Sal Jimenez and already in the
+snapshot: N22 validates it, adds tests and fills gaps. It does not replace it. Paths below are relative to `clinic-assistant/`.
+
+### C11.1 Store as implemented (`app/vectorstore.py`, file `<data_dir>/vectors.sqlite`)
+- Table `vectors(seq INTEGER PRIMARY KEY AUTOINCREMENT, collection TEXT, doc_id TEXT, text TEXT, meta TEXT (JSON,
+  `sort_keys=True`), embedder TEXT, embedding BLOB (float32, `array('f')`, 1024 dims = 4096 bytes for hashing-1024),
+  created TEXT (UTC `%Y-%m-%dT%H:%M:%SZ`), prev_hash TEXT, hash TEXT UNIQUE)`, all NOT NULL. Index `by_collection(collection, doc_id)`.
+- Triggers `no_update` / `no_delete`: `RAISE(ABORT, 'vector store is append-only')`. Opening a store runs the schema
+  with `IF NOT EXISTS`, so it re-creates missing triggers.
+- Hash: `sha256(prev ‖ 0x00 ‖ collection ‖ 0x00 ‖ doc_id ‖ 0x00 ‖ text ‖ 0x00 ‖ meta ‖ 0x00 ‖ embedder ‖ 0x00 ‖ created ‖ 0x00 ‖ embedding_bytes)`,
+  UTF-8, hex. Genesis `prev` = 64 zeros. `seq` is not hashed. Order is fixed by `ORDER BY seq`.
+- `Embedder(policy)`: `.mode` is `"hashing-1024"` (default, and always when `MOCK_LLM=1`) or `"ollama:<model>"` when
+  `vectors.ollama_embed_model` is set and a probe to `model.ollama_url` `/api/embed` succeeds. Probe failure gives `hashing-1024`, never a cloud call.
+  `.embed(text) -> list[float]` returns unit length.
+- `VectorStore(path: Path, embedder)`: `has(collection, doc_id) -> bool` (current embedder only);
+  `add(collection, doc_id, text, meta=None) -> str` (hash; text must already be masked); `vector_of(collection, doc_id) -> list[float] | None`;
+  `search(collection, query: str | list[float], k=5, exclude=None) -> [{"doc_id","score","text","meta"}]` (cosine, score rounded to 3);
+  `verify() -> {"ok": True, "rows": n}` or `{"ok": False, "broken_at_row": n}` (n is the 1-based row position in seq order);
+  `status() -> {"embedder", "file", "collections": {name: count}, **verify()}` (counts are all rows, every embedder).
+  Reads filter by `embedder = embedder.mode`; the newest row per doc_id wins.
+- `index_all(store, patients, mask)`: adds `inj-00`..`inj-11` from `INJECTION_EXAMPLES` and one `patient_profiles` row per
+  patient, skipping doc_ids already stored for the current embedder. `reindex(store, p, mask)`: appends a profile of
+  conditions + medications + attention + last 6 observations + notes except `Referral letter` and `withheld`, passed through `mask(...)[0]`, meta `{"age","sex"}`.
+- Hook-ups (`app/server.py`): `App.__init__` builds the store and runs `index_all`, then sets `guard.vectors`; `register` and `add_entry` call `reindex`.
+  `App.similar_cases(sess, pid)` gives the top `vectors.similar_cases` other patients (`exclude={pid}`), route `GET /api/patients/<id>/similar` (needs `view_patients`).
+  `GET /api/audit` returns `"vectors": app.vectors.status()` next to `"verify"`. UI: `static/app.js` (`pt-similar`).
+- Withholding (`app/guardrails.py`): `Guardrails.injection_similarity(text)` returns the top cosine to `injection_examples` if it is
+  `>= vectors.injection_similarity[embedder.mode]`, else None. It also returns None when no threshold exists for the active embedder (fixed patterns only).
+  It is called only from `scan_document` (notes: `App.ask_model` for patient context, `App.add_entry`), never from `check_input` (chat questions).
+- Policy `config/policy.json` `vectors`: `ollama_embed_model` (""), `injection_similarity` (`{"hashing-1024": 0.33}`), `similar_cases` (3).
+
+### C11.2 Spec (ADDENDUM 2) against the implementation
+| Spec item | Status |
+|---|---|
+| Table, columns, index, UNIQUE hash | met |
+| `no_update` / `no_delete` abort; newest row wins | met |
+| Hash over prev_hash + row fields + vector bytes; verify names first broken row; Audit tab shows it | met (`seq` excluded, as the hash is computed before insert) |
+| Masked text only | met (`reindex` masks; injection examples are synthetic with no identifiers) |
+| 12 + 40 = 52 rows on a fresh start, meta age and sex | met |
+| hashing-1024 default, optional Ollama, rows filtered by embedder | met |
+| `ollama:nomic-embed-text` threshold key | gap: model not pulled, cannot be calibrated here; key stays absent (N22 brief explains why) |
+| Each `vectors` setting has a `_comment` | gap: one block comment only |
+| Similar cases top 3 others; withhold note at cosine >= 0.33; no match on chat questions | met in code; gap: not tested |
+| `index_all` idempotent; `status()` shape | met |
+| `tests/test_vectorstore.py` with the six required tests | gap |
+
+### C11.3 Rules
+Python 3.8+ standard library only. No imports from the Leash environment (no numpy, sklearn, fastapi, `leash`, `gateway`).
+Never write to `clinic-assistant/data/`: tests and experiments use fresh temp dirs (`App(data_dir=...)`).
+Everything local: host 127.0.0.1, the local `model.ollama_url`, no cloud fallback, no external scripts in `static/`.
+The store holds masked text only. Synthetic data only.

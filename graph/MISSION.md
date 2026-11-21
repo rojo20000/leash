@@ -249,6 +249,30 @@ run on-premises from their Hugging Face weights, so patient data never has to le
 STATUS 14:10: BLOCKED. `/mnt/project-files/medical-local-ai/` is not reachable from this session (see
 DECISIONS.md). No planner or implementer work has started. The team's text follows word for word.
 
+STATUS 14:45: UNBLOCKED. Pull request #1 (merged into `origin/main` as 676e590 at 14:39) added Clinic
+Assistant v2.3 to this repo as the folder `clinic-assistant/`. The team then said: "The Clinic Assistant vector
+store is in the github, validate the system and implement it." So wherever the text below says
+`/mnt/project-files/medical-local-ai/`, read `clinic-assistant/` in this repo; wherever it says `/tmp/vecdata`,
+use a fresh temporary directory; `python3` is `python` on this Windows machine (3.13; the app must stay
+Python 3.8+ standard library only). Sal's work already exists in the snapshot (`app/vectorstore.py`, the server
+and guardrail hookups, `data/vectors.sqlite`), so the node builds on it and does not replace it.
+Overseer validation at 14:42 (temp data dir; `clinic-assistant/data/` untouched, sha256 unchanged):
+- MEETS SPEC: table columns, `no_update` / `no_delete` triggers (both reject), index, 4096-byte float32
+  embeddings, 52 rows after a fresh start (injection_examples 12, patient_profiles 40, embedder hashing-1024),
+  `status()` shape, `index_all()` twice still 52, `verify()` returns `{'ok': False, 'broken_at_row': 7}` on a
+  copy with triggers dropped and row 7 edited, no patient name (full or part) in stored text, meta holds age and
+  sex, threshold `vectors.injection_similarity["hashing-1024"] = 0.33`, `App.similar_cases(session, pid)` exists,
+  the Audit endpoint returns `vectors.status()`, audit verify ok.
+- GAPS: (1) `tests/test_vectorstore.py` does not exist (the six required tests). (2) `config/policy.json`
+  `vectors` has one `_comment` for the block, not one per setting, and no `ollama:nomic-embed-text` threshold
+  key (the Ollama model `nomic-embed-text` is NOT pulled on this machine; only `qwen3.5:9b` is). (3) Not yet
+  demonstrated by a test: syn-003's poisoned note is withheld and a normal note is not; Similar cases returns 3
+  patients and never the patient itself; the injection match is not run on short chat questions.
+- EXISTING SUITE: 29 tests (the spec said 20), 28 pass, 1 errors on Windows:
+  `test_cancel_reminder_and_no_show_rules` → the reminder endpoint crashes with `ValueError: Invalid format
+  string` because `app/schedule.py:216` uses the glibc-only `strftime` codes `%-d` and `%-I`. This is outside the
+  vector-store paths but it breaks the node check on this machine and would crash reminders in a Windows demo.
+
 Add scope: a vector database for Clinic Assistant, designed by Sal Jimenez. Add it as new nodes, with the spec
 below written into graph/MISSION.md word for word. Have the planner add a contract section, plan entries and
 briefs, then start the nodes. Stage 4 (N12-N15) keeps priority: run this alongside it within the 4-agent limit,

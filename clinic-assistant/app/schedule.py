@@ -213,5 +213,5 @@ class Schedule:
         p, c = self.patients[a["patient_id"]], self.clinic
         when = datetime.fromisoformat(f"{a['date']}T{a['time']}")
         return (f"Hello {p['name']['given']}, this is {c['name']} reminding you of your appointment with "
-                f"{c['clinicians'][a['clinician']]} on {when.strftime('%A %-d %B')} at {when.strftime('%-I:%M %p')}. "
+                f"{c['clinicians'][a['clinician']]} on {when:%A} {when.day} {when:%B} at {when.hour % 12 or 12}:{when:%M %p}. "
                 f"Please bring your insurance card. Reply YES to confirm, or call {c['phone']} to change it.")

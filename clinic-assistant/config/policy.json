@@ -176,10 +176,13 @@
   "vectors": {
     "_comment": "Local vector store in data/vectors.sqlite (append-only, hash-chained). Leave ollama_embed_model empty to use the built-in offline embedder; set it to e.g. nomic-embed-text after `ollama pull nomic-embed-text`, then recalibrate the threshold for that embedder.",
     "ollama_embed_model": "",
+    "_ollama_embed_model": "Empty = built-in offline hashing-1024 embedder. Set to a local Ollama embedding model (e.g. nomic-embed-text) only after `ollama pull` and after adding its calibrated threshold below. If Ollama or the model is missing, the app falls back to hashing-1024.",
     "injection_similarity": {
       "hashing-1024": 0.33
     },
-    "similar_cases": 3
+    "_injection_similarity": "Cosine at or above which a note is withheld as a likely prompt injection, keyed by embedder mode. Used only on notes, never on chat questions. hashing-1024 = 0.33 (calibrated). There is deliberately no ollama:nomic-embed-text key: with no key, the vector match is off for that embedder and the fixed document_injection_patterns still apply. To calibrate: score the 12 injection examples' rewordings and the clinic's normal notes with that embedder, pick the value that withholds the rewordings and no normal note, then add \"ollama:nomic-embed-text\": <value> here.",
+    "similar_cases": 3,
+    "_similar_cases": "How many other patients the Similar cases panel shows (the patient itself is never included)."
   },
   "communication": {
     "_comment": "The AI never contacts anyone by itself. It can only draft; a clinician approves; the app never sends. Approved text is copied out by a person into the clinic's normal channel.",
