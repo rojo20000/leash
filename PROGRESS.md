@@ -1,13 +1,13 @@
 # Progress
 
-Generated from graph/state.json (updated 2026-11-21T14:32-06:00).
+Generated from graph/state.json (updated 2026-11-21T15:25-06:00).
 
 ## Summary
-passed 23, blocked 1
+passed 24
 
 ## Gates
 | Stage | Status | At | Commit | Check |
-| --- | --- | --- | --- | --- |
+|---|---|---|---|---|
 | stage0 | passed | 11:26 | f916a54 | |
 | stage1 | passed | 11:56 | b09e7cc | cargo test: 11 passed; pytest: 96 passed, 3 skipped on LEASH_CORE=py LEASH_ML=stub LEASH_NEMOTRON=off and on Rust core + real ML + LEASH_NEMOTRON=replay; bench --quick: policy 5.41x, audit append 1.27x |
 | stage2 | passed | 12:13 | a44574b | make check exit 0 in 53 s: cargo test 11 passed; pytest 96 passed, 3 skipped; bench --quick policy 7.12x, audit append 1.33x; demo --scripted --assert PASS 1-5 |
@@ -16,7 +16,7 @@ passed 23, blocked 1
 
 ## Nodes
 | Node | Name | Status | Iteration | Last check | Reviewer notes |
-| --- | --- | --- | --- | --- | --- |
+|---|---|---|---|---|---|
 | N0 | preflight | passed | 1 | make preflight: 13/13 PASS (python 3.12.14, cargo 1.100.0, maturin 1.16.0, ollama 0.40.16, leash_core ok, en_core_web_lg, qwen3.5:9b tool_calls ok); 11:40 added by hand: NVIDIA_API_KEY present in .env, Lightning test call HTTP 200 in 343 ms | |
 | N1 | plan | passed | 1 | plan.yaml loads with 13 nodes; missing briefs: []; duplicate owns across stage-1 nodes: [] | CONTRACTS.md reviewed in full (C1-C9): core interface, hash chain, schemas, ports, gateway API, ML API, ownership all literal. Planner also wrote pytest.ini, policies/scheduling_assistant.toml, data/corpus/expand.py. Follow-ups for N8: .gitignore additions (runtime/, data/generated/, ml/artifacts/, metrics/*.tmp); consider .gitattributes for line endings. |
 | N1b | replan_nemotron | passed | 2 | plan.yaml loads with 17 nodes; missing briefs: [] | Iteration 1 blocked (addendum missing, overseer error). Iteration 2: CONTRACTS.md C10 (C10.1-C10.10) reviewed by overseer; design rule 'Nemotron output can only add caution, never remove it'; reasoner runs after decide and is advisory. Changes to C1-C9: C1.1 step 2 (any disallowed resource blocks), C5.1 step 5 (blocked calls skip the anomaly window), C5 intro (no files at import, warm-up), C9 (demo/recordings/nemotron/** to N16). Accepted answers to planner questions: model-only injection signal and Content Safety flags escalate rather than block; make preflight fails without the key (make check does not need it); jsonschema added to requirements by N8. |
@@ -40,10 +40,9 @@ passed 23, blocked 1
 | N15 | final | passed | 1 | clean git worktree of 0497e95 with no key, no .env, no .venv: make setup exit 0, make check exit 0 (11 cargo tests; 105 passed, 3 skipped; PASS 1-5). Full output in graph/final_make_check.txt and PROGRESS.md | Fresh-eyes fixes committed (3054d45). After the final run only metrics/results.json shows as modified in the worktree (timestamps and quick-benchmark timings); data/corpus/corpus.jsonl no longer does. Worktree removed. Leftover for the team: empty folder ../leash-diag next to the repo (from the overseer's earlier scratch worktree; Windows refused the delete). |
 | N20 | jailbreak_detect | passed | 1 | make check exit 0: cargo test 11 passed; pytest 103 passed, 3 skipped; demo totals 17 allow, 3 block, 0 escalate; PASS 1-5. Node also ran LEASH_CORE=py make check: pass. Round 5 (live, 83 steps all served by nemotron) dev/holdout: NemoGuard P/R 0/0 / 0/0; Lightning judge 1.0/1.0 / 1.0/0.333; TF-IDF 1.0/1.0 / 1.0/0.333; combined of three 1.0/1.0 / 1.0/0.333; content-safety tn/fp/tp/fn 9/2/1/0 / 5/3/1/0; reasoner agreement 0.923 / 1.0; latency p50/p95 ms NemoGuard 363.8/662.3 (n=17), Lightning 718.5/1399.0 (n=66) | Overseer re-ran make check and the key scan (real key only in .env; no auth header in recordings). NemoGuard JailbreakDetect is an escalate-only third injection detector with its own switch (LEASH_NEMOGUARD) and per-host circuit breaker; contract C10.7a. MEASURED: it flagged 0 of 17 documents including all 8 injected ones (scores -0.82 to -0.99), so it changes no metric. Also for docs: the Lightning judge's holdout recall was 0.667 in round 4 and 0.333 in round 5 with unchanged prompts (3 injected holdout documents; run-to-run variation), so the final-state combined holdout recall is 0.333. 43 recording files; both cores replay. DEMO_SCRIPT quotes all still match. The scripted demo does not print a NemoGuard line because no read is escalated. |
 | N21 | jailbreak_detect_docs | passed | 1 | N21, N12 and N13 checks print ok; dashboard tests 6 passed; make check 105 passed, 3 skipped, demo PASS 1-5 (node run) | Overseer verified: every table number in README.md, docs/PITCH.md and docs/NEMOTRON.md is in metrics/results.json (five rounds, NemoGuard column and latency row); the first three NEMOTRON.md paragraphs are verbatim in SUBMISSION.md; docs state that NemoGuard flagged 0 of 17 documents including all 8 injected ones, that the judge's holdout recall was 0.667 in round 4 and 0.333 in round 5 with unchanged prompts, and that final combined holdout recall is 0.333; nothing listens on 8000/8001/8501/9333. Dashboard shows the nemoguard detector and still renders older decisions; screenshots retaken at 14:24. |
-| N22 | clinic_assistant_vectorstore | blocked | 0 | | Team scope change at 14:08 (spec in graph/MISSION.md ADDENDUM 2). Blocked before planning: /mnt/project-files/medical-local-ai/ is not reachable from this Windows session (no /mnt, WSL has only docker-desktop, no medical-local-ai folder found). Team asked for a path on this machine. Not planned, not started; first to be cut if time runs short. |
+| N22 | clinic_assistant_vectorstore | passed | 2 | cd clinic-assistant && MOCK_LLM=1 python -m unittest: Ran 36 tests, OK (29 existing + 7 new). Status on a fresh temp dir: embedder hashing-1024, injection_examples 12, patient_profiles 40, ok True, rows 52; audit ok True. Leash make check exit 0 (105 passed, 3 skipped, PASS 1-5). data/vectors.sqlite sha256 4febec4d...787b8 unchanged; 0 tracked files missing. | PASSED on iteration 2 after the iteration 1 incident (folder emptied by a test cleanup, restored from git on the team's go-ahead at 15:18). Overseer re-ran everything. Changed: tests/test_vectorstore.py (new, 7 tests, single guarded cleanup helper), config/policy.json (three per-setting comments), app/schedule.py line 216 (portable date formatting; separately authorized). Sal's vectorstore.py, server.py, guardrails.py and static/ untouched. ollama:nomic-embed-text threshold key deliberately left out (cannot be calibrated here). Open for Sal: hash does not include seq; Similar cases returns full names and bypasses the access count; status() counts all embedders; store re-creates dropped triggers. |
 
 ## Final make check output
-
 ```
 Clean git worktree of 0497e95, 2026-11-21 14:29-14:30 CST. No NVIDIA_API_KEY, no .env, no .venv, no generated data before the run.
 Commands: make setup (exit 0), then make check (exit 0). Warnings and blank lines removed; nothing else changed.
