@@ -116,8 +116,10 @@ def test_replay_never_connects(monkeypatch, tmp_path):
     def h2(req):
         b = json.loads(req.content)
         if "response_format" in b:
+            if b["response_format"]["json_schema"]["name"] == "verdict":
+                return ok_resp('{"flagged": true, "categories": ["S1"], "rationale": "r"}')
             return ok_resp('{"a": 1}')
-        return guard_resp('{"User Safety": "unsafe", "Safety Categories": "PII/Privacy"}')
+        return guard_resp('{"User Safety": "unsafe", "Safety Categories": "S1"}')
     live(monkeypatch, h2)
     assert nm.chat_json([{"role": "user", "content": "j"}], sch).ok
     assert nm.content_safety("some text").ok and nm.jailbreak_check("some text").ok
@@ -136,7 +138,7 @@ def test_replay_never_connects(monkeypatch, tmp_path):
           nm.content_safety("some text"), nm.jailbreak_check("some text")]
     for r in rs:
         assert r.ok and r.served_by == "replay" and r.recorded_latency_ms is not None
-    assert rs[2].data["flagged"] and rs[2].data["categories"] == ["PII/Privacy"]
+    assert rs[2].data["flagged"] and rs[2].data["categories"] == ["S1"]
     assert nm.chat([{"role": "user", "content": "never recorded"}]).error == "replay_miss"
     assert nm.latency_summary()[L]["source"] == "recorded"
     monkeypatch.setenv("LEASH_NEMOTRON", "off")
@@ -219,17 +221,32 @@ def test_safety_swap_on_404(monkeypatch):
     def h(req):
         m = json.loads(req.content)["model"]
         models.append(m)
-        if m == GUARD:
+        if m == L:
             return httpx.Response(404, json={"detail": "Specified function in account is not found"})
-        return guard_resp("User Safety: unsafe\nSafety Categories: PII/Privacy")
+        return guard_resp("User Safety: unsafe\nSafety Categories: S1")
 
     live(monkeypatch, h)
     r = nm.content_safety("hello")
-    assert r.ok and r.model == CS and r.swapped_from == GUARD and models == [GUARD, CS]
-    assert nm.resolve_model("safety")[0] == CS
+    assert r.ok and r.model == GUARD and r.swapped_from == L and models == [L, GUARD]
+    assert nm.resolve_model("safety")[0] == GUARD
+
+
+def test_safety_judge_default(monkeypatch):
+    seen = []
+
+    def h(req):
+        seen.append(json.loads(req.content))
+        return ok_resp('{"flagged": true, "categories": ["S1"], "rationale": "r"}')
+
+    live(monkeypatch, h)
+    r = nm.content_safety("Tool: send_email\nContent: x")
+    assert r.ok and r.model == L and r.data["flagged"] and r.data["categories"] == ["S1"]
+    assert set(r.data) == {"flagged", "categories", "raw"}
+    assert "S1:" in seen[0]["messages"][0]["content"] and seen[0]["response_format"]["json_schema"]["name"] == "verdict"
 
 
 def test_redaction(monkeypatch):
+    monkeypatch.setenv("LEASH_NEMOTRON_SAFETY_MODEL", GUARD)
     seen = []
     live(monkeypatch, lambda req: (seen.append(req.content.decode()), guard_resp('{"User Safety": "safe"}'))[1])
     assert nm.content_safety("Patient SSN 912-34-5678 call 555-201-0042").ok
@@ -240,8 +257,11 @@ def test_redaction(monkeypatch):
 
 def test_resolve_model(monkeypatch, tmp_path):
     assert nm.resolve_model("lightning") == (L, None)
-    assert nm.resolve_model("safety") == (GUARD, CS)
-    assert nm.resolve_model("jailbreak") == (GUARD, nm.REQUESTED["jailbreak"])
+    assert nm.resolve_model("safety") == (L, CS)  # judge mode by default
+    assert nm.resolve_model("jailbreak") == (L, nm.REQUESTED["jailbreak"])  # judge mode by default
+    monkeypatch.setenv("LEASH_NEMOTRON_JAILBREAK_MODEL", GUARD)  # a guard model id keeps the guard path
+    assert nm.resolve_model("jailbreak") == (GUARD, None) and not nm._is_judge("jailbreak")
+    monkeypatch.delenv("LEASH_NEMOTRON_JAILBREAK_MODEL")
     monkeypatch.setenv("LEASH_NEMOTRON_SAFETY_MODEL", "x/y")
     assert nm.resolve_model("safety") == ("x/y", None)
     (tmp_path / "models.json").write_text(json.dumps({"ids": []}))

@@ -94,7 +94,11 @@ def build_context(tool, args, minimized_output, decision, reasons, scores, nemot
             "policy": {"allowed_tools": p["tools"]["allowed"], "allowed_resources": p["resources"]["allowed"],
                        "allowed_domains": p["email"]["allowed_domains"], "max_records": p["rate"]["max_records"],
                        "window_seconds": p["rate"]["window_seconds"]},
-            "rule_ids": dict(RULE_IDS)}
+            "rule_ids": dict(RULE_IDS),
+            # grounding aids: the exact ids to cite, and the verb that matches the decision
+            "triggered_rule_ids": list(dict.fromkeys(REASON_TO_RULE[r["code"]] for r in reasons
+                                                      if r["code"] in REASON_TO_RULE))[:4],
+            "outcome": "blocked" if decision == "block" else "held for review"}
 
 
 def _obj(served_by, model, latency_ms, d, error):

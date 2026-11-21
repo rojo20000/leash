@@ -81,4 +81,4 @@ def test_explain_off_mode_uses_template(monkeypatch, tmp_path):
 def test_context_has_no_ids():
     c = ctx(["EMAIL_DOMAIN_NOT_ALLOWED"])
     assert set(c) == {"role", "task", "tool", "args", "output_excerpt", "decision", "reasons", "signals", "policy",
-                      "rule_ids"}
+                      "rule_ids", "triggered_rule_ids", "outcome"}
