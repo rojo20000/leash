@@ -61,6 +61,11 @@ def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
 
 
+def _args_sha(args):
+    return hashlib.sha256(json.dumps(args, sort_keys=True, separators=(",", ":"),
+                                     ensure_ascii=False).encode("utf-8")).hexdigest()
+
+
 def _pct(vals, q):
     if not vals:
         return 0.0
@@ -103,14 +108,20 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None, clock=time.t
 
     def save_queue():
         rt.mkdir(parents=True, exist_ok=True)
-        with open(p_queue, "w", encoding="utf-8") as f:
+        with open(p_queue + ".tmp", "w", encoding="utf-8") as f:  # a failed write leaves the old file intact
             json.dump({"items": S["queue"]}, f)
+        os.replace(p_queue + ".tmp", p_queue)
 
     def get_audit():
         if S["audit"] is None:
             rt.mkdir(parents=True, exist_ok=True)
             S["audit"] = core.AuditLog(p_audit)
         return S["audit"]
+
+    def audit_intent(call_id, session_id, tool, sha):
+        """A21: appended BEFORE a write tool runs. If this raises, the caller must not run the tool (fail closed)."""
+        get_audit().append(json.dumps({"kind": "intent", "ts": _now_iso(), "call_id": call_id,
+                                       "session_id": session_id, "tool": tool, "args_sha256": sha}))
 
     def run_tool(tool, args, session_id):
         return ToolExecutor(ehr, p_sink, "protected", session_id).execute(tool, args)
@@ -133,6 +144,11 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None, clock=time.t
         call_id = req.call_id or uuid.uuid4().hex
         ts = clock()  # never the request's ts: the client must not choose the rate and anomaly windows
         tool, args = req.tool, req.args
+        try:  # A21: what goes into an audit record must be encodable, checked before any stage runs
+            json.dumps([call_id, req.session_id, req.role, tool], ensure_ascii=False).encode("utf-8")
+            sha = _args_sha(args)
+        except (TypeError, ValueError):
+            raise HTTPException(422, "request is not encodable as UTF-8 JSON") from None
         reasons, scores, redactions, output = [], {"injection": None, "anomaly": None}, [], None
         nem = {"mode": nemotron.mode(), "jailbreak": None, "nemoguard": None, "content_safety": None, "reasoner": None}
         signals = {"jailbreak": None, "nemoguard": None, "content_safety": None}
@@ -256,6 +272,7 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None, clock=time.t
             if tool not in READ_TOOLS:
                 t0 = time.perf_counter()
                 try:
+                    audit_intent(call_id, req.session_id, tool, sha)  # no write without an audit record
                     output = run_tool(tool, args, req.session_id)
                 except Exception as e:
                     decision = "block"
@@ -295,8 +312,6 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None, clock=time.t
         # 9 audit
         pre_us = int((time.perf_counter() - t_start) * 1e6)
         t0 = time.perf_counter()
-        sha = hashlib.sha256(json.dumps(args, sort_keys=True, separators=(",", ":"),
-                                        ensure_ascii=False).encode("utf-8")).hexdigest()
         now = _now_iso()
         body = {"kind": "decision", "ts": now, "call_id": call_id, "session_id": req.session_id,
                 "role": req.role, "tool": tool, "args_sha256": sha, "patient_ids": pids, "recipients": recips,
@@ -358,6 +373,8 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None, clock=time.t
             result = None
             if approve and item["kind"] == "approval":
                 try:
+                    if item["tool"] not in READ_TOOLS:
+                        audit_intent(item["call_id"], item["session_id"], item["tool"], _args_sha(item["args"]))
                     result = minimized(item["tool"], run_tool(item["tool"], item["args"], item["session_id"]))[0]
                 except Exception as e:
                     result = {"error": str(e)}

@@ -220,3 +220,76 @@ def test_review_and_reset_need_the_reviewer_token(gw, monkeypatch):  # A2
     assert gw.post(f"/v1/queue/{q}/approve", json={}, headers=HDR).json()["status"] == "approved"
     assert gw.post("/v1/admin/reset", headers=HDR).json() == {"status": "reset"}
     assert call(gw, "search_patients", {"name": "x"})["decision"] == "allow"  # /v1/tool-call stays open
+
+
+MAIL = {"to": "p@patients.example.org", "subject": "s", "body": "b"}
+
+
+def _audit(gw):
+    p = gw.rt / "audit.jsonl"
+    return [json.loads(x) for x in p.read_text().splitlines()] if p.exists() else []
+
+
+def test_unencodable_request_runs_nothing(gw):  # A21: a lone surrogate used to send the email and then fail the audit
+    for body in (b'{"session_id":"s1","tool":"send_email","args":{"to":"p@patients.example.org","subject":"s",'
+                 rb'"body":"b","note":"\ud800"}}',  # raw bytes: the JSON escape of a lone surrogate
+                 rb'{"session_id":"s\ud800","tool":"send_email","args":{"to":"p@patients.example.org","subject":"s",'
+                 b'"body":"b"}}'):
+        r = gw.post("/v1/tool-call", content=body, headers={"Content-Type": "application/json"})
+        assert r.status_code == 422
+    assert not (gw.rt / "email_sink.jsonl").exists() and _audit(gw) == []
+    assert gw.get("/v1/decisions").json()["decisions"] == []
+
+
+def test_write_tool_is_on_the_audit_log_before_it_runs(gw, monkeypatch):  # A21
+    d = call(gw, "send_email", MAIL)
+    a = _audit(gw)
+    assert d["decision"] == "allow" and [x["kind"] for x in a] == ["intent", "decision"]
+    assert a[0]["call_id"] == a[1]["call_id"] == d["call_id"] and a[0]["args_sha256"] == a[1]["args_sha256"]
+    assert a[0]["tool"] == "send_email" and a[0]["session_id"] == "s1"
+    call(gw, "search_patients", {"name": "x"})  # reads and blocked writes get no intent record
+    call(gw, "send_email", dict(MAIL, to=[ATTACKER]))
+    assert [x["kind"] for x in _audit(gw)] == ["intent", "decision", "decision", "decision"]
+    assert gw.get("/v1/audit/verify").json()["ok"] is True
+
+    import gateway.core_py as core_py
+    real = core_py.AuditLog.append
+
+    def no_intent(self, record_json):  # the audit log fails once, before the tool runs
+        if '"kind": "intent"' in record_json:
+            raise OSError("disk full")
+        return real(self, record_json)
+
+    monkeypatch.setattr(core_py.AuditLog, "append", no_intent)
+    d = call(gw, "send_email", MAIL)
+    assert d["decision"] == "block" and codes(d) == ["EXECUTION_ERROR"] and d["result"] is None
+    assert len((gw.rt / "email_sink.jsonl").read_text().splitlines()) == 1  # only the first email
+    # the same holds when a reviewer approves a held write
+    held = call(gw, "send_email", dict(MAIL, body="Your MRN-0000042 is ready."))  # local content hold
+    assert held["decision"] == "escalate"
+    gw.post(f"/v1/queue/{held['queue_id']}/approve", json={}, headers=HDR)
+    assert len((gw.rt / "email_sink.jsonl").read_text().splitlines()) == 1
+    monkeypatch.setattr(core_py.AuditLog, "append", real)
+    held = call(gw, "send_email", dict(MAIL, body="Your MRN-0000043 is ready."))
+    assert gw.post(f"/v1/queue/{held['queue_id']}/approve", json={}, headers=HDR).json()["status"] == "approved"
+    assert [x["kind"] for x in _audit(gw)][-3:] == ["decision", "intent", "review"]
+    assert len((gw.rt / "email_sink.jsonl").read_text().splitlines()) == 2
+
+    def down(self, record_json):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(core_py.AuditLog, "append", down)
+    with pytest.raises(OSError):
+        gw.post("/v1/tool-call", json={"session_id": "s1", "tool": "send_email", "args": MAIL})
+    assert len((gw.rt / "email_sink.jsonl").read_text().splitlines()) == 2  # no audit record, no third email
+
+
+def test_queue_file_is_replaced_atomically(gw, monkeypatch):  # A21
+    call(gw, "send_email", dict(MAIL, to=[ATTACKER]))
+    assert json.loads((gw.rt / "queue.json").read_text())["items"][0]["kind"] == "alert"
+    assert not list(gw.rt.glob("queue.json.*"))
+    monkeypatch.setattr(json, "dump", lambda *a, **k: (_ for _ in ()).throw(OSError("disk full")))
+    with pytest.raises(OSError):
+        gw.post("/v1/tool-call", json={"session_id": "s1", "tool": "send_email", "args": dict(MAIL, to=[ATTACKER])})
+    monkeypatch.undo()
+    assert len(json.loads((gw.rt / "queue.json").read_text())["items"]) == 1  # the old file is intact, not truncated

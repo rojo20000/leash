@@ -368,6 +368,10 @@ in decisions, the audit log or latency stats. Lifespan runs when the server star
    calls and are not all escalated. There is no "session hold" behaviour.
 6. `decide`: any block -> `block`; else any escalate -> `escalate`; else `allow`. Write tools
    (`update_appointment`, `send_email`) execute only now, and only on `allow`.
+   (Audit A21) No write without an audit record: before a write tool runs, the gateway appends an `intent`
+   record (C5.3). If that append raises, the tool does not run and the call becomes `block` `EXECUTION_ERROR`.
+   Before step 1, a request whose `args`, `session_id`, `role`, `tool` or `call_id` cannot be encoded as UTF-8
+   JSON (for example a lone surrogate) is answered with HTTP 422 and nothing runs.
 7. `audit`: append the C5.3 record. Then append the decision to `decisions.jsonl`; enqueue (C5.4) if escalate or
    if block with a reason in `{"EMAIL_DOMAIN_NOT_ALLOWED","INJECTION_DETECTED"}` (kind `alert`).
 
@@ -416,6 +420,13 @@ Decision (HTTP 200 for every decision; 422 only for malformed requests):
 Human review appends `{"kind":"review","ts":...,"call_id":...,"queue_id":...,"decision":"allow"|"block",
 "reasons":["HUMAN_APPROVED"|"HUMAN_DENIED"],"reviewer":"dr.lee"}`. Raw args and PHI never go in the audit log.
 
+(Audit A21) Intent record, appended BEFORE a write tool (`update_appointment`, `send_email`) executes, both on an
+`allow` in step 6 and when a reviewer approves a held write:
+`{"kind":"intent","ts":...,"call_id":...,"session_id":...,"tool":"send_email","args_sha256":"..."}`.
+The `decision` (or `review`) record that follows is the outcome record for the same `call_id`. So an allowed write
+adds two audit lines, every other call one; `entries` in `/v1/audit/verify` counts all lines, and line numbers
+(`first_bad`) count intent lines too. Readers that want decisions must filter on `kind`.
+
 ### C5.4 HTTP API
 
 | Method, path | Body / params | Response |
@@ -438,7 +449,7 @@ header, or the variable unset or empty -> 403 `{"detail":"reviewer token require
 `POST /v1/tool-call` and every `GET` route need no token. `dashboard/client.py` `review()` sends the header from
 its own environment.
 
-Queue item (`queue.json` holds `{"items":[...]}`):
+Queue item (`queue.json` holds `{"items":[...]}`; written to `queue.json.tmp` and moved with `os.replace`):
 ```json
 {"queue_id":"q-0004","kind":"approval","status":"pending","created_at":"2026-11-21T14:02:11Z",
  "call_id":"...","session_id":"...","tool":"read_record","args":{"patient_id":"pt-0099"},
