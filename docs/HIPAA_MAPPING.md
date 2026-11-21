@@ -45,7 +45,7 @@ Limits: this detects tampering, it does not prevent it. Someone who can rewrite 
 
 The standard asks for procedures to verify that a person or entity seeking access is the one claimed.
 
-Leash does not authenticate callers. The gateway trusts the role and session id in the request, and the reviewer name on an approval is a free-text field. A real deployment would put the gateway behind the hospital's identity system. This is the largest gap in the mapping.
+Leash does not verify who a caller is. The gateway trusts the role and session id in a tool call, and the reviewer name on an approval is a free-text field. The approve, deny and reset routes do require a shared token (`LEASH_REVIEW_TOKEN`, sent as the `X-Leash-Token` header), so the agent cannot approve its own held calls or reset the audit log. The token is one secret shared by every reviewer: it does not identify a person, and anyone who holds it can still reset the log. A real deployment would put the gateway behind the hospital's identity system. This is the largest gap in the mapping.
 
 ## 164.312(e)(1) Transmission security: partial
 
