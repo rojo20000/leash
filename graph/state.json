@@ -1,0 +1,7 @@
+{
+  "updated": "2026-11-21T11:12-06:00",
+  "nodes": {
+    "N0": {"name": "preflight", "status": "passed", "iteration": 1, "last_check": "make preflight: 13/13 PASS (python 3.12.14, cargo 1.100.0, maturin 1.16.0, ollama 0.40.16, leash_core ok, en_core_web_lg, qwen3.5:9b tool_calls ok)", "reviewer_notes": ""},
+    "N1": {"name": "plan", "status": "running", "iteration": 1, "last_check": "", "reviewer_notes": ""}
+  }
+}

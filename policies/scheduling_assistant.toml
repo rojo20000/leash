@@ -1,0 +1,21 @@
+role = "scheduling_assistant"
+
+[tools]
+allowed = ["search_patients", "read_record", "read_document", "update_appointment", "send_email"]
+require_approval = []
+
+[resources]
+allowed = ["Patient", "Encounter", "DocumentReference"]
+
+[rate]
+max_records = 10
+window_seconds = 300
+
+[email]
+allowed_domains = ["clinic.example.org", "patients.example.org"]
+
+# Read by the gateway / ml.api only (the core ignores unknown tables).
+[minimize]
+Patient = ["resourceType", "id", "name", "telecom"]
+Encounter = ["resourceType", "id", "status", "class", "subject", "period", "serviceType"]
+DocumentReference = ["resourceType", "id", "status", "type", "subject", "date", "description"]

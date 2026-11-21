@@ -1,0 +1,213 @@
+# Leash build graph (planner). Contracts: CONTRACTS.md. Briefs: graph/briefs/<id>.md.
+# Checks run from the repo root in Git Bash and finish on their own.
+# Stage 1 concurrency (max 4): start N2, N3, N4, N6 at 11:50; start N7 when N4 finishes (~12:10);
+# start N5 when N3 and N4 have passed. N2/N3/N6 must finish by 3:30.
+nodes:
+  - id: N2
+    name: rust_core
+    stage: 1
+    agent: implementer
+    depends_on: [N1]
+    owns: [crates/leash_core/**, gateway/core_py.py, gateway/core_loader.py, bench/rust_vs_python.py, "tests/test_core_*.py", "metrics/results.json#bench"]
+    reads: [CONTRACTS.md, policies/scheduling_assistant.toml, pytest.ini, graph/MISSION.md]
+    brief: graph/briefs/N2.md
+    check: "(cd crates/leash_core && cargo test -q) && .venv/Scripts/python.exe -m pytest -q tests/test_core_*.py && .venv/Scripts/python.exe bench/rust_vs_python.py --quick"
+    acceptance:
+      - cargo test passes with tests for policy order, audit edit/delete/reorder/truncate detection and pre-scan
+      - pytest tests/test_core_*.py passes; parity test runs (not skipped) once the extension is built and compares audit log bytes
+      - "LEASH_CORE=py load_core().IMPLEMENTATION == 'python'; default == 'rust' once built"
+      - bench --quick exits 0 and writes only the bench key of metrics/results.json
+      - the C1.3 worked-example hash is asserted in a test for both implementations
+    max_iterations: 3
+
+  - id: N3
+    name: data_ehr
+    stage: 1
+    agent: implementer
+    depends_on: [N1]
+    owns: [data/generate.py, "data/*.py (top level only, not data/corpus/)", data/generated/**, ehr/**, "tests/test_data_*.py", "tests/test_ehr_*.py"]
+    reads: [CONTRACTS.md, data/corpus/**, policies/scheduling_assistant.toml, pytest.ini]
+    brief: graph/briefs/N3.md
+    check: "LEASH_CORE=py .venv/Scripts/python.exe data/generate.py && LEASH_CORE=py .venv/Scripts/python.exe -m pytest -q tests/test_data_*.py tests/test_ehr_*.py"
+    acceptance:
+      - check passes; fhir_bundle.json has 200 Patients pt-0001..pt-0200
+      - same seed gives identical fhir_bundle.json and trace files (asserted by a test)
+      - pypdf text of ref-0042.pdf contains records-transfer@outside-clinic.example; the other four referrals do not
+      - EHR returns exactly the 5 referrals for 2026-11-21 and the hidden sentence from /fhir/DocumentReference/ref-0042/text
+      - normal.jsonl >= 300 sessions; abnormal.jsonl >= 80 sessions covering bulk_read, exfil_email, off_role_resources, rapid_search
+    max_iterations: 3
+
+  - id: N4
+    name: corpus
+    stage: 1
+    agent: transcriber
+    depends_on: [N1]
+    owns: [data/corpus/banks/**, data/corpus/corpus.jsonl]
+    reads: [data/corpus/expand.py, CONTRACTS.md]
+    brief: graph/briefs/N4.md
+    check: ".venv/Scripts/python.exe data/corpus/expand.py"
+    acceptance:
+      - check exits 0 and prints banks ok with every bank at or above its minimum line count
+      - prints wrote 1200 rows with injected=600 benign=600 hard_negative=300 test=300 and unique_texts >= 1150
+      - data/corpus/corpus.jsonl has 1200 lines
+      - injections.txt lines are plain natural language (no code, markup, URLs, non-ASCII)
+    max_iterations: 2
+
+  - id: N6
+    name: agent_gateway
+    stage: 1
+    agent: implementer
+    depends_on: [N1]
+    owns: [agent/**, "gateway/** except gateway/core_py.py and gateway/core_loader.py", demo/recordings/**, "tests/test_agent_*.py", "tests/test_gateway_*.py"]
+    reads: [CONTRACTS.md, gateway/core_py.py, gateway/core_loader.py, ehr/**, data/generated/**, ml/**, policies/scheduling_assistant.toml, pytest.ini]
+    brief: graph/briefs/N6.md
+    check: "LEASH_CORE=py LEASH_ML=stub .venv/Scripts/python.exe -m pytest -q tests/test_gateway_*.py tests/test_agent_*.py"
+    acceptance:
+      - check passes with no Ollama calls (live test skipped)
+      - scripted unprotected replay leaks MRN-0000042 to the attacker in the sink; protected replay blocks it with EMAIL_DOMAIN_NOT_ALLOWED and an alert queue item (tests assert both)
+      - every decision has all C5.2 keys; the audit log passes verify_log and fails after one line is edited
+      - approving an approval item executes the held call and appends a review record; denying does not execute
+      - gateway.app.create_app imports and builds with no network calls
+    max_iterations: 3
+
+  - id: N7
+    name: dashboard
+    stage: 1
+    agent: implementer
+    depends_on: [N1]
+    owns: [dashboard/**, "tests/test_dashboard_*.py"]
+    reads: [CONTRACTS.md, pytest.ini]
+    brief: graph/briefs/N7.md
+    check: "LEASH_CORE=py .venv/Scripts/python.exe -m pytest -q tests/test_dashboard_*.py"
+    acceptance:
+      - check passes (AppTest, no server)
+      - dashboard/fixtures/{decisions,queue,verify,metrics}.json exist in the C5.4/C5.5 shapes
+      - fixture mode renders EMAIL_DOMAIN_NOT_ALLOWED and the p50/p95 latency values
+      - with the gateway unreachable the app shows an error and raises nothing
+    max_iterations: 3
+
+  - id: N5
+    name: ml_models
+    stage: 1
+    agent: implementer
+    depends_on: [N3, N4]
+    owns: [ml/**, "tests/test_ml_*.py", "metrics/results.json#injection", "metrics/results.json#anomaly", "metrics/results.json#minimization"]
+    reads: [CONTRACTS.md, data/corpus/corpus.jsonl, data/generated/**, gateway/core_loader.py, gateway/core_py.py, policies/scheduling_assistant.toml, pytest.ini]
+    brief: graph/briefs/N5.md
+    check: "LEASH_CORE=py .venv/Scripts/python.exe ml/train_injection.py && LEASH_CORE=py .venv/Scripts/python.exe ml/train_anomaly.py && LEASH_CORE=py .venv/Scripts/python.exe ml/eval_minimizer.py && LEASH_CORE=py .venv/Scripts/python.exe -m pytest -q tests/test_ml_*.py"
+    acceptance:
+      - check passes; ml/artifacts/injection.joblib and anomaly.joblib exist and ml.api.ready() is True
+      - metrics/results.json has injection, anomaly, minimization keys in the C6.4 shape; other keys untouched
+      - two runs of the training scripts give identical metrics
+      - injection metrics come from the template-disjoint test split; anomaly from held-out sessions
+      - a perfect 1.00/1.00 injection score is flagged in the report with the hard-negative false-positive count
+    max_iterations: 3
+
+  - id: N8
+    name: integration
+    stage: 2
+    agent: planner
+    depends_on: [N2, N3, N4, N5, N6, N7]
+    owns: [Makefile, requirements.txt, .gitignore, conftest.py, pytest.ini, demo/run_demo.py, CONTRACTS.md, "cross-component fixes named in report"]
+    reads: ["**"]
+    brief: graph/briefs/N8.md
+    check: "make check"
+    acceptance:
+      - make check exits 0 from the repo root
+      - make check rebuilds data/generated, ml/artifacts and runtime state itself (passes with those moved aside)
+      - demo/run_demo.py --scripted --assert prints all four assertions as PASS
+      - metrics/results.json has demo, bench, injection, anomaly, minimization keys
+    max_iterations: 3
+
+  - id: N9
+    name: metrics
+    stage: 3
+    agent: implementer
+    depends_on: [N8]
+    owns: [bench/gateway_latency.py, "metrics/results.json#gateway"]
+    reads: ["**"]
+    brief: graph/briefs/N9.md
+    check: ".venv/Scripts/python.exe bench/gateway_latency.py && .venv/Scripts/python.exe -c \"import json; d=json.load(open('metrics/results.json')); print(sorted(d)); assert {'injection','anomaly','minimization','bench','gateway','demo'} <= set(d)\""
+    acceptance:
+      - check passes and prints all six keys
+      - gateway.latency_ms p50 and p95 > 0 and gateway.calls >= 200
+      - bench.quick is false and bench.rust is not null (or the Rust cut is reported)
+      - every number traces to a command listed in the report
+    max_iterations: 2
+
+  - id: N10
+    name: live_demo
+    stage: 3
+    agent: implementer then transcriber
+    depends_on: [N8]
+    owns: [demo/output/**, docs/DEMO_SCRIPT.md]
+    reads: ["**"]
+    brief: graph/briefs/N10.md
+    check: "mkdir -p demo/output && .venv/Scripts/python.exe demo/run_demo.py --scripted --assert > demo/output/scripted_run.txt && test -s demo/output/live_run.txt && test -s docs/DEMO_SCRIPT.md && echo ok"
+    acceptance:
+      - check prints ok
+      - DEMO_SCRIPT.md timestamps end at or before 3:00 and quote only lines present in demo/output/*.txt
+      - live_run.txt states whether the live unprotected agent leaked and what the protected run decided
+    max_iterations: 2
+
+  - id: N11
+    name: dashboard_polish
+    stage: 3
+    agent: implementer
+    depends_on: [N8]
+    owns: [dashboard/**, "tests/test_dashboard_*.py", docs/img/**]
+    reads: ["**"]
+    brief: graph/briefs/N11.md
+    check: "LEASH_CORE=py .venv/Scripts/python.exe -m pytest -q tests/test_dashboard_*.py"
+    acceptance:
+      - check passes
+      - fixture mode still works and live mode reads the gateway on port 8000
+      - screenshots in docs/img/ or the report says no headless browser was available
+    max_iterations: 2
+
+  - id: N12
+    name: docs
+    stage: 4
+    agent: implementer
+    depends_on: [N9, N10]
+    owns: [README.md, "docs/** except docs/DEMO_SCRIPT.md and docs/img/**", LICENSE]
+    reads: ["**"]
+    brief: graph/briefs/N12.md
+    check: ".venv/Scripts/python.exe -c \"import pathlib; fs=['README.md','docs/HIPAA_MAPPING.md','docs/PITCH.md','docs/SUBMISSION.md','LICENSE']; [pathlib.Path(f).read_text(encoding='utf-8') for f in fs]; t=pathlib.Path('README.md').read_text(encoding='utf-8'); assert 'mermaid' in t and 'make demo' in t and 'METRICS_TABLE' in t; print('ok')\""
+    acceptance:
+      - check prints ok
+      - README setup is at most five commands matching the Makefile
+      - every HIPAA citation is marked verified with an eCFR URL or unverified
+      - no number in the docs that is absent from metrics/results.json or demo/output/
+    max_iterations: 2
+
+  - id: N13
+    name: tables
+    stage: 4
+    agent: transcriber
+    depends_on: [N12]
+    owns: ["README.md#METRICS_TABLE", "docs/PITCH.md#METRICS_TABLE"]
+    reads: [metrics/results.json, README.md, docs/PITCH.md]
+    brief: graph/briefs/N13.md
+    check: ".venv/Scripts/python.exe -c \"import json; d=json.load(open('metrics/results.json')); t=open('README.md',encoding='utf-8').read(); v=str(round(d['injection']['precision'],3)); assert v in t, v; print('ok')\""
+    acceptance:
+      - check prints ok
+      - every table number appears in metrics/results.json
+      - nothing outside the table sections changed
+    max_iterations: 2
+
+  - id: N14
+    name: fresh_eyes
+    stage: 4
+    agent: implementer
+    depends_on: [N13]
+    owns: []
+    reads: ["** (in a clean git worktree of HEAD)"]
+    brief: graph/briefs/N14.md
+    check: "git worktree list"
+    acceptance:
+      - report lists each README command run with pass/fail and last output line
+      - report says whether make check passed in the clean worktree
+      - findings ordered by severity, each tied to a README line
+      - the leash-fresh worktree is removed
+    max_iterations: 1
