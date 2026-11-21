@@ -26,7 +26,7 @@ def train():
     rows = [json.loads(l) for l in open(p("data", "corpus", "corpus.jsonl"), encoding="utf-8")]
     for r in rows:
         r["text"] = normalize(r["text"])  # same form ml.api.injection_score gives the model
-    tr =[r for r in rows if r["split"] == "train"]
+    tr = [r for r in rows if r["split"] == "train"]
     te = [r for r in rows if r["split"] == "test"]
     # Also train on single benign sentences (train split only) so short benign requests are not scored as injections.
     sents = sorted({s.strip() for r in tr if r["label"] == 0 for s in re.split(r"(?<=[.!?])\s+", r["text"]) if len(s) > 15})
