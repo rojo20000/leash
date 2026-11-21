@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leash</title>
+  </head>
+  <body>
+    <div id="stage">
+      <!-- 0 Cold open -->
+      <section class="scene" id="s0">
+        <div id="boot" class="h">
+          <p id="boot-label" class="mono">LEASH</p>
+          <p id="boot-count" class="display tnum">0%</p>
+        </div>
+      </section>
+
+      <!-- 1 Problem -->
+      <section class="scene" id="s1">
+        <p class="index mono" data-exempt-wordcount>[ 1 ]</p>
+        <h1 id="s1-head" class="display h">One hidden sentence can make an AI agent leak a record.</h1>
+        <div id="s1-stat" class="h">
+          <p id="s1-num" class="display">1 in 3</p>
+          <p id="s1-sub" class="subhead">unprotected live runs obeyed the hidden instruction</p>
+        </div>
+      </section>
+
+      <!-- 2 Stakes -->
+      <section class="scene" id="s2">
+        <p class="index mono" data-exempt-wordcount>[ 2 ]</p>
+        <div id="rec" class="card h" data-exempt-wordcount data-safe>
+          <div class="rec-row"><span class="lbl mono">patient</span><span class="val">pt-0042 (synthetic)</span></div>
+          <div class="rec-row phi-row"><i class="leak-fill"></i><span class="lbl mono">name</span><span class="val">Dana Whitfield</span></div>
+          <div class="rec-row phi-row"><i class="leak-fill"></i><span class="lbl mono">mrn</span><span class="val">MRN-0000042</span></div>
+          <div class="rec-row phi-row"><i class="leak-fill"></i><span class="lbl mono">born</span><span class="val">03/14/1958</span></div>
+          <div class="rec-row phi-row"><i class="leak-fill"></i><span class="lbl mono">phone</span><span class="val">(555) 010-0142</span></div>
+          <div class="rec-row phi-row"><i class="leak-fill"></i><span class="lbl mono">email</span><span class="val">dana.w@example.com</span></div>
+        </div>
+        <div id="agent" class="node h" data-safe>AI agent</div>
+        <i id="leak-line" class="h"></i>
+        <div id="leak-target" class="node mono h" data-safe>records-transfer@outside-clinic.example
+          <span id="leak-tag" class="tag tag-ox h">3,965 characters sent</span>
+        </div>
+      </section>
+
+      <!-- 3 Product reveal -->
+      <section class="scene" id="s3">
+        <div class="layer layer-back h" data-bleed><svg viewBox="0 0 1920 1080" aria-hidden="true"><defs>
+          <pattern id="dotgrid" width="48" height="48" patternUnits="userSpaceOnUse"><circle cx="24" cy="24" r="1.6" fill="#2c3036" /></pattern></defs>
+          <rect width="1920" height="1080" fill="url(#dotgrid)" /></svg></div>
+        <div class="layer layer-mid h" data-bleed><svg viewBox="0 0 1920 1080" aria-hidden="true">
+          <g fill="#1b1e22"><rect x="640" y="380" width="420" height="22" /><rect x="640" y="430" width="620" height="22" />
+          <rect x="640" y="480" width="540" height="22" /><rect x="640" y="530" width="300" height="22" />
+          <rect x="640" y="600" width="580" height="22" /><rect x="640" y="650" width="460" height="22" /></g></svg></div>
+        <div class="layer layer-front h" data-bleed><svg viewBox="0 0 1920 1080" aria-hidden="true">
+          <path fill="#111316" fill-rule="evenodd" d="M0 0H1920V1080H0Z M600 320H1320Q1340 320 1340 340V740Q1340 760 1320 760H600Q580 760 580 740V340Q580 320 600 320Z" />
+          <path fill="none" stroke="#2a2d31" stroke-width="3" d="M600 320H1320Q1340 320 1340 340V740Q1340 760 1320 760H600Q580 760 580 740V340Q580 320 600 320Z" />
+          <rect x="900" y="800" width="120" height="8" fill="#2a2d31" /></svg></div>
+        <div id="s3-copy">
+          <h1 id="s3-logo" class="display logo h">Leash</h1>
+          <p id="s3-sub" class="subhead h">Runtime security for clinical AI agents</p>
+          <p id="s3-nv" class="nv mono h">Backed by NVIDIA Nemotron</p>
+        </div>
+      </section>
+
+      <!-- 4 Architecture: every component -->
+      <section class="scene" id="sArch">
+        <p class="index mono" data-exempt-wordcount>[ 4 ]</p>
+        <div id="arch" data-exempt-wordcount>
+          <div class="ab lane-a" style="left:96px;top:290px;width:330px;height:180px"><b>Scheduling agent</b><span>Nemotron 3.5 Lightning; reads referrals, books follow-ups</span></div>
+          <i class="aline lane-a" style="left:426px;top:379px;width:50px"></i>
+          <div class="ab gw lane-a" style="left:476px;top:110px;width:880px;height:560px">
+            <b class="gw-title">Leash gateway</b><span>FastAPI pipeline: checks every tool call</span>
+            <div class="cells">
+              <div class="cell"><b>1 Policy</b><span>Rust core: tools, FHIR resources, email domains</span></div>
+              <div class="cell"><b>2 Injection</b><span>TF-IDF, Nemotron judge, NemoGuard</span></div>
+              <div class="cell"><b>3 Minimize</b><span>Rust pre-scan + Presidio</span></div>
+              <div class="cell"><b>4 Anomaly</b><span>IsolationForest on agent behaviour</span></div>
+              <div class="cell"><b>5 Decide + audit</b><span>allow, block or hold; <span class="nw">SHA-256</span> chain</span></div>
+              <div class="cell"><b>6 Reasoner</b><span>Nemotron explains, advisory only</span></div>
+            </div>
+          </div>
+          <i class="aline lane-a" style="left:1356px;top:194px;width:60px"></i>
+          <i class="aline lane-a" style="left:1356px;top:374px;width:60px"></i>
+          <i class="aline lane-a" style="left:1356px;top:569px;width:60px"></i>
+          <div class="ab lane-a right" style="left:1416px;top:110px;width:408px;height:170px"><b>Mock EHR</b><span>200 synthetic FHIR R4 patients</span></div>
+          <div class="ab lane-a right" style="left:1416px;top:300px;width:408px;height:150px"><b>Email sink</b><span>a local file; no mail server</span></div>
+          <div class="ab lane-a right" style="left:1416px;top:470px;width:408px;height:200px"><b>Review dashboard</b><span>Streamlit: live feed, approve or deny, audit status, metrics</span></div>
+          <div class="ab lane-b" style="left:96px;top:790px;width:330px;height:160px"><b>Clinic staff</b><span>signed in, by role</span></div>
+          <i class="aline lane-b" style="left:426px;top:869px;width:50px"></i>
+          <div class="ab gw lane-b" style="left:476px;top:720px;width:1348px;height:300px">
+            <b class="gw-title">Clinic Assistant</b><span>staff front end, all on one machine</span>
+            <div class="cells cells5">
+              <div class="cell"><b>Masking</b><span>names, MRNs, dates, contacts</span></div>
+              <div class="cell"><b>Guardrails</b><span>injection, scope, output checks</span></div>
+              <div class="cell"><b>Local model</b><span>Ollama; no cloud fallback</span></div>
+              <div class="cell"><b>Vector DB</b><span>SQLite, <span class="nw">append-only,</span> <span class="nw">hash-chained</span></span></div>
+              <div class="cell"><b>Audit log</b><span><span class="nw">hash-chained,</span> verified in app</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 4 Guardrail -->
+      <section class="scene" id="s4">
+        <p class="index mono" data-exempt-wordcount>[ 5 ]</p>
+        <p id="req-safe" class="req mono h">update_appointment · pt-0042</p>
+        <p id="req-bad" class="req mono h">send_email → outside-clinic.example</p>
+        <i class="conn h" style="left:420px;width:160px"></i>
+        <i class="conn h" style="left:880px;width:160px"></i>
+        <i class="conn h" style="left:1340px;width:160px"></i>
+        <div class="pnode node h" id="n-agent" style="left:120px" data-safe>Agent</div>
+        <div class="pnode node h" id="n-policy" style="left:580px" data-safe>Policy<i class="ring ring-ox"></i>
+          <span id="tag-block" class="tag tag-ox mono h">EMAIL_DOMAIN_NOT_ALLOWED</span></div>
+        <div class="pnode node h" id="n-checks" style="left:1040px" data-safe>ML + Nemotron</div>
+        <div class="pnode node h" id="n-tool" style="left:1500px" data-safe>EHR / email<i class="ring ring-green"></i>
+          <span id="tag-allow" class="tag tag-green mono h">ALLOW</span></div>
+        <div id="nv-card" class="card h" data-safe>
+          <p id="nv-head" class="mono" data-exempt-wordcount>nemotron-3.5-lightning · risk=critical · recommends=deny</p>
+          <p id="nv-quote" data-exempt-wordcount>"The scheduling agent attempted to send an email to an address outside the clinic's approved domains. Leash stopped the call because the destination domain was not on the allowed list, which prevents patient information from leaving the secure network."</p>
+          <p id="nv-rule">Advisory only: never unblocks</p>
+        </div>
+        <div id="why" class="h">
+          <p id="why-head" class="nv mono">Why Nemotron</p>
+          <p>Open weights: deployable on-premises</p>
+          <p>718 ms p50</p>
+          <p>Agreement 0.875 → 1.00</p>
+        </div>
+        <svg id="s4-svg" viewBox="0 0 1920 1080" aria-hidden="true">
+          <path id="route" d="M270 560 L1650 560" fill="none" stroke="none" />
+          <g id="pk-safe" class="h"><circle r="18" fill="#3DF5A6" /></g>
+          <g id="pk-bad" class="h"><circle r="18" fill="#F2F2F0" /><circle id="pk-bad-ox" r="18" fill="#B3261E" opacity="0" /></g>
+        </svg>
+      </section>
+
+      <!-- 5 Patient data -->
+      <section class="scene" id="s5">
+        <p class="index mono" data-exempt-wordcount>[ 6 ]</p>
+        <h2 id="s5-head" class="subhead h">What the model sees</h2>
+        <div id="note" class="card h" data-exempt-wordcount data-safe>
+          <p>Patient: <span class="phi" data-tag="&lt;PERSON&gt;">Dana Whitfield</span>, <span class="phi" data-tag="&lt;LOCATION&gt;">MRN-0000042</span>, born <span class="phi" data-tag="&lt;DATE_TIME&gt;">03/14/1958</span>.
+          Call <span class="phi" data-tag="&lt;PHONE_NUMBER&gt;">(555) 010-0142</span> or <span class="phi" data-tag="&lt;EMAIL_ADDRESS&gt;">dana.w@example.com</span> to book follow-up.
+          INR 4.3 after ciprofloxacin; review warfarin dose.</p>
+        </div>
+        <p id="audit" class="mono h" data-exempt-wordcount data-safe></p>
+      </section>
+
+      <!-- 6 Clinic Assistant + vector DB -->
+      <section class="scene" id="s6">
+        <p class="index mono" data-exempt-wordcount>[ 7 ]</p>
+        <p id="s6-cap" class="caption h">Clinic Assistant</p>
+        <div id="ui-frame" class="h" data-exempt-wordcount data-safe>
+          <div id="ui-wrap">
+            <img id="ui-img" src="/clinic/ui@2x.png" alt="Clinic Assistant with a synthetic patient open" width="1520" height="855" />
+            <video id="demo-video" class="h" muted playsinline preload="auto" width="1520" height="855">
+              <source src="/demo.webm" type="video/webm" />
+              <source src="/demo.mp4" type="video/mp4" />
+            </video>
+          </div>
+          <div id="spotlight" class="h"></div>
+        </div>
+        <p id="spot-label" class="chip h">Masked, checked, logged</p>
+        <p id="vec-label" class="subhead h">52 masked vectors, on this machine</p>
+        <div id="field" class="h" data-safe></div>
+        <div id="sim-card" class="card h" data-safe>
+          <p id="sim-title" class="caption">Similar cases</p>
+          <ul id="sim-rows" data-exempt-wordcount></ul>
+        </div>
+      </section>
+
+      <!-- 7 Close -->
+      <section class="scene" id="s7">
+        <p class="index mono" data-exempt-wordcount>[ 8 ]</p>
+        <div id="impact" class="h">
+          <p id="imp-row">Medicine · Security · Machine learning · Policy</p>
+          <p id="imp-sub" class="caption">For clinicians and hospital compliance reviewers</p>
+        </div>
+        <div id="proof" class="h">
+          <p><b>Built</b> gateway + Clinic Assistant</p>
+          <p><b>Tested</b> 152 tests pass</p>
+          <p><b>Next</b> a clinical pilot</p>
+        </div>
+        <div id="team" class="h">
+          <p>Rowan Haber</p><p>Salvador Jimenez</p><p>Zarek Haleem</p><p>Nico Pitre</p>
+        </div>
+        <div id="s7-end" class="h">
+          <h1 id="s7-logo" class="display logo">Leash</h1>
+          <p id="s7-nv" class="nv mono">Backed by NVIDIA Nemotron · Tidal Byte 2026</p>
+        </div>
+      </section>
+    </div>
+    <div id="grain" data-bleed></div>
+    <p id="fps" class="mono" hidden data-exempt-wordcount></p>
+    <p id="start-hint" class="mono" hidden>Press → or Space to start · f for fullscreen</p>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
