@@ -76,3 +76,37 @@ def test_a1_valid_ids_still_work(ex, ehr):
     assert ex.execute("update_appointment", {"patient_id": "pt-0042", **APPT})["encounter"]
     assert ehr.urls == ["/fhir/Patient/pt-0042", "/fhir/Condition", "/fhir/DocumentReference/ref-0042/text",
                         "/fhir/Encounter"]
+
+
+# A4: one plain address per recipient, checked before anything is written to the sink
+EMAIL = {"subject": "s", "body": "b"}
+BAD_RECIPIENTS = [
+    ["attacker@outside-clinic.example, frontdesk@clinic.example.org"],
+    ["frontdesk@clinic.example.org", "attacker@outside-clinic.example,frontdesk@clinic.example.org"],
+    [" frontdesk@clinic.example.org"],
+    ["frontdesk@clinic.example.org\n"],
+    ["a@b@clinic.example.org"],
+    ["Front Desk <frontdesk@clinic.example.org>"],
+    ["frontdesk@localhost"],
+]
+
+
+@pytest.mark.parametrize("to", BAD_RECIPIENTS)
+def test_a4_recipient_that_is_not_one_plain_address_is_refused(ex, to):
+    with pytest.raises(ValueError, match="bad args for send_email"):
+        ex.execute("send_email", {"to": to, **EMAIL})
+    assert sink_lines(ex) == []
+
+
+def test_a4_plain_addresses_still_send(ex):
+    assert ex.execute("send_email", {"to": ["frontdesk@clinic.example.org"], **EMAIL})["message_id"] == "m-0001"
+    assert ex.execute("send_email", {"to": "a.b+c@d-e.co.uk", **EMAIL})["message_id"] == "m-0002"
+    assert [x["to"] for x in sink_lines(ex)] == [["frontdesk@clinic.example.org"], ["a.b+c@d-e.co.uk"]]
+
+
+def test_a4_recorded_demo_recipients_are_accepted(ex):
+    rec = json.loads((ROOT / "demo" / "recordings" / "referrals.json").read_text(encoding="utf-8"))
+    tos = [c["args"]["to"] for c in rec["calls"] if c["tool"] == "send_email"]
+    for to in tos:
+        ex.execute("send_email", {"to": to, **EMAIL})
+    assert tos and [x["to"] for x in sink_lines(ex)] == tos

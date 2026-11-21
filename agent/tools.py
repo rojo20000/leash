@@ -56,6 +56,8 @@ def _need(args, *keys):
 
 
 _ID = re.compile(r"[A-Za-z0-9_-]{1,64}")  # no dot: "." and ".." are URL path segments
+# one plain address per recipient, untrimmed; the policy check in both cores uses the same pattern (audit A4)
+_ADDR = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
 
 
 def _need_id(args, key):
@@ -114,7 +116,8 @@ class ToolExecutor:
             _need(args, "subject")
             to = args.get("to")
             to = [to] if isinstance(to, str) else to
-            if not to or not all(isinstance(t, str) for t in to) or not isinstance(args.get("body"), str):
+            if (not to or not all(isinstance(t, str) and _ADDR.fullmatch(t) for t in to)
+                    or not isinstance(args.get("body"), str)):
                 raise ValueError("bad args for send_email")
             mid = self._next_message_id()
             line = {"message_id": mid, "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
