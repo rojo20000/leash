@@ -6,7 +6,7 @@ import tomllib
 import joblib
 
 from gateway.core_loader import load_core
-from ml.common import ART, p
+from ml.common import ART, normalize, p
 from ml.features import decision, window_features
 
 _cache = {}
@@ -23,7 +23,7 @@ def ready():
 
 
 def injection_score(text):
-    return float(_art("injection")["pipeline"].predict_proba([text])[0, 1])
+    return float(_art("injection")["pipeline"].predict_proba([normalize(text)])[0, 1])
 
 
 def anomaly_score(events):

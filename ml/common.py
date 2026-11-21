@@ -1,6 +1,7 @@
 import datetime
 import json
 import os
+import unicodedata
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ART = os.path.join(ROOT, "ml", "artifacts")
@@ -9,6 +10,12 @@ SEED = 1337
 
 def p(*parts):
     return os.path.join(ROOT, *parts)
+
+
+def normalize(text):
+    # Same text form for training and scoring: invisible (Cf) and look-alike characters must not hide words.
+    text = unicodedata.normalize("NFKC", text or "")
+    return "".join(c for c in text if unicodedata.category(c) != "Cf")
 
 
 def now():
