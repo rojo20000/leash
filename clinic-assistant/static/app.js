@@ -107,6 +107,8 @@ $("logout").addEventListener("click", async () => {
   $("chat-log").replaceChildren(); $("pt-chat-log").replaceChildren(); showLogin();
 });
 
+$("today-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
 // ---- tabs ----------------------------------------------------------------
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) => { t.hidden = t.id !== `tab-${name}`; });
@@ -401,9 +403,17 @@ const listInto = (node, items) => node.replaceChildren(...items.map((t) => el("l
 function renderRecord(p, root, onAsk) {
   if (!root.firstElementChild) root.append($("tpl-record").content.cloneNode(true));
   const f = (k) => root.querySelector(`[data-f="${k}"]`);
-  f("name").textContent = `${p.name.given} ${p.name.family}`;
-  f("meta").textContent = `${p.age} years · ${p.sex}`
-    + (p.insurance ? ` · ${p.insurance.plan} · prefers ${p.preferred_contact.toLowerCase()}${p.language !== "English" ? ` · ${p.language}` : ""}` : "");
+  f("name").textContent = `${String(p.name.family).toUpperCase()}, ${p.name.given}`;  // family name first, in capitals, as on clinical patient banners
+  f("meta").replaceChildren(el("strong", null, `${p.age} years · ${p.sex}`),
+    p.insurance ? ` · ${p.insurance.plan} · prefers ${p.preferred_contact.toLowerCase()}${p.language !== "English" ? ` · ${p.language}` : ""}` : "");
+  const alg = f("alg");
+  if (alg) {
+    const real = (p.allergies || []).filter((x) => !/^(no known|nka|none)/i.test(String(x).trim()));
+    const has = real.length > 0;
+    alg.className = `banner-alg${has ? " has" : ""}`;
+    alg.replaceChildren(el("span", "banner-k", "Allergies"),
+      el("span", "banner-v", has ? real.join(", ") : "No known allergies"));
+  }
   f("ident").replaceChildren(identBlock(p.id, p.locked || []));
   const att = f("attention"); att.replaceChildren();
   if (p.attention.length) {
@@ -418,7 +428,7 @@ function renderRecord(p, root, onAsk) {
   }
   listInto(f("conditions"), p.conditions); listInto(f("meds"), p.medications); listInto(f("allergies"), p.allergies);
   f("obs").replaceChildren(...[...p.observations].sort((a, b) => b.date.localeCompare(a.date)).map((o) => {
-    const tr = el("tr"); tr.append(el("td", null, o.date), el("td", null, o.name), el("td", null, `${o.value} ${o.unit}`.trim()), el("td", "muted", o.ref));
+    const tr = el("tr"); tr.append(el("td", null, o.date), el("td", null, o.name), el("td", "num", `${o.value} ${o.unit}`.trim()), el("td", "muted", o.ref));
     return tr;
   }));
   f("notes").replaceChildren(...p.notes.map((n) => {
@@ -902,7 +912,8 @@ function schedRow(a, d) {
   else if (can("send_reminder") && !isToday && a.status === "booked") act.append(toggle(a.reminder && a.reminder.sent_at ? "Details" : "Reminder"));
   else if (can("room_patient") && isToday && a.status === "arrived") act.append(step("Start visit", "in_room"));
   else if (can("room_patient") && a.status === "in_room") act.append(step("Finish visit", "done", "ghost small-btn"));
-  tr.append(el("td", "time", a.time), who, el("td", null, a.visit_type), el("td", null, a.clinician_name), st, act);
+  who.className = "who-c"; st.className = "st";
+  tr.append(el("td", "time", a.time), who, el("td", "visit", a.visit_type), el("td", "with", a.clinician_name), st, act);
   const out = [tr];
   if (sched.open === a.id) out.push(detailRow(a, d));
   return out;
@@ -1121,7 +1132,7 @@ function clinEntries(c) {
 
 // The key shows the same tints as the strips, each with its word.
 document.querySelector(".cal-key").replaceChildren(...CAL_ORDER.map((st) => {
-  const k = el("span", "key-item"); k.append(el("span", `key-sw s-${st}`), el("span", null, st === "in_room" ? "In room now" : STATUS_WORD[st])); return k;
+  const k = el("span", "key-item"); k.append(el("span", `key-sw s-${st}`), el("span", null, STATUS_WORD[st])); return k;
 }));
 const calMobile = window.matchMedia("(max-width: 720px)");
 calMobile.addEventListener("change", () => { if (!$("tab-calendar").hidden) loadCalendar(); });
@@ -1256,7 +1267,7 @@ function calMonth(from, byDate) {
 // One column per clinician (day) or per day (week). Strips sit at their start time, 2.4px a minute,
 // so one 20-minute slot is 48px. Status is a tint AND a word on every strip.
 const BOARD_PX = 2.4;
-const STRIP_WORD = { ...STATUS_WORD, in_room: "In room now" };
+const STRIP_WORD = { ...STATUS_WORD };
 const toMin = (hhmm) => { const [h, m] = String(hhmm).split(":").map(Number); return h * 60 + m; };
 const hhmm = (m) => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
 const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };

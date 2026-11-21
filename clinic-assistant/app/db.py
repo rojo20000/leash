@@ -24,6 +24,10 @@ GENESIS = "0" * 64
 HASHED = ("at", "by_user", "role", "entity", "entity_id", "action", "summary", "before_json", "after_json")
 CONV_HASHED = ("id", "at", "user", "role", "kind", "patient_id", "question", "answer", "tier", "reasons",
                "review_id", "model", "duration_ms", "context_summary", "audit_ref", "change_seq")
+# Added in 2.11 by ALTER TABLE. Rows written since then have hash_v = 2 and their hash covers these too;
+# older rows (hash_v NULL) still verify with the original field list.
+REVIEW_FIELDS = ("reviewer_pre_tier", "reviewer_post_tier", "reviewer_reasons", "reviewer_ok")
+CONV_HASHED_V2 = CONV_HASHED + REVIEW_FIELDS
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS patients (
@@ -103,6 +107,11 @@ class ClinicDB:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA synchronous=NORMAL")
         self.conn.executescript(SCHEMA)
+        have = {r[1] for r in self.conn.execute("PRAGMA table_info(conversations)")}
+        for col, kind in [("reviewer_pre_tier", "TEXT"), ("reviewer_post_tier", "TEXT"), ("reviewer_reasons", "TEXT"),
+                          ("reviewer_ok", "INTEGER"), ("hash_v", "INTEGER")]:
+            if col not in have:  # safe on an append-only table: existing rows get NULL, nothing is rewritten
+                self.conn.execute(f"ALTER TABLE conversations ADD COLUMN {col} {kind}")
         self.version = 0  # bumped on every write, so caches know to reload
 
     def close(self) -> None:
@@ -212,15 +221,18 @@ class ClinicDB:
             self.conn.execute("BEGIN IMMEDIATE")
             try:
                 last_change = self.conn.execute("SELECT COALESCE(MAX(seq), 0) FROM change_log").fetchone()[0]
-                entry = {k: row.get(k) for k in CONV_HASHED}
+                entry = {k: row.get(k) for k in CONV_HASHED_V2}
+                ok = row.get("reviewer_ok")
                 entry.update(at=_stamp(), change_seq=last_change, reasons=json.dumps(row.get("reasons") or []),
-                             audit_ref=_dump(row.get("audit_ref")))
+                             audit_ref=_dump(row.get("audit_ref")),
+                             reviewer_reasons=json.dumps(row.get("reviewer_reasons") or []),
+                             reviewer_ok=None if ok is None else int(bool(ok)))
                 last = self.conn.execute("SELECT hash FROM conversations ORDER BY seq DESC LIMIT 1").fetchone()
                 prev = last[0] if last else GENESIS
                 self.conn.execute(
-                    f"INSERT INTO conversations ({', '.join(CONV_HASHED)}, prev_hash, hash) "
-                    f"VALUES ({', '.join('?' * (len(CONV_HASHED) + 2))})",
-                    (*(entry[k] for k in CONV_HASHED), prev, _digest(prev, entry, CONV_HASHED)))
+                    f"INSERT INTO conversations ({', '.join(CONV_HASHED_V2)}, hash_v, prev_hash, hash) "
+                    f"VALUES ({', '.join('?' * (len(CONV_HASHED_V2) + 3))})",
+                    (*(entry[k] for k in CONV_HASHED_V2), 2, prev, _digest(prev, entry, CONV_HASHED_V2)))
                 self.conn.execute("COMMIT")
             except BaseException:
                 self.conn.execute("ROLLBACK")
@@ -229,7 +241,7 @@ class ClinicDB:
 
     def conversations(self, limit: int = 100, user: str | None = None, patient_id: str | None = None) -> list[dict]:
         """Turns newest first. Each has "changes": what the same user changed after it, until their next turn."""
-        sql, where, args = f"SELECT seq, {', '.join(CONV_HASHED)} FROM conversations", [], []
+        sql, where, args = f"SELECT seq, {', '.join(CONV_HASHED_V2)} FROM conversations", [], []
         if user:
             where.append("user = ?"); args.append(user)
         if patient_id:
@@ -238,8 +250,10 @@ class ClinicDB:
             sql += " WHERE " + " AND ".join(where)
         out = []
         for r in self._q(sql + " ORDER BY seq DESC LIMIT ?", (*args, limit)):
-            item = dict(zip(("seq",) + CONV_HASHED, r))
+            item = dict(zip(("seq",) + CONV_HASHED_V2, r))
             item["reasons"] = json.loads(item["reasons"] or "[]")
+            item["reviewer_reasons"] = json.loads(item["reviewer_reasons"] or "[]")
+            item["reviewer_ok"] = None if item["reviewer_ok"] is None else bool(item["reviewer_ok"])
             item["audit_ref"] = json.loads(item["audit_ref"]) if item["audit_ref"] else None
             nxt = self._q("SELECT change_seq FROM conversations WHERE user IS ? AND seq > ? ORDER BY seq LIMIT 1",
                           (item["user"], item["seq"]))
@@ -255,10 +269,11 @@ class ClinicDB:
     def verify_conversations(self) -> tuple[bool, int, int | None]:
         prev, n = GENESIS, 0
         with self.lock:
-            for r in self.conn.execute(f"SELECT seq, {', '.join(CONV_HASHED)}, prev_hash, hash FROM conversations"
-                                       " ORDER BY seq"):
-                entry = dict(zip(CONV_HASHED, r[1:1 + len(CONV_HASHED)]))
-                if r[-2] != prev or _digest(prev, entry, CONV_HASHED) != r[-1]:
+            for r in self.conn.execute(f"SELECT seq, {', '.join(CONV_HASHED_V2)}, hash_v, prev_hash, hash"
+                                       " FROM conversations ORDER BY seq"):
+                fields = CONV_HASHED_V2 if r[-3] == 2 else CONV_HASHED
+                entry = dict(zip(CONV_HASHED_V2, r[1:1 + len(CONV_HASHED_V2)]))
+                if r[-2] != prev or _digest(prev, entry, fields) != r[-1]:
                     return False, n, r[0]
                 prev, n = r[-1], n + 1
         return True, n, None
