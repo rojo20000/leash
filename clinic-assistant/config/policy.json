@@ -153,6 +153,10 @@
     "max_body_chars": 2000,
     "max_note_chars": 300,
     "max_open_requests": 5,
+    "max_messages_per_day": 20,
+    "_max_messages_per_day": "Messages one patient may send in 24 hours; more get 429 and are told to call the clinic.",
+    "inbox_messages_per_patient": 30,
+    "_inbox_messages_per_patient": "The staff inbox shows this many of each patient's newest messages, so one patient cannot crowd out the rest.",
     "emergency_notice": "Messages are not for emergencies. If this is urgent, call the clinic on 555-0100 or your local emergency number now."
   },
   "access": {

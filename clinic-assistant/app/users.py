@@ -49,6 +49,11 @@ class UserStore:
         """The patient id a patient account is linked to, else None."""
         return (self._load().get(username) or {}).get("patient_id")
 
+    def account(self, username: str) -> dict | None:
+        """Role, active flag and patient link as stored right now (no password material)."""
+        u = self._load().get(username)
+        return {"role": u["role"], "active": bool(u.get("active")), "patient_id": u.get("patient_id")} if u else None
+
     def disable(self, username: str) -> None:
         users = self._load()
         users[username]["active"] = False

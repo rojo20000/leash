@@ -263,7 +263,7 @@ class App:
         """The latest changes people made to patient records (not imports), for the home screen."""
         out = []
         for r in self.db.history(None, 200, include_system=False):
-            if r["entity"] != "patient":
+            if r["entity"] != "patient" or r["action"].startswith("portal_"):  # chart changes, not portal traffic
                 continue
             p = self.ehr.patients.get(r["entity_id"])
             out.append({"ts": r["at"], "user": r["by"], "event": r["action"], "patient_id": r["entity_id"],
@@ -740,6 +740,11 @@ def make_handler(app: App):
             if not s or s["expires"] < time.time():
                 app.sessions.pop(tok or "", None)
                 return None
+            u = app.users.account(s["user"])
+            if not u or not u["active"] or u["role"] != s["role"] or u["patient_id"] != s.get("patient_id"):
+                app.sessions.pop(tok, None)  # disabled, re-linked or re-roled since sign-in
+                app.audit.write("session_ended_account_changed", s["user"])
+                return None
             s["expires"] = time.time() + 60 * app.policy["server"]["session_minutes"]
             return s
 
@@ -754,7 +759,7 @@ def make_handler(app: App):
                 return False
             if path in ("/api/me", "/api/logout") or path.startswith("/api/portal/"):
                 return False
-            app.audit.write("portal_staff_route_refused", s["user"], path=path[:200])
+            app.audit.write("portal_staff_route_refused", s["user"], path=re.sub(r"[^A-Za-z0-9/_-]", "", path)[:60])
             self.send(403, {"error": "Patient accounts can use the patient portal only."})
             return True
 
@@ -769,6 +774,9 @@ def make_handler(app: App):
             s = self.session()
             if not s:
                 return self.send(401, {"error": "Not signed in."})
+            if s.get("patient_id") and not app.rate_ok(s["user"]):
+                app.audit.write("rate_limited", s["user"])
+                return self.send(429, {"error": "Too many requests. Wait a minute."})
             if self.confined(s, path):
                 return
             if path == "/api/me":
@@ -898,6 +906,8 @@ def make_handler(app: App):
                 data = self.body()
             except Exception as e:
                 return self.send(400, {"error": str(e)})
+            if not isinstance(data, dict):
+                return self.send(400, {"error": "Send a JSON object."})
 
             if path == "/api/login":
                 user, pw = str(data.get("username", "")), str(data.get("password", ""))
@@ -1113,6 +1123,9 @@ def make_handler(app: App):
                 if decision not in ("approve", "reject"):
                     return self.send(400, {"error": "Decision must be approve or reject."})
                 final = data.get("final_text")
+                if final is not None and not isinstance(final, str):
+                    return self.send(400, {"error": "final_text must be text."})
+                unfit = []  # set when the approved text itself is the problem (400, not 403)
 
                 def decide_draft(item):
                     if item["status"] != "awaiting_approval":
@@ -1120,17 +1133,25 @@ def make_handler(app: App):
                     if (app.policy["communication"]["approver_must_differ_from_drafter"]
                             and item["drafted_by"] == s["user"]):
                         return "A different clinician must approve this."
+                    if decision == "approve":
+                        text = portal._text(final or item["draft"], MAX_BODY)
+                        # text for a patient is checked here, while the approver can still edit it
+                        problem = (portal.draft_problem(app.policy, text)
+                                   if item["recipient_group"] == portal.PORTAL_GROUP
+                                   else None if text else "The approved text is empty.")
+                        if problem:
+                            unfit.append(problem)
+                            return problem
+                        item["final_text"] = text
                     item["status"] = "approved" if decision == "approve" else "rejected"
                     item["decided_by"] = s["user"]
-                    if decision == "approve":
-                        item["final_text"] = str(final or item["draft"])[:MAX_BODY]
                     return None
 
                 item = app.outbox.update(str(data.get("id", "")), decide_draft)
                 if item is None:
                     return self.send(404, {"error": "No such draft."})
                 if "error" in item:
-                    return self.send(403, item)
+                    return self.send(400 if unfit else 403, item)
                 app.audit.write("draft_" + item["status"], s["user"], draft_id=item["id"],
                                 edited=bool(final) and final != item["draft"])
                 return self.send(200, {"item": item})

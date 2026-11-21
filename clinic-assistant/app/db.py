@@ -228,6 +228,21 @@ class ClinicDB:
                        " ORDER BY seq DESC LIMIT ?", (patient_id, patient_id, limit))
         return [dict(zip(MSG_COLS, r)) for r in rows]
 
+    def portal_inbox(self, per_patient: int) -> list[dict]:
+        """Staff inbox: the newest `per_patient` messages of EVERY patient, newest first.
+
+        A global LIMIT would let one busy patient push everyone else's messages out of view.
+        """
+        rows = self._q(f"SELECT {', '.join(MSG_COLS)} FROM (SELECT *, ROW_NUMBER() OVER"
+                       " (PARTITION BY patient_id ORDER BY seq DESC) AS rn FROM portal_messages)"
+                       " WHERE rn <= ? ORDER BY seq DESC", (per_patient,))
+        return [dict(zip(MSG_COLS, r)) for r in rows]
+
+    def count_patient_messages(self, patient_id: str, since: str) -> int:
+        """How many messages this patient has sent at or after `since` (a _stamp()-style UTC string)."""
+        return self._q("SELECT COUNT(*) FROM portal_messages WHERE patient_id = ? AND direction = 'from_patient'"
+                       " AND at >= ?", (patient_id, since))[0][0]
+
     def portal_message(self, msg_id: str) -> dict | None:
         rows = self._q(f"SELECT {', '.join(MSG_COLS)} FROM portal_messages WHERE id = ?", (msg_id,))
         return dict(zip(MSG_COLS, rows[0])) if rows else None

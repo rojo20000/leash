@@ -55,7 +55,24 @@ class Refused(Exception):
 
 
 def _text(value, limit: int) -> str:
-    return str(value or "").strip()[:limit]
+    # lone surrogates (valid JSON, invalid UTF-8) would crash the SQLite insert, so they become "?"
+    return str(value or "").encode("utf-8", "replace").decode().strip()[:limit]
+
+
+TAG = re.compile(r"\[[A-Z][A-Z0-9_ ]*\]")  # a masking placeholder such as [NAME] or [DATE]
+
+
+def draft_problem(policy: dict, text: str) -> str | None:
+    """Why this approved text must not go to a patient, or None. Checked at approval and again at send."""
+    limit = policy["portal"]["max_body_chars"]
+    if not text.strip():
+        return "The approved text is empty."
+    if len(text) > limit:
+        return f"Too long for the patient portal: {len(text)} characters, and the limit is {limit}."
+    found = TAG.search(text)
+    if found:
+        return f"Fill in {found.group(0)} and any other [TAGS] first: the patient gets the text exactly as approved."
+    return None
 
 
 def _full_name(p: dict | None) -> str:
@@ -64,6 +81,7 @@ def _full_name(p: dict | None) -> str:
 
 def me(app, s: dict) -> dict:
     """/api/me for a patient session: no model, recipient group, leash or presidio fields."""
+    app.audit.write("portal_me_viewed", s["user"], patient_id=s["patient_id"])
     return {"user": s["user"], "role": s["role"], "permissions": app.policy["roles"][s["role"]],
             "version": VERSION, "clinic": app.policy["clinic"]["name"],
             "patient": {"id": s["patient_id"], "name": _full_name(app.ehr.patients.get(s["patient_id"]))},
@@ -85,6 +103,8 @@ def _handle(table: dict, app, s: dict, path: str, arg) -> tuple[int, dict] | Non
     try:
         return 200, getattr(Portal(app, s), method)(arg)
     except Refused as e:
+        if is_portal:  # route and status only: never the ids or text the patient sent
+            app.audit.write("portal_refused", s["user"], patient_id=s["patient_id"], route=path, code=e.code)
         return e.code, {"error": e.message}
 
 
@@ -132,7 +152,9 @@ class Portal:
                 "can_cancel": a["status"] == "booked" and a["date"] >= today and a["id"] not in cancelling}
 
     def _req(self, r: dict) -> dict:
-        return {k: r.get(k) for k in PATIENT_REQ}
+        out = {k: r.get(k) for k in PATIENT_REQ}
+        out["clinician"] = self.clinic["clinicians"].get(r.get("clinician"))  # display name, not the username
+        return out
 
     def appointments(self, _qs) -> dict:
         today = self._today()
@@ -143,7 +165,7 @@ class Portal:
                 "past": [a for a in appts if a["date"] < today][::-1],
                 "requests": [self._req(r) for r in self._mine(self.db.portal_requests(patient_id=self.pid))],
                 "visit_types": self.clinic["visit_types"],
-                "clinicians": [{"id": k, "name": v} for k, v in self.clinic["clinicians"].items()],
+                "clinicians": [{"id": v, "name": v} for v in self.clinic["clinicians"].values()],
                 "clinic_phone": self.clinic["phone"]}
 
     def _add_request(self, row: dict) -> dict:
@@ -164,10 +186,11 @@ class Portal:
         visit_type, clinician = data.get("visit_type"), _text(data.get("clinician"), 80)
         if not isinstance(visit_type, str) or visit_type not in self.clinic["visit_types"]:
             raise Refused(400, "Pick a visit type from the list.")
-        if clinician and clinician not in self.clinic["clinicians"]:
+        by_name = {name: username for username, name in self.clinic["clinicians"].items()}
+        if clinician and clinician not in by_name:
             raise Refused(400, "Pick a clinician from the list, or leave it empty.")
         limit = self.cfg["max_note_chars"]
-        return self._add_request({"kind": "book", "visit_type": visit_type, "clinician": clinician or None,
+        return self._add_request({"kind": "book", "visit_type": visit_type, "clinician": by_name.get(clinician),
                                   "preferred": _text(data.get("preferred"), limit),
                                   "note": _text(data.get("note"), limit)})
 
@@ -210,7 +233,12 @@ class Portal:
             if not target or target["patient_id"] != self.pid:
                 raise Refused(404, "No such message.")
             reply_to = target["id"]
-        m = self._new_message(self.pid, "from_patient", subject, body, "patient", reply_to)
+        since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 86400))
+        with _request_lock:  # count and insert as one step
+            if self.db.count_patient_messages(self.pid, since) >= self.cfg["max_messages_per_day"]:
+                raise Refused(429, "You have reached today's limit for messages. "
+                                   f"Call the clinic on {self.clinic['phone']} if you need help sooner.")
+            m = self._new_message(self.pid, "from_patient", subject, body, "patient", reply_to)
         urgent = any(re.search(p, f"{subject}\n{body}", re.I) for p in self.app.policy["scope"]["urgent_patterns"])
         self.audit("portal_message_sent", patient_id=self.pid, message_id=m["id"], urgent=urgent)
         return {"message": self._msg(m), "urgent": urgent, "notice": self.cfg["emergency_notice"]}
@@ -231,7 +259,7 @@ class Portal:
 
     def inbox(self, qs: dict) -> dict:
         pid = qs.get("patient_id", [""])[0][:80] or None
-        msgs = self.db.portal_messages(pid)
+        msgs = self.db.portal_messages(pid) if pid else self.db.portal_inbox(self.cfg["inbox_messages_per_patient"])
         self.audit("portal_inbox_viewed", count=len(msgs), patient_id=pid)
         return {"messages": [self._staff_msg(m) for m in msgs]}
 
@@ -281,8 +309,9 @@ class Portal:
                         else "Only an approved draft can be sent to the patient.")
             if not item.get("patient_id") or not self.app.ehr.patients.get(item["patient_id"]):
                 return "This draft is not linked to a patient."
-            if not item.get("final_text"):
-                return "This draft has no approved text."
+            problem = draft_problem(self.app.policy, item.get("final_text") or "")
+            if problem:
+                return problem
             # Runs under the outbox lock, and the item is saved as 'sent' only if the message was stored,
             # so a second press waits here and then finds status 'sent'.
             # shortcut: if writing outbox.json fails after the db commit the item stays 'approved';

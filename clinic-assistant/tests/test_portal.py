@@ -97,6 +97,7 @@ class PortalContract(unittest.TestCase):
         cls.app.policy["tiers"]["green_sample_rate"] = 0
         cls.app.policy["server"]["max_requests_per_minute"] = 100000
         cls.app.policy["communication"]["approver_must_differ_from_drafter"] = False  # dr_lee drafts and approves
+        cls.app.policy["portal"]["max_messages_per_day"] = 100000  # the cap has its own test (PortalReviewFixes)
         for name, role in [("dr_lee", "clinician"), ("nurse_kim", "nurse"), ("desk_sam", "receptionist"),
                            ("lead_ana", "clinical_lead"), ("auditor_ray", "auditor")]:
             cls.app.users.add(name, PW, role)
@@ -352,7 +353,7 @@ class PortalContract(unittest.TestCase):
         for key in ("upcoming", "past", "requests", "visit_types", "clinicians", "clinic_phone"):
             self.assertIn(key, r)
         self.assertEqual(r["visit_types"], self.app.policy["clinic"]["visit_types"])
-        self.assertIn({"id": "dr_lee", "name": "Dr Lee"}, r["clinicians"])
+        self.assertIn({"id": "Dr Lee", "name": "Dr Lee"}, r["clinicians"])  # display names, never usernames
         self.assertEqual(r["clinic_phone"], self.app.policy["clinic"]["phone"])
         for a in r["upcoming"] + r["past"]:
             self.assertLessEqual(set(a), APPT_KEYS)  # no patient_id, history or reminder internals
@@ -536,17 +537,17 @@ class PortalContract(unittest.TestCase):
         note, body, staff_note = mark("REQNOTE"), mark("PRIVATEBODY"), mark("Booked Tuesday 9am")
         self.send_msg("pt_a", body)
         req = self.ok(self.c("pt_a").call("/api/portal/appointments/request", {
-            "visit_type": "Follow-up", "clinician": "dr_lee", "preferred": "Weekday mornings", "note": note}))["request"]
+            "visit_type": "Follow-up", "clinician": "Dr Lee", "preferred": "Weekday mornings", "note": note}))["request"]
         self.assertEqual((req["kind"], req["status"], req["visit_type"], req["clinician"], req["note"]),
-                         ("book", "open", "Follow-up", "dr_lee", note))
+                         ("book", "open", "Follow-up", "Dr Lee", note))
         self.assertNotIn("handled_by", req)
         self.assertEqual(self.c("dr_lee").call("/api/inbox/requests")[0], 403)   # clinician has no portal_requests
         self.assertEqual(self.c("dr_lee").call("/api/inbox/requests/decide",
                                                {"id": req["id"], "status": "done"})[0], 403)
         queue = self.desk_requests()
         seen = next(q for q in queue if q["id"] == req["id"])
-        self.assertEqual((seen["patient_id"], seen["status"], seen["note"], seen["patient"]["id"]),
-                         (A, "open", note, A))
+        self.assertEqual((seen["patient_id"], seen["status"], seen["note"], seen["patient"]["id"], seen["clinician"]),
+                         (A, "open", note, A, "dr_lee"))  # reception gets the id it books with
         self.assertLessEqual(set(seen["patient"]), set(self.app.policy["frontdesk"]["allowed_fields"]) | {"locked"})
         blob, real = json.dumps(queue), self.app.ehr.get(A)
         for secret in [body, real["mrn"]] + real["conditions"] + real["medications"]:
@@ -728,6 +729,171 @@ class PortalContract(unittest.TestCase):
         r = self.send_msg("pt_a", "Can I book my flu jab at the next visit?")
         self.assertIs(r["urgent"], False)
         self.assertEqual(r["notice"], self.app.policy["portal"]["emergency_notice"])
+
+
+class PortalReviewFixes(unittest.TestCase):
+    """One test per finding of the 2.8 security review. Own app, so caps can be lowered without side effects."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp())
+        cls.app = App(data_dir=cls.tmp)
+        cls.app.policy["tiers"]["green_sample_rate"] = 0
+        cls.app.policy["server"]["max_requests_per_minute"] = 100000
+        cls.app.policy["communication"]["approver_must_differ_from_drafter"] = False
+        for name, role in [("dr_lee", "clinician"), ("desk_sam", "receptionist")]:
+            cls.app.users.add(name, PW, role)
+        for name, pid in [("pt_a", A), ("pt_b", B), ("pt_gone", C)]:
+            cls.app.users.add(name, PW, "patient", patient_id=pid)
+        cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(cls.app))
+        threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
+        cls.base = f"http://127.0.0.1:{cls.httpd.server_port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.httpd.shutdown()
+
+    def login(self, user):
+        c = Client(self.base)
+        self.assertEqual(c.call("/api/login", {"username": user, "password": PW})[0], 200)
+        return c
+
+    def audit(self, event):
+        rows = [json.loads(line) for line in (self.tmp / "audit.jsonl").read_text().splitlines() if line.strip()]
+        return [r for r in rows if r["event"] == event]
+
+    def draft_for(self, doc, pid):
+        st, r = doc.call("/api/outbox/draft", {"recipient_group": "patient-portal",
+                                               "instructions": "Results are normal.", "patient_id": pid})
+        self.assertEqual(st, 200, r)
+        return r["item"]["id"]
+
+    # 1. a live session must not outlive a disabled or re-linked account
+    def test_session_ends_when_account_is_disabled_or_relinked(self):
+        c = self.login("pt_gone")
+        self.assertEqual(c.call("/api/portal/chart")[0], 200)
+        self.app.users.add("pt_gone", PW, "patient", patient_id=A)  # admin re-links the account
+        self.assertEqual(c.call("/api/portal/chart")[0], 401)       # the old session (for syn-003) is gone
+        c = self.login("pt_gone")
+        self.assertEqual(c.call("/api/portal/chart")[1]["patient"]["id"], A)
+        self.app.users.disable("pt_gone")
+        self.assertEqual(c.call("/api/portal/chart")[0], 401)
+        self.assertEqual(c.call("/api/portal/messages", {"subject": "x", "body": "still here?"})[0], 401)
+        self.assertTrue(self.audit("session_ended_account_changed"))
+
+    # 2. one patient cannot flood the care team or hide other patients' messages
+    def test_daily_message_cap_and_fair_inbox(self):
+        cfg = self.app.policy["portal"]
+        old = cfg["max_messages_per_day"], cfg["inbox_messages_per_patient"]
+        quiet, loud, doc = self.login("pt_b"), self.login("pt_a"), self.login("dr_lee")
+        quiet_body = mark("QUIET")
+        self.assertEqual(quiet.call("/api/portal/messages", {"subject": "s", "body": quiet_body})[0], 200)
+        try:
+            cfg["inbox_messages_per_patient"] = 2
+            cfg["max_messages_per_day"] = self.app.db.count_patient_messages(A, "") + 4
+            codes = [loud.call("/api/portal/messages", {"subject": "s", "body": f"flood {i}"})[0] for i in range(6)]
+            self.assertEqual(codes, [200, 200, 200, 200, 429, 429])
+            inbox = doc.call("/api/inbox")[1]["messages"]
+            self.assertIn(quiet_body, [m["body"] for m in inbox])                 # still visible
+            self.assertEqual(len([m for m in inbox if m["patient_id"] == A]), 2)  # newest two of the loud patient
+            self.assertGreaterEqual(len(doc.call(f"/api/inbox?patient_id={A}")[1]["messages"]), 4)  # filter: all
+        finally:
+            cfg["max_messages_per_day"], cfg["inbox_messages_per_patient"] = old
+
+    # 3. approved text for a patient: not blank, not over the limit, no unfilled [TAGS], and a string
+    def test_approved_text_for_a_patient_is_checked(self):
+        doc, pat = self.login("dr_lee"), self.login("pt_a")
+        did = self.draft_for(doc, A)
+        limit = self.app.policy["portal"]["max_body_chars"]
+        for bad in ("Dear [NAME], your result is [RESULT].", "   ", "x" * (limit + 1), ["a list"], 7):
+            with self.subTest(final_text=str(bad)[:20]):
+                st, r = doc.call("/api/outbox/decide", {"id": did, "decision": "approve", "final_text": bad})
+                self.assertEqual(st, 400, r)
+        item = next(i for i in doc.call("/api/outbox")[1] if i["id"] == did)
+        self.assertEqual(item["status"], "awaiting_approval")  # still editable, nothing approved
+        good = mark("Your results are normal")
+        self.assertEqual(doc.call("/api/outbox/decide", {"id": did, "decision": "approve", "final_text": good})[0], 200)
+        # Belt and braces: text that somehow carries a tag after approval is refused again at send.
+        self.app.outbox.update(did, lambda i: i.update(final_text="Dear [NAME], " + good))
+        st, r = doc.call("/api/outbox/send", {"id": did})
+        self.assertEqual(st, 409, r)
+        self.assertNotIn(good, json.dumps(pat.call("/api/portal/messages")[1]))
+        self.app.outbox.update(did, lambda i: i.update(final_text=good))
+        self.assertEqual(doc.call("/api/outbox/send", {"id": did})[0], 200)
+        self.assertIn(good, json.dumps(pat.call("/api/portal/messages")[1]))
+
+    # 4. patient GETs are rate-limited, and a refused path is logged without patient-chosen text
+    def test_patient_gets_are_rate_limited_and_refused_paths_are_sanitized(self):
+        pat = self.login("pt_b")
+        self.assertEqual(pat.call("/api/evil%3Cscript%3E!~" + "a" * 300)[0], 403)
+        logged = [e["details"]["path"] for e in self.audit("portal_staff_route_refused") if e["user"] == "pt_b"]
+        self.assertTrue(logged)
+        for path in logged:
+            self.assertRegex(path, r"^[A-Za-z0-9/_-]{0,60}$")
+        server = self.app.policy["server"]
+        old = server["max_requests_per_minute"]
+        try:
+            server["max_requests_per_minute"] = len(self.app.hits.get("pt_b", [])) + 3
+            codes = [pat.call("/api/portal/messages")[0] for _ in range(5)]
+            self.assertEqual(codes, [200, 200, 200, 429, 429])
+        finally:
+            server["max_requests_per_minute"] = old
+            self.app.hits.pop("pt_b", None)
+
+    # 5. text that is valid JSON but not valid UTF-8 (a lone surrogate) gets an answer, not a dropped connection
+    def test_lone_surrogate_text_is_stored_safely(self):
+        pat = self.login("pt_a")
+        st, r = pat.call("/api/portal/messages", {"subject": "odd \ud800", "body": "lone \ud800 surrogate"})
+        self.assertEqual(st, 200, r)
+        self.assertEqual(r["message"]["body"], "lone ? surrogate")
+        st, r = pat.call("/api/portal/appointments/request", {"visit_type": "Follow-up", "note": "\udfff"})
+        self.assertEqual(st, 200, r)
+        self.assertTrue(self.app.db.verify_chain()[0])
+
+    # 6. a JSON body that is not an object is a 400 everywhere, including the sign-in route
+    def test_non_object_json_body_is_400(self):
+        staff, pat = self.login("dr_lee"), self.login("pt_a")
+        for body in ([], "text", 5):
+            with self.subTest(body=body):
+                self.assertEqual(Client(self.base).call("/api/login", body)[0], 400)
+                self.assertEqual(staff.call("/api/chat", body)[0], 400)
+                self.assertEqual(pat.call("/api/portal/messages", body)[0], 400)
+
+    # 7. staff usernames (clinician ids are usernames) never reach the patient
+    def test_patient_sees_clinician_names_not_usernames(self):
+        pat, desk = self.login("pt_a"), self.login("desk_sam")
+        usernames = list(self.app.policy["clinic"]["clinicians"])
+        self.assertEqual(pat.call("/api/portal/appointments/request",
+                                  {"visit_type": "Follow-up", "clinician": usernames[1]})[0], 400)
+        st, r = pat.call("/api/portal/appointments/request", {"visit_type": "Lab review", "clinician": "Dr Osei"})
+        self.assertEqual((st, r["request"]["clinician"]), (200, "Dr Osei"))
+        blob = json.dumps(pat.call("/api/portal/appointments")[1]) + json.dumps(r)
+        for name in usernames + ["desk_sam"]:
+            self.assertNotIn(name, blob)
+        queue = desk.call("/api/inbox/requests?status=open")[1]["requests"]
+        self.assertEqual(next(q for q in queue if q["id"] == r["request"]["id"])["clinician"], "dr_osei")
+
+    # 8. a refused portal action and a /api/me read both leave an audit entry (without the probed id)
+    def test_refused_probes_and_me_are_audited(self):
+        pat, probe = self.login("pt_b"), mark("probe")
+        self.assertEqual(pat.call("/api/portal/appointments/cancel", {"appointment_id": probe})[0], 404)
+        self.assertEqual(pat.call("/api/portal/messages", {"body": "x", "in_reply_to": probe})[0], 404)
+        refused = [e for e in self.audit("portal_refused") if e["user"] == "pt_b"]
+        self.assertEqual({(e["details"]["route"], e["details"]["code"]) for e in refused},
+                         {("/api/portal/appointments/cancel", 404), ("/api/portal/messages", 404)})
+        self.assertNotIn(probe, (self.tmp / "audit.jsonl").read_text())
+        self.assertEqual(pat.call("/api/me")[0], 200)
+        self.assertTrue([e for e in self.audit("portal_me_viewed") if e["details"]["patient_id"] == B])
+
+    # found while fixing 2: portal traffic stays out of the home screen's "recent chart changes"
+    def test_portal_rows_are_not_listed_as_chart_changes(self):
+        self.assertEqual(self.login("pt_a").call("/api/portal/messages", {"subject": "s", "body": "hello"})[0], 200)
+        recent = self.login("dr_lee").call("/api/chart/recent")[1]
+        self.assertFalse([r for r in recent if r["event"].startswith("portal_")])
+
+    def test_zz_chains_verify_after_the_review_tests(self):
+        self.assertTrue(self.app.audit.verify()["ok"])
+        self.assertTrue(self.app.db.verify_chain()[0])
 
 
 if __name__ == "__main__":

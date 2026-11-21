@@ -18,7 +18,7 @@ All paths below are relative to `clinic-assistant/`. Standard library only. Synt
 | F9 | Urgent-words notice: if a patient message matches `scope.urgent_patterns`, the response carries `urgent: true` and the portal tells them to call the clinic or emergency services now. The portal always shows "messages are not for emergencies". | core (small) |
 | F10 | Front desk sees requests with the front-desk allow-list view of the patient only (never message bodies). | core |
 | F11 | Unread counts (staff inbox badge). | if time |
-| F12 | Refuse sending an approved draft that still contains `[TAG]` placeholders. | if time |
+| F12 | Refuse approving or sending a `patient-portal` draft that still contains `[TAG]` placeholders. | if time (shipped, see 2.6) |
 
 Rejected:
 - **Patient self-booking into open slots**: bypasses the front desk the task asked for, and needs slot locking for a second actor. Requests cover it.
@@ -156,6 +156,18 @@ Errors are `{"error": "<sentence>"}`. Not signed in = 401. Wrong role/permission
 ### 2.5 Frontend
 - Patient portal: new `static/portal.html`, `static/portal.js`, `static/portal.css` (vanilla, `textContent` only, CSP `'self'`, no inline script or style). Sections: header (patient name, clinic, sign out), Appointments (upcoming, past, request form, cancel button per `can_cancel`, request list with status), My health summary (released fields), Messages (thread list, compose, reply, emergency notice always visible, urgent notice after send). On 401 → `location.href = "/"`. If `/api/me` has no `portal: true` → `location.href = "/"`.
 - Staff app (`static/app.js`, `index.html`, `app.css`): on start, if `me.portal` → `location.replace("/portal")`. New "Patient messages" tab (`data-perm="portal_inbox"`): inbox grouped by patient, reply box. Front desk "Portal requests" panel on the Schedule tab (`data-perm="portal_requests"`): open requests with patient view, Done / Decline with note. Messages tab: when group is `patient-portal`, show a patient picker (search via `/api/patients?q=`) and send `patient_id`; approved patient-portal drafts get a "Send to patient portal" button (`can("send_portal")`), sent ones show "Sent to <patient> by <user>".
+
+### 2.6 Changes after the security review (Phase 3)
+
+These replace the text above where they differ.
+- Patient-facing clinician values are display names: `clinicians` is `[{"id": "Dr Lee", "name": "Dr Lee"}]`, the request body's `clinician` is a display name (a username is a 400), and `Req.clinician` is the display name. The stored request and `StaffReq.clinician` keep the id.
+- Policy: `portal.max_messages_per_day` (20; the next message gets 429) and `portal.inbox_messages_per_patient` (30; unfiltered `GET /api/inbox` returns that many newest messages per patient).
+- `POST /api/outbox/decide`: `final_text` must be a string (400). On approve the text is stripped; empty text is 400 for every group; for `patient-portal` it must also fit `portal.max_body_chars` and contain no `[TAG]` placeholder (400, the draft stays `awaiting_approval`). `POST /api/outbox/send` repeats the patient checks (409). F12 is therefore shipped.
+- Sessions: every request re-reads the account; a disabled, re-linked or re-roled account's session is dropped (401, audit `session_ended_account_changed`).
+- Patient GETs go through the rate limit (429). `portal_staff_route_refused.path` is cut to 60 characters of `[A-Za-z0-9/_-]`.
+- New audit events: `portal_refused` (patient_id, route, code) for a refused portal action, `portal_me_viewed` for a patient's `/api/me`.
+- Any POST whose JSON body is not an object gets 400. Lone surrogates in text become `?`.
+- `/api/chart/recent` leaves out `portal_*` rows.
 
 ## 3. Work split (Phase 2)
 
