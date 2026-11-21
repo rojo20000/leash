@@ -66,7 +66,7 @@ Order of checks: policy, then (for document reads) the three injection detectors
 Prerequisites: `git`, `make`, [`uv`](https://docs.astral.sh/uv/) and a Rust toolchain (`cargo`; on Windows also the MSVC build tools). Tested on Windows 11 with Git Bash. If the Rust build fails, Leash uses the Python core and the test suite still passes.
 
 ```bash
-git clone <repo-url> leash
+git clone https://github.com/rojo20000/leash.git leash
 cd leash
 make setup      # venv with uv, requirements (incl. spaCy en_core_web_lg), Rust core build
 make check      # data, cargo test, pytest, quick benchmark, scripted demo assertions
