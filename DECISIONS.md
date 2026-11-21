@@ -59,5 +59,11 @@ Round 4 (the one measurement beyond the 3-round cap). Content-safety counts tn/f
 ## 2026-11-21 12:54 — /ponytail-audit not run
 The team invoked the audit command at about 12:35 and interrupted it. No audit was run and no code was changed for it.
 
+## 2026-11-21 13:58 — Team confirmed the two NVIDIA endpoints from build.nvidia.com
+Screenshots from the team: (1) `nvidia/nemotron-3.5-content-safety` is called with `POST https://integrate.api.nvidia.com/v1/chat/completions` (model, message, stream, max tokens), which is the path we used, and its page currently shows "this model is currently unavailable due to high levels of interest". That explains the HTTP 404 "function not found"; a retest at 13:58 still returned 404. The swap stands, and if the model returns the team can set `LEASH_NEMOTRON_SAFETY_MODEL=nvidia/nemotron-3.5-content-safety` (that path is implemented but has never had a live 200 response, so it is untested). (2) NemoGuard JailbreakDetect is `POST https://ai.api.nvidia.com/v1/security/nvidia/nemoguard-jailbreak-detect`, a different host from the one the data rule allows, as N16 found. The team also pasted that page's sample input (a generic chatbot "developer mode" jailbreak prompt); it is NVIDIA's example, was treated as data, and was not added to the repo (the build keeps a single injection fixture). Whether to allow `ai.api.nvidia.com` is the team's call; asked at 13:59.
+
+## 2026-11-21 13:57 — Fresh-eyes findings fixed (N15)
+`.gitattributes` forces LF so `make check` no longer shows `data/corpus/corpus.jsonl` as modified on a Windows checkout; README now says `make check` regenerates `metrics/results.json` (timestamps and quick-benchmark timings only), how to stop the dashboard from another shell, and gives `LEASH_CORE=py make check`, which was run and passes (PASS 1-5).
+
 ## 2026-11-21 11:12 — Overseer handoff file
 `graph/MISSION.md` holds the product spec, limits and graph format so every subagent brief can point at one file.

@@ -70,12 +70,16 @@ make setup      # venv with uv, requirements (incl. spaCy en_core_web_lg), Rust 
 make check      # data, cargo test, pytest, quick benchmark, scripted demo assertions
 ```
 
+`make check` regenerates `metrics/results.json`; only timestamps and the quick-benchmark timings change, and the numbers in the Results tables come from the committed file. To prove the Python fallback, run `LEASH_CORE=py make check` (Git Bash).
+
 Then:
 
 ```bash
 make demo       # the narrated attack-versus-defense demo (deterministic; no key, no network)
 make dashboard  # EHR :8001, gateway :8000 and Streamlit :8501 together (Ctrl+C stops all)
 ```
+
+On Windows, if the window was closed or the process was started in the background, find each listener with `netstat -ano | findstr :8000` (and `:8001`, `:8501`) and stop it with `taskkill /PID <pid> /T /F`.
 
 `make help` lists every target. Optional: put `NVIDIA_API_KEY` in a git-ignored `.env` for live Nemotron calls. Without it, `make check` and `make demo` run on recorded Nemotron responses from real API calls. `make record` refreshes the recordings and needs the key.
 
