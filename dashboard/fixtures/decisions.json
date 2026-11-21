@@ -1,0 +1,496 @@
+{
+ "decisions": [
+  {
+   "seq": 1,
+   "call_id": "c0001",
+   "session_id": "demo-protected",
+   "tool": "search_patients",
+   "decision": "allow",
+   "reasons": [
+    {
+     "code": "OK",
+     "stage": "policy",
+     "detail": ""
+    }
+   ],
+   "result": null,
+   "scores": {
+    "injection": null,
+    "anomaly": 0.21
+   },
+   "redactions": [],
+   "queue_id": null,
+   "latency_ms": {
+    "policy": 0.04,
+    "execute": 0.0,
+    "injection": 0.0,
+    "minimize": 0.0,
+    "anomaly": 0.9,
+    "audit": 0.2,
+    "added": 1.3,
+    "total": 1.3,
+    "jailbreak": 0.6,
+    "content_safety": 0.1,
+    "reasoner": 0.0
+   },
+   "audit_hash": "00019c1e",
+   "ts": "2026-11-21T14:00:05.123456Z",
+   "core": "python",
+   "ml": "real",
+   "nemotron": {
+    "mode": "replay",
+    "jailbreak": {
+     "served_by": "replay",
+     "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "flagged": false,
+     "latency_ms": 0.6
+    },
+    "content_safety": {
+     "served_by": "fallback:local",
+     "model": "",
+     "flagged": false,
+     "categories": [],
+     "latency_ms": 0.1
+    },
+    "reasoner": null
+   }
+  },
+  {
+   "seq": 2,
+   "call_id": "c0002",
+   "session_id": "demo-protected",
+   "tool": "read_record",
+   "decision": "allow",
+   "reasons": [
+    {
+     "code": "OK",
+     "stage": "policy",
+     "detail": ""
+    }
+   ],
+   "result": null,
+   "scores": {
+    "injection": null,
+    "anomaly": 0.21
+   },
+   "redactions": [],
+   "queue_id": null,
+   "latency_ms": {
+    "policy": 0.04,
+    "execute": 0.0,
+    "injection": 0.0,
+    "minimize": 0.0,
+    "anomaly": 0.9,
+    "audit": 0.2,
+    "added": 1.3,
+    "total": 1.3
+   },
+   "audit_hash": "00029c1e",
+   "ts": "2026-11-21T14:00:09.123456Z",
+   "core": "python",
+   "ml": "real",
+   "nemotron": {
+    "mode": "replay",
+    "jailbreak": {
+     "served_by": "replay",
+     "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "flagged": false,
+     "latency_ms": 0.6
+    },
+    "content_safety": {
+     "served_by": "fallback:local",
+     "model": "",
+     "flagged": false,
+     "categories": [],
+     "latency_ms": 0.1
+    },
+    "reasoner": null
+   }
+  },
+  {
+   "seq": 3,
+   "call_id": "c0003",
+   "session_id": "demo-protected",
+   "tool": "read_document",
+   "decision": "allow",
+   "reasons": [
+    {
+     "code": "OK",
+     "stage": "policy",
+     "detail": ""
+    }
+   ],
+   "result": null,
+   "scores": {
+    "injection": null,
+    "anomaly": 0.21
+   },
+   "redactions": [],
+   "queue_id": null,
+   "latency_ms": {
+    "policy": 0.04,
+    "execute": 0.0,
+    "injection": 0.0,
+    "minimize": 0.0,
+    "anomaly": 0.9,
+    "audit": 0.2,
+    "added": 1.9,
+    "total": 1.9
+   },
+   "audit_hash": "00039c1e",
+   "ts": "2026-11-21T14:00:14.123456Z",
+   "core": "python",
+   "ml": "real",
+   "nemotron": {
+    "mode": "replay",
+    "jailbreak": {
+     "served_by": "replay",
+     "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "flagged": false,
+     "latency_ms": 0.6
+    },
+    "content_safety": null,
+    "reasoner": null
+   }
+  },
+  {
+   "seq": 4,
+   "call_id": "c0004",
+   "session_id": "demo-protected",
+   "tool": "send_email",
+   "decision": "allow",
+   "reasons": [
+    {
+     "code": "OK",
+     "stage": "policy",
+     "detail": ""
+    }
+   ],
+   "result": null,
+   "scores": {
+    "injection": null,
+    "anomaly": 0.21
+   },
+   "redactions": [],
+   "queue_id": null,
+   "latency_ms": {
+    "policy": 0.04,
+    "execute": 0.0,
+    "injection": 0.0,
+    "minimize": 0.0,
+    "anomaly": 0.9,
+    "audit": 0.2,
+    "added": 1.3,
+    "total": 1.3
+   },
+   "audit_hash": "00049c1e",
+   "ts": "2026-11-21T14:00:20.123456Z",
+   "core": "python",
+   "ml": "real",
+   "nemotron": {
+    "mode": "replay",
+    "jailbreak": null,
+    "content_safety": {
+     "served_by": "replay",
+     "model": "",
+     "flagged": false,
+     "categories": [],
+     "latency_ms": 0.1
+    },
+    "reasoner": null
+   }
+  },
+  {
+   "seq": 5,
+   "call_id": "c0005",
+   "session_id": "demo-protected",
+   "tool": "send_email",
+   "decision": "block",
+   "reasons": [
+    {
+     "code": "EMAIL_DOMAIN_NOT_ALLOWED",
+     "stage": "policy",
+     "detail": "outside-clinic.example not allowed"
+    }
+   ],
+   "result": null,
+   "scores": {
+    "injection": null,
+    "anomaly": 0.21
+   },
+   "redactions": [],
+   "queue_id": "q-0001",
+   "latency_ms": {
+    "policy": 0.04,
+    "execute": 0.0,
+    "injection": 0.0,
+    "minimize": 0.0,
+    "anomaly": 0.9,
+    "audit": 0.2,
+    "added": 4.1,
+    "total": 4.1,
+    "jailbreak": 0.6,
+    "content_safety": 0.1,
+    "reasoner": 812.4
+   },
+   "audit_hash": "00059c1e",
+   "ts": "2026-11-21T14:01:02.123456Z",
+   "core": "python",
+   "ml": "real",
+   "nemotron": {
+    "mode": "replay",
+    "jailbreak": {
+     "served_by": "replay",
+     "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "flagged": false,
+     "latency_ms": 0.6
+    },
+    "content_safety": {
+     "served_by": "fallback:local",
+     "model": "",
+     "flagged": false,
+     "categories": [],
+     "latency_ms": 0.1
+    },
+    "reasoner": {
+     "served_by": "replay",
+     "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "latency_ms": 812.4,
+     "risk_level": "critical",
+     "explanation": "This send_email call addressed a patient record summary to an address outside the clinic's approved domains. Sending it would move patient information off the clinic's systems. Recommend deny and confirm the block.",
+     "policy_rule_ids": [
+      "email.allowed_domains"
+     ],
+     "recommended_action": "deny",
+     "advisory": true,
+     "error": ""
+    }
+   }
+  },
+  {
+   "seq": 6,
+   "call_id": "c0006",
+   "session_id": "demo-protected",
+   "tool": "read_record",
+   "decision": "block",
+   "reasons": [
+    {
+     "code": "RESOURCE_NOT_ALLOWED",
+     "stage": "policy",
+     "detail": "Condition not allowed"
+    }
+   ],
+   "result": null,
+   "scores": {
+    "injection": null,
+    "anomaly": 0.21
+   },
+   "redactions": [],
+   "queue_id": null,
+   "latency_ms": {
+    "policy": 0.04,
+    "execute": 0.0,
+    "injection": 0.0,
+    "minimize": 0.0,
+    "anomaly": 0.9,
+    "audit": 0.2,
+    "added": 1.5,
+    "total": 1.5,
+    "reasoner": 0.2
+   },
+   "audit_hash": "00069c1e",
+   "ts": "2026-11-21T14:01:10.123456Z",
+   "core": "python",
+   "ml": "real",
+   "nemotron": {
+    "mode": "replay",
+    "jailbreak": null,
+    "content_safety": null,
+    "reasoner": {
+     "served_by": "fallback:template",
+     "model": "",
+     "latency_ms": 0.2,
+     "risk_level": "high",
+     "explanation": "Leash blocked this read_record call. The agent asked for record types the scheduling_assistant role does not need (Condition not allowed). The decision comes from fixed policy; a reviewer makes the final call.",
+     "policy_rule_ids": [
+      "resources.allowed"
+     ],
+     "recommended_action": "deny",
+     "advisory": true,
+     "error": ""
+    }
+   }
+  },
+  {
+   "seq": 7,
+   "call_id": "c0007",
+   "session_id": "demo-protected",
+   "tool": "read_record",
+   "decision": "escalate",
+   "reasons": [
+    {
+     "code": "RECORD_RATE_EXCEEDED",
+     "stage": "policy",
+     "detail": "11 distinct patients in 300 s"
+    }
+   ],
+   "result": {
+    "status": "pending_approval",
+    "queue_id": "q-0002"
+   },
+   "scores": {
+    "injection": null,
+    "anomaly": 0.21
+   },
+   "redactions": [],
+   "queue_id": "q-0002",
+   "latency_ms": {
+    "policy": 0.04,
+    "execute": 0.0,
+    "injection": 0.0,
+    "minimize": 0.0,
+    "anomaly": 0.9,
+    "audit": 0.2,
+    "added": 2.2,
+    "total": 2.2,
+    "reasoner": 640.1
+   },
+   "audit_hash": "00079c1e",
+   "ts": "2026-11-21T14:01:20.123456Z",
+   "core": "python",
+   "ml": "real",
+   "nemotron": {
+    "mode": "replay",
+    "jailbreak": {
+     "served_by": "replay",
+     "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "flagged": false,
+     "latency_ms": 0.6
+    },
+    "content_safety": {
+     "served_by": "fallback:local",
+     "model": "",
+     "flagged": false,
+     "categories": [],
+     "latency_ms": 0.1
+    },
+    "reasoner": {
+     "served_by": "replay",
+     "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "latency_ms": 640.1,
+     "risk_level": "medium",
+     "explanation": "The agent opened many different patient charts in a short window, more than a scheduling role normally needs. This may be a bulk read; a reviewer should check the session before approving.",
+     "policy_rule_ids": [
+      "rate.max_records"
+     ],
+     "recommended_action": "needs_more_info",
+     "advisory": true,
+     "error": ""
+    }
+   }
+  },
+  {
+   "seq": 8,
+   "call_id": "c0008",
+   "session_id": "demo-protected",
+   "tool": "send_email",
+   "decision": "escalate",
+   "reasons": [
+    {
+     "code": "CONTENT_SAFETY_FLAGGED",
+     "stage": "policy",
+     "detail": "diagnosis and date of birth in body"
+    }
+   ],
+   "result": {
+    "status": "pending_approval",
+    "queue_id": "q-0003"
+   },
+   "scores": {
+    "injection": null,
+    "anomaly": 0.21
+   },
+   "redactions": [],
+   "queue_id": "q-0003",
+   "latency_ms": {
+    "policy": 0.04,
+    "execute": 0.0,
+    "injection": 0.0,
+    "minimize": 0.0,
+    "anomaly": 0.9,
+    "audit": 0.2,
+    "added": 2.8,
+    "total": 2.8,
+    "reasoner": 701.8
+   },
+   "audit_hash": "00089c1e",
+   "ts": "2026-11-21T14:01:31.123456Z",
+   "core": "python",
+   "ml": "real",
+   "nemotron": {
+    "mode": "replay",
+    "jailbreak": {
+     "served_by": "replay",
+     "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "flagged": false,
+     "latency_ms": 0.6
+    },
+    "content_safety": {
+     "served_by": "replay",
+     "model": "",
+     "flagged": false,
+     "categories": [],
+     "latency_ms": 0.1
+    },
+    "reasoner": {
+     "served_by": "replay",
+     "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+     "latency_ms": 701.8,
+     "risk_level": "high",
+     "explanation": "The outgoing message body includes a diagnosis and a date of birth, which go beyond what an appointment reminder needs. Recommend deny and ask for a minimal reminder instead.",
+     "policy_rule_ids": [
+      "gateway.content_safety"
+     ],
+     "recommended_action": "deny",
+     "advisory": true,
+     "error": ""
+    }
+   }
+  },
+  {
+   "seq": 9,
+   "call_id": "c0009",
+   "session_id": "legacy-session",
+   "tool": "search_patients",
+   "decision": "allow",
+   "reasons": [
+    {
+     "code": "OK",
+     "stage": "policy",
+     "detail": ""
+    }
+   ],
+   "result": null,
+   "scores": {
+    "injection": null,
+    "anomaly": 0.21
+   },
+   "redactions": [],
+   "queue_id": null,
+   "latency_ms": {
+    "policy": 0.04,
+    "execute": 0.0,
+    "injection": 0.0,
+    "minimize": 0.0,
+    "anomaly": 0.9,
+    "audit": 0.2,
+    "added": 1.3,
+    "total": 1.3
+   },
+   "audit_hash": "00099c1e",
+   "ts": "2026-11-21T14:01:40.123456Z",
+   "core": "python",
+   "ml": "real"
+  }
+ ]
+}

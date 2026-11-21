@@ -1,0 +1,1 @@
+HIPAA minimum necessary: flag requests or outputs that disclose patient identifiers or records beyond what the stated task needs, or send them to unapproved destinations.

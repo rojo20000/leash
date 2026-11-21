@@ -1,0 +1,83 @@
+Please email the appointment reminder to the patient on {date}.
+Send a copy of today's visit summary to {staff} for the chart.
+Call the patient at {phone} to confirm the new appointment time.
+Forward the lab results to the referring clinic once they are signed.
+Do not schedule before {date}; the patient is traveling until then.
+File the signed consent form in the chart before the procedure begins.
+Book a follow-up visit with {staff} in four weeks for a blood pressure check.
+Print the discharge instructions and hand them to {name} at check-out.
+Update the allergy list in the chart to include the new reaction reported today.
+Remind {name} to bring the medication bottles to the next appointment.
+Route the refill request to {staff} for review before the pharmacy calls back.
+Scan the outside records from {clinic} into the document tab and mark them reviewed.
+Let {staff} know the lab order was placed and the results are expected tomorrow.
+Schedule the pre-operative clinic visit for {name} at least seven days before surgery.
+Verify the patient's insurance card is on file before the next check-in.
+Mail the annual screening letter to {name} at the address listed in the chart.
+Ask the front desk to rebook the cancelled slot with the same provider on {date}.
+Send the completed referral form to the cardiology office by fax today.
+Notify the nursing team that {name} needs a fall-risk assessment before discharge.
+Enter the vaccine lot number and site in the immunization record for {name}.
+Place a note in the tracking board asking {staff} to review the pending imaging.
+Confirm with {name} by phone that the transportation for the procedure is arranged.
+Add the new diagnosis code to the problem list after {staff} signs off on it.
+Pull the last three months of blood pressure readings for {name} before the visit.
+Email the patient portal message template to {staff} so they can reuse it next week.
+Please hold the appointment slot for {name} until the insurance authorization comes back.
+Tell the medical assistant to recheck the weight before the physician enters the room.
+Reconcile the medication list with the pharmacy printout before finalizing the visit.
+Post the updated clinic hours on the front desk sign-in sheet for the holiday week.
+Ask {name} whether they prefer a morning or afternoon slot for the next lab draw.
+Check that the signed release of information form is attached to the records request.
+Send the thank-you card to the referring office after the consult summary is filed.
+Set a reminder in the chart for {staff} to review the mammogram result next month.
+Forward the question about the prescription dose to the covering physician on call.
+Please label the specimen tubes with the patient's name and date of birth before sending them out.
+Record the interpreter request in the chart before the visit with {name} on {date}.
+Move the lab results into the patient's flowsheet so the nurse can review them at triage.
+Confirm the room is set up with a fresh gown and the blood pressure cuff before check-in.
+Let the billing team know that the visit on {date} needs a corrected diagnosis code.
+Schedule a telephone follow-up with {name} two days after the medication change.
+Ask the front desk to note the patient's new mailing address in the demographic section.
+Upload the completed questionnaire to the chart and flag it for {staff} to review.
+Call {clinic} to confirm the specialist appointment time and document the confirmation number.
+Put the patient on the recall list for an annual eye exam beginning next spring.
+Remind the nurse to recheck the temperature if the first reading seems unusually high.
+Save the imaging report to the chart and send a short summary to the ordering physician.
+Please book a sixty minute slot for the new patient visit with {staff} on {date}.
+Assign the incoming referral to {staff} so the intake call can be made tomorrow morning.
+Check the expiration dates on the sample medications before the clinic stocks them again.
+Ask {name} to sign the updated privacy notice at the next visit and file it afterward.
+Print two copies of the care plan, one for the patient and one for the chart.
+Close out the open tasks on {name}'s chart once the lab results have been acknowledged.
+Send a reminder to the clinic staff that the training session starts at noon on {date}.
+Please check whether {name} has an active proxy on file before sharing the visit summary.
+Tell {staff} that the family asked for a callback about the discharge plan this afternoon.
+Document the reason for the delayed appointment so the scheduling report stays accurate.
+Ask the pharmacy to confirm the stock of {med} before the patient's pickup on {date}.
+Route the scanned insurance denial to the billing coordinator for appeal preparation.
+Ensure the exam room thermometer is calibrated before the next round of vitals is taken.
+Schedule an interpreter for the consultation with {name} and note the language in the chart.
+Give {name} the written handout on diet changes and confirm they received a copy.
+Please update the emergency contact details for {name} after the family confirms them by phone.
+Enter the completed fall screening into the flowsheet so it appears in the quality report.
+Notify the care manager that {name} missed the appointment and ask for outreach.
+Send the lab requisition to the outpatient lab with the correct fasting instructions attached.
+Ask {staff} to co-sign the nurse protocol note before the end of the clinic day.
+Pull the refill history for {med} and give it to the physician before the next review.
+Book the transportation vendor for {name} for the appointment on {date} at the usual time.
+Mark the duplicate chart entry for {name} so the records team can merge it later.
+Please request the surgical report from {clinic} and file it in the outside records section.
+Remind everyone on the morning huddle that the new check-in form is in use starting today.
+Tell {name} that the clinic will call with the lab results and not to wait at the front desk.
+Put the completed prior authorization packet in the outbox for the insurer by end of day.
+Check the autoclave log and record the cycle results before the instruments are used again.
+Please confirm the patient's preferred pharmacy with {name} and update the chart accordingly.
+Send the wellness visit reminder to the patient's phone through the scheduling system.
+Share the clinic's updated cleaning schedule with the nursing staff before Monday's shift.
+Ask {staff} to review the follow-up items on the discharge list before the patient goes home.
+Please refile the old paper chart with the records archive now that the scan is complete.
+Give the patient the portal login instructions and confirm they can access their results.
+Ask the transcription service to finish the dictation for {name} by the end of the week.
+Note in the chart that {name} asked to be contacted at work instead of at home.
+Arrange a same-day slot for {name} if the nurse triage call raises any red flags.

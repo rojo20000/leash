@@ -1,0 +1,153 @@
+{
+ "counts": {
+  "allow": 5,
+  "block": 2,
+  "escalate": 2,
+  "total": 9
+ },
+ "rates": {
+  "allow": 0.5556,
+  "block": 0.2222,
+  "escalate": 0.2222
+ },
+ "latency_ms": {
+  "p50": 1.9,
+  "p95": 4.1,
+  "by_stage": {
+   "policy": {
+    "p50": 0.04,
+    "p95": 0.05
+   },
+   "injection": {
+    "p50": 0.0,
+    "p95": 0.4
+   },
+   "minimize": {
+    "p50": 0.5,
+    "p95": 9.0
+   },
+   "anomaly": {
+    "p50": 0.9,
+    "p95": 1.1
+   },
+   "audit": {
+    "p50": 0.2,
+    "p95": 0.3
+   },
+   "jailbreak": {
+    "p50": 0.6,
+    "p95": 0.6
+   },
+   "content_safety": {
+    "p50": 0.1,
+    "p95": 0.1
+   },
+   "reasoner": {
+    "p50": 640.1,
+    "p95": 812.4
+   }
+  }
+ },
+ "core": "python",
+ "ml": "real",
+ "models": {
+  "injection": {
+   "precision": 1.0,
+   "recall": 0.853,
+   "f1": 0.921
+  },
+  "anomaly": {
+   "precision": 0.958,
+   "recall": 0.911,
+   "f1": 0.934
+  },
+  "minimization": {
+   "precision": 1.0,
+   "recall": 1.0
+  },
+  "bench": {
+   "n": 100000,
+   "quick": false,
+   "rust": {
+    "policy_us": 0.4,
+    "audit_append_us": 6.1
+   },
+   "python": {
+    "policy_us": 3.2,
+    "audit_append_us": 21.0
+   },
+   "speedup": {
+    "policy": 8.0,
+    "audit_append": 3.4
+   }
+  },
+  "nemotron": {
+   "eval": {
+    "n_cases": 40,
+    "n_dev": 24,
+    "n_holdout": 16,
+    "rounds": [
+     {
+      "round": 1,
+      "holdout": {
+       "injection": {
+        "combined": {
+         "precision": 0.95,
+         "recall": 0.8
+        }
+       },
+       "content_safety_accuracy": 0.81,
+       "reasoner_action_agreement": 0.75
+      }
+     },
+     {
+      "round": 2,
+      "holdout": {
+       "injection": {
+        "combined": {
+         "precision": 0.96,
+         "recall": 0.88
+        }
+       },
+       "content_safety_accuracy": 0.88,
+       "reasoner_action_agreement": 0.81
+      }
+     }
+    ]
+   }
+  }
+ },
+ "nemotron": {
+  "mode": "replay",
+  "served_by": {
+   "jailbreak": {
+    "nemotron": 0,
+    "replay": 5,
+    "fallback:local": 0
+   },
+   "content_safety": {
+    "nemotron": 0,
+    "replay": 3,
+    "fallback:local": 3
+   },
+   "reasoner": {
+    "nemotron": 0,
+    "replay": 3,
+    "fallback:template": 1
+   }
+  },
+  "latency_ms": {
+   "nvidia/nemotron-3.5-lightning-30b-a3b": {
+    "p50": 540.0,
+    "p95": 690.0,
+    "n": 25,
+    "source": "recorded"
+   }
+  },
+  "models": {
+   "reasoner": "nvidia/nemotron-3.5-lightning-30b-a3b",
+   "jailbreak": "nvidia/nemotron-jailbreak-detect",
+   "content_safety": "nvidia/nemotron-content-safety"
+  }
+ }
+}

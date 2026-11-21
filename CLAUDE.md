@@ -17,6 +17,6 @@
 - Build Rust from a shell where MSVC is found. Git Bash's `/usr/bin/link.exe` can shadow the MSVC linker; if linking fails, build from PowerShell.
 
 ## Rules
-- **Synthetic patient data only. Nothing leaves this machine except package downloads.** No real PHI, no external LLM APIs, no telemetry.
+- **Synthetic patient data only. Nothing leaves this machine except package downloads and calls to `integrate.api.nvidia.com` (NVIDIA Nemotron models) carrying synthetic data.** No real PHI, no other external APIs, no telemetry. (Updated 2026-11-21 11:23 by the team's Nemotron addendum; see `graph/MISSION.md`.) The key is in `NVIDIA_API_KEY`, loaded from the git-ignored `.env`; never print, log or commit it.
 - **Ask before `git push` or any system-level install** (winget, rustup toolchains, Ollama, etc.). Python packages in `.venv` are fine.
 - Record decisions in DECISIONS.md and progress in PROGRESS.md as you go.

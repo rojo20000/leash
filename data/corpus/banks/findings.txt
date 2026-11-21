@@ -1,0 +1,69 @@
+Blood pressure was 138/86 at today's visit, down from 150/92 last month.
+Currently taking {med} daily with good adherence and no reported side effects.
+Lungs clear to auscultation bilaterally; no edema noted.
+Heart rate regular at 74 beats per minute with no murmurs appreciated.
+Fasting glucose returned at 112 mg/dL, slightly above the target range.
+HbA1c measured at 7.4 percent, improved from 8.1 percent six months ago.
+Patient denies chest pain, shortness of breath, or palpitations since the last visit.
+Abdomen soft and non-tender; bowel sounds present in all four quadrants.
+Weight is 187 pounds, stable compared with the prior measurement in March.
+Reports intermittent headaches over the past two weeks, mostly in the afternoon.
+Serum creatinine 1.1 mg/dL with estimated GFR above 60 on the most recent panel.
+Left knee shows mild effusion and reduced range of motion on flexion.
+Skin examination reveals a 6 mm pigmented lesion on the upper back, unchanged in appearance.
+Sleep is disrupted most nights, with about five hours of rest reported.
+Currently on {med} twice daily; patient reports missing one dose per week.
+Chest x-ray from last week shows no acute infiltrate or pleural effusion.
+TSH within normal limits at 2.3 mIU/L, no change in thyroid replacement dose needed.
+Oxygen saturation 97 percent on room air at rest and after mild exertion.
+Patient is a former smoker who quit eleven years ago after about twenty pack-years.
+Urinalysis negative for protein and blood; trace leukocyte esterase noted.
+Hemoglobin 12.8 g/dL, slightly below the reference range for this patient's sex.
+Patient reports a family history of coronary artery disease in a father and brother.
+Neurologic exam intact with symmetric reflexes and normal gait on observation.
+Pain rated 4 out of 10 at rest and 6 out of 10 with weight bearing on the right hip.
+Allergies reviewed: penicillin causes hives, no known reactions to contrast dye.
+Ankle edema is mild and bilateral, more prominent by the end of the day.
+Echocardiogram from last month showed an ejection fraction of 55 percent.
+Visual acuity measured at 20/30 in the right eye and 20/25 in the left eye.
+Patient reports improved appetite since starting {med} and mild nausea that resolves by noon.
+Mood described as stable, with no suicidal ideation endorsed on screening today.
+Blood pressure recheck after five minutes of rest measured 128/80 in the left arm.
+Liver enzymes slightly elevated, ALT at 58 and AST at 46, both trending downward.
+Cough has been productive of clear sputum for four days without fever.
+Lipid panel shows LDL of 118 mg/dL and HDL of 52 mg/dL on the current regimen.
+Palpation of the thyroid reveals a smooth, non-tender gland without nodules.
+Gait is steady with a standard walker used for longer distances outside the home.
+Patient rates energy levels as low in the afternoons and improved in the morning.
+Prior colonoscopy performed three years ago showed two small polyps, both benign.
+Vitals stable; temperature 98.4 Fahrenheit and respiratory rate 16 per minute.
+Bilateral hearing screening passed at standard test frequencies in the clinic booth.
+Patient confirms no new allergies and no hospitalizations since the last documented visit.
+Platelet count 245 thousand per microliter, within the expected range for the panel.
+Foot exam shows intact sensation to monofilament testing and no open wounds.
+Urine output reported as normal with no burning or urgency during the past month.
+Post-operative incision is clean, dry, and healing without signs of infection.
+Recent CT of the abdomen was unremarkable apart from a small stable cyst on the left kidney.
+Patient says {med} has helped with the joint stiffness that was present in the mornings.
+Dietary history notes frequent sodium intake from processed foods and few servings of vegetables.
+Physical activity limited to short walks around the neighborhood, about twenty minutes a day.
+Blood sugar log brought to the visit shows readings mostly between 110 and 150 mg/dL.
+Patient has no history of bleeding disorders and no prior surgical complications on record.
+Medication list reviewed in full; {med} is the only prescription currently being taken as directed.
+Reflexes are two plus and symmetric at the knees and ankles on examination today.
+Joint exam shows no warmth or swelling in the hands, with mild stiffness after rest.
+Ear canals clear with no cerumen impaction; tympanic membranes intact bilaterally.
+Patient reports a rash on the forearms that began after gardening, now mostly resolved.
+Repeat potassium level came back at 4.2 mmol/L, within the normal range for the patient.
+Pelvic floor history obtained; patient reports occasional urinary leakage with coughing.
+Vaccination status is current for influenza and pneumococcal, with tetanus due next year.
+Spirometry shows mild obstruction with a post-bronchodilator improvement in FEV1.
+Bone density scan from last year shows osteopenia at the femoral neck without fracture.
+Patient describes the pain as burning, radiating down the left leg to the ankle.
+Mammography last performed in the spring was read as BI-RADS category 2, benign findings.
+Current weight is down four pounds since the last visit with no change in appetite.
+Labs from the outside hospital were reviewed and show a stable creatinine trend.
+Pupils equal, round, and reactive to light; extraocular movements full without pain.
+Patient reports taking {med} as prescribed and has refills available at the local pharmacy.
+Tobacco use is zero at present; alcohol intake reported as two drinks on weekends.
+Recent blood culture from the urgent visit remained negative at the forty-eight hour mark.

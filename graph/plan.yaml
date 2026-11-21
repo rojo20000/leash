@@ -2,6 +2,9 @@
 # Checks run from the repo root in Git Bash and finish on their own.
 # Stage 1 concurrency (max 4): start N2, N3, N4, N6 at 11:50; start N7 when N4 finishes (~12:10);
 # start N5 when N3 and N4 have passed. N2/N3/N6 must finish by 3:30.
+# Nemotron re-plan (11:45, CONTRACTS.md C10): N5 and N6 passed; N2 is on iteration 2 (C1.1 fix).
+# Start N16 now (first priority) and N7 now. When N16 passes, start N17 (gateway) and N19 (agent) together:
+# they own disjoint paths (gateway/** vs agent/**). N18 runs in Stage 3 after N8.
 nodes:
   - id: N2
     name: rust_core
@@ -81,9 +84,63 @@ nodes:
     check: "LEASH_CORE=py .venv/Scripts/python.exe -m pytest -q tests/test_dashboard_*.py"
     acceptance:
       - check passes (AppTest, no server)
-      - dashboard/fixtures/{decisions,queue,verify,metrics}.json exist in the C5.4/C5.5 shapes
-      - fixture mode renders EMAIL_DOMAIN_NOT_ALLOWED and the p50/p95 latency values
+      - dashboard/fixtures/{decisions,queue,verify,metrics,health}.json exist in the C5.4/C5.5/C10.7 shapes; fixture reasoner objects validate against the C10.6 SCHEMA
+      - fixture mode renders EMAIL_DOMAIN_NOT_ALLOWED, the p50/p95 latency values, the reasoner explanation beside the approve/deny buttons with the advisory caption, and a served-by value per Nemotron step
+      - decisions without a nemotron key (N6's gateway) render "-" and raise nothing
       - with the gateway unreachable the app shows an error and raises nothing
+    max_iterations: 3
+
+  - id: N16
+    name: nemotron_client
+    stage: 1
+    agent: implementer
+    depends_on: [N1]
+    owns: [leash/__init__.py, leash/nemotron.py, leash/prompts/content_safety_policy.txt, leash/prompts/injection_policy.txt, "demo/recordings/nemotron/** (models.json from a live fetch only)", scripts/preflight.py, "tests/test_nemotron_*.py"]
+    reads: [CONTRACTS.md, graph/MISSION.md, gateway/core_loader.py, gateway/core_py.py, agent/tools.py, pytest.ini, ".env (via load_dotenv only)"]
+    brief: graph/briefs/N16.md
+    check: "LEASH_CORE=py LEASH_NEMOTRON=replay .venv/Scripts/python.exe -m pytest -q tests/test_nemotron_*.py && (LEASH_CORE=py .venv/Scripts/python.exe scripts/preflight.py --only nemotron; true) | grep -E \"^(PASS|FAIL|SKIP) +nvidia_key\""
+    acceptance:
+      - check passes with NVIDIA_API_KEY unset and no network; socket-patched tests prove replay and off never connect
+      - leash.nemotron public signatures match C10.2 (inspect.signature printout in the report)
+      - no recording or log contains the key, Bearer or authorization; grep for nvapi- finds only the test's fake sentinel
+      - demo/recordings/nemotron/models.json came from a live GET /v1/models and lists nvidia/nemotron-3.5-lightning-30b-a3b
+      - preflight --only nemotron prints nvidia_key, nvidia_models and lightning_call rows (lightning_call PASS with latency when the key is set)
+      - report names the resolved model per role and every swap with its evidence
+    max_iterations: 3
+
+  - id: N17
+    name: nemotron_reasoner
+    stage: 1
+    agent: implementer
+    depends_on: [N16, N6]
+    owns: [leash/reasoner.py, leash/prompts/reasoner_system.txt, "tests/test_reasoner_*.py", "gateway/** except gateway/core_py.py and gateway/core_loader.py", "tests/test_gateway_*.py"]
+    reads: [CONTRACTS.md, leash/nemotron.py, leash/prompts/**, gateway/core_py.py, gateway/core_loader.py, agent/**, ehr/**, ml/**, data/generated/**, demo/recordings/**, policies/scheduling_assistant.toml, pytest.ini, graph/MISSION.md]
+    brief: graph/briefs/N17.md
+    check: "LEASH_CORE=py LEASH_ML=stub LEASH_NEMOTRON=off LEASH_WARMUP=0 .venv/Scripts/python.exe -m pytest -q tests/test_gateway_*.py tests/test_reasoner_*.py && LEASH_CORE=py LEASH_NEMOTRON=replay .venv/Scripts/python.exe -m pytest -q tests/test_gateway_*.py tests/test_reasoner_*.py"
+    acceptance:
+      - check passes in both runs with NVIDIA_API_KEY unset
+      - the advisory-invariant test passes: decision, reasons, queue status and audit records are identical whatever the reasoner returns or raises
+      - every decision carries the C10.7 nemotron object; every block/escalate decision and queue item carries a reasoner object valid against SCHEMA
+      - importing gateway.app from an empty temp cwd creates no files; lifespan warm-up runs once and records nothing
+      - in the scripted protected replay no call after the blocked attack is escalated with ANOMALY (xfail only while N2's C1.1 fix is pending, and reported)
+      - report quotes one live reasoner explanation for the attack email with served_by and latency
+    max_iterations: 3
+
+  - id: N19
+    name: nemotron_agent
+    stage: 1
+    agent: implementer
+    depends_on: [N16, N6]
+    owns: [agent/**, "tests/test_agent_*.py"]
+    reads: [CONTRACTS.md, leash/nemotron.py, gateway/**, ehr/**, data/generated/**, demo/recordings/**, policies/scheduling_assistant.toml, pytest.ini, graph/MISSION.md]
+    brief: graph/briefs/N19.md
+    check: "LEASH_CORE=py LEASH_ML=stub LEASH_NEMOTRON=replay .venv/Scripts/python.exe -m pytest -q tests/test_agent_*.py"
+    acceptance:
+      - check passes with NVIDIA_API_KEY unset and no Ollama call (live tests skipped)
+      - a mocked Lightning session yields steps with served_by nemotron and correct tool_call_id pairing
+      - a failing Lightning yields fallback:ollama steps; replay yields replay steps without opening a socket
+      - scripted sessions unchanged apart from served_by None; the protected replay still blocks the attacker email
+      - report states the live Lightning unprotected and protected results with served_by counts
     max_iterations: 3
 
   - id: N5
@@ -107,15 +164,16 @@ nodes:
     name: integration
     stage: 2
     agent: planner
-    depends_on: [N2, N3, N4, N5, N6, N7]
-    owns: [Makefile, requirements.txt, .gitignore, conftest.py, pytest.ini, demo/run_demo.py, CONTRACTS.md, "cross-component fixes named in report"]
+    depends_on: [N2, N3, N4, N5, N6, N7, N16, N17, N19]
+    owns: [Makefile, requirements.txt, .gitignore, conftest.py, pytest.ini, demo/run_demo.py, CONTRACTS.md, "demo/recordings/nemotron/calls/** (written by make record only)", "cross-component fixes named in report"]
     reads: ["**"]
     brief: graph/briefs/N8.md
     check: "make check"
     acceptance:
       - make check exits 0 from the repo root
       - make check rebuilds data/generated, ml/artifacts and runtime state itself (passes with those moved aside)
-      - demo/run_demo.py --scripted --assert prints all four assertions as PASS
+      - demo/run_demo.py --scripted --assert prints assertions 1-4 PASS and 5 PASS (recordings present) or SKIP; LEASH_NEMOTRON=off passes 1-4
+      - make check runs with LEASH_NEMOTRON=replay and passes with no key and no network; after make record the attack email's reasoner is served_by replay
       - metrics/results.json has demo, bench, injection, anomaly, minimization keys
     max_iterations: 3
 
@@ -133,6 +191,7 @@ nodes:
       - gateway.latency_ms p50 and p95 > 0 and gateway.calls >= 200
       - bench.quick is false and bench.rust is not null (or the Rust cut is reported)
       - every number traces to a command listed in the report
+      - gateway key measured after the lifespan warm-up with LEASH_NEMOTRON=off (nemotron_mode recorded)
     max_iterations: 2
 
   - id: N10
@@ -148,6 +207,7 @@ nodes:
       - check prints ok
       - DEMO_SCRIPT.md timestamps end at or before 3:00 and quote only lines present in demo/output/*.txt
       - live_run.txt states whether the live unprotected agent leaked and what the protected run decided
+      - live_run.txt names the model that served the agent and the reasoner served_by for the attack; DEMO_SCRIPT shows the explanation beside approve/deny
     max_iterations: 2
 
   - id: N11
@@ -165,35 +225,54 @@ nodes:
       - screenshots in docs/img/ or the report says no headless browser was available
     max_iterations: 2
 
+  - id: N18
+    name: nemotron_eval
+    stage: 3
+    agent: implementer then transcriber
+    depends_on: [N8]
+    owns: [ml/eval/**, tests/test_nemotron_eval.py, "leash/prompts/*.txt (Stage 3 only)", "metrics/results.json#nemotron"]
+    reads: ["**"]
+    brief: graph/briefs/N18.md
+    check: "LEASH_CORE=py LEASH_NEMOTRON=off .venv/Scripts/python.exe -m pytest -q tests/test_nemotron_eval.py && .venv/Scripts/python.exe -c \"import json; d=json.load(open('metrics/results.json'))['nemotron']; r=d['eval']['rounds']; print(len(r), [x['holdout'] for x in r]); assert 1 <= len(r) <= 3\""
+    acceptance:
+      - check passes and prints 1-3 rounds
+      - ml/eval/nemotron_cases.jsonl has 36-44 cases, dev and holdout splits covering all five groups, no new injection text
+      - every round keeps dev and holdout metrics, prompt hashes and served_by counts; round 1 is the unrevised baseline
+      - with a key, at least one live round has every step served by nemotron; otherwise the report says fallback-only
+      - report gives before/after holdout numbers and what was revised
+    max_iterations: 3
+
   - id: N12
     name: docs
     stage: 4
     agent: implementer
-    depends_on: [N9, N10]
+    depends_on: [N9, N10, N18]
     owns: [README.md, "docs/** except docs/DEMO_SCRIPT.md and docs/img/**", LICENSE]
     reads: ["**"]
     brief: graph/briefs/N12.md
-    check: ".venv/Scripts/python.exe -c \"import pathlib; fs=['README.md','docs/HIPAA_MAPPING.md','docs/PITCH.md','docs/SUBMISSION.md','LICENSE']; [pathlib.Path(f).read_text(encoding='utf-8') for f in fs]; t=pathlib.Path('README.md').read_text(encoding='utf-8'); assert 'mermaid' in t and 'make demo' in t and 'METRICS_TABLE' in t; print('ok')\""
+    check: ".venv/Scripts/python.exe -c \"import pathlib; fs=['README.md','docs/HIPAA_MAPPING.md','docs/PITCH.md','docs/SUBMISSION.md','docs/NEMOTRON.md','LICENSE']; [pathlib.Path(f).read_text(encoding='utf-8') for f in fs]; t=pathlib.Path('README.md').read_text(encoding='utf-8'); assert 'mermaid' in t and 'make demo' in t and 'METRICS_TABLE' in t; n=pathlib.Path('docs/NEMOTRON.md').read_text(encoding='utf-8'); s=pathlib.Path('docs/SUBMISSION.md').read_text(encoding='utf-8'); pi=pathlib.Path('docs/PITCH.md').read_text(encoding='utf-8'); paras=[x for x in n.replace(chr(13),'').split(chr(10)*2) if x.strip() and not x.lstrip().startswith(('#','<!--'))][:3]; assert len(paras)==3 and all(x.strip() in s.replace(chr(13),'') for x in paras); assert 'Why Nemotron' in pi and 'OpenShell' in pi and 'NEMOTRON_TABLE' in n; print('ok')\""
     acceptance:
       - check prints ok
       - README setup is at most five commands matching the Makefile
       - every HIPAA citation is marked verified with an eCFR URL or unverified
       - no number in the docs that is absent from metrics/results.json or demo/output/
+      - docs/NEMOTRON.md exists, its first three paragraphs are in SUBMISSION.md, PITCH.md has the Why Nemotron and OpenShell/NeMo Guardrails slides
     max_iterations: 2
 
   - id: N13
     name: tables
     stage: 4
     agent: transcriber
-    depends_on: [N12]
-    owns: ["README.md#METRICS_TABLE", "docs/PITCH.md#METRICS_TABLE"]
-    reads: [metrics/results.json, README.md, docs/PITCH.md]
+    depends_on: [N12, N18]
+    owns: ["README.md#METRICS_TABLE", "docs/PITCH.md#METRICS_TABLE", "docs/NEMOTRON.md#NEMOTRON_TABLE", "docs/PITCH.md#NEMOTRON_TABLE"]
+    reads: [metrics/results.json, README.md, docs/PITCH.md, docs/NEMOTRON.md]
     brief: graph/briefs/N13.md
-    check: ".venv/Scripts/python.exe -c \"import json; d=json.load(open('metrics/results.json')); t=open('README.md',encoding='utf-8').read(); v=str(round(d['injection']['precision'],3)); assert v in t, v; print('ok')\""
+    check: ".venv/Scripts/python.exe -c \"import json; d=json.load(open('metrics/results.json')); t=open('README.md',encoding='utf-8').read(); v=str(round(d['injection']['precision'],3)); assert v in t, v; n=open('docs/NEMOTRON.md',encoding='utf-8').read(); e=d.get('nemotron',{}).get('eval',{}).get('rounds'); w=str(round(e[-1]['holdout']['reasoner_action_agreement'],3)) if e else 'Nemotron evaluation not run.'; assert w in n, w; print('ok')\""
     acceptance:
       - check prints ok
       - every table number appears in metrics/results.json
       - nothing outside the table sections changed
+      - the Nemotron table shows every eval round exactly as in results.json
     max_iterations: 2
 
   - id: N14
@@ -207,7 +286,7 @@ nodes:
     check: "git worktree list"
     acceptance:
       - report lists each README command run with pass/fail and last output line
-      - report says whether make check passed in the clean worktree
+      - report says whether make check passed in the clean worktree without a key or network
       - findings ordered by severity, each tied to a README line
       - the leash-fresh worktree is removed
     max_iterations: 1

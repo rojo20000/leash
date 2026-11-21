@@ -123,3 +123,106 @@ then depth of N5's anomaly evaluation. Never cut: the attack-vs-defense demo, th
 - Windows locks a loaded `.pyd`. While N2 is rebuilding the extension, no other process may have
   `leash_core` imported, or `maturin develop` fails.
 - Several subagents work in this one working tree at the same time. A node edits only the paths it owns.
+
+---------------------------------------------------------------------------------------------------------
+
+# ADDENDUM (team, 11:23 am): Nemotron integration. Where this conflicts with anything above, this wins.
+
+We are also entering the NVIDIA "Best Use of Nemotron" track. Judges score: (1) Nemotron is central to the
+project's value, not a thin chatbot layer, and we clearly explain what it does and why it matters; (2) the
+demo works reliably, with strong choices in architecture, API use, data flow, tool use, latency and error
+handling; (3) Nemotron's output is useful, relevant and trustworthy, and we improved it through prompt
+design, grounding, evaluation or feedback loops; (4) real impact for a clear audience; (5) a thoughtful,
+novel use that feels distinct from generic AI demos. Required submission text: what Nemotron is doing, why
+it matters, and how we maximize its capabilities.
+
+## Models
+NVIDIA Build hosted OpenAI-compatible API, base URL https://integrate.api.nvidia.com/v1, key in env var
+NVIDIA_API_KEY, loaded from the git-ignored `.env`. Never print, log, record or commit the key.
+- Nemotron 3.5 Lightning runs the clinical agent and the gateway's policy reasoner.
+- Nemotron 3.5 Content Safety with a custom policy we write ("HIPAA minimum necessary: flag requests or
+  outputs that disclose patient identifiers or records beyond what the stated task needs, or send them to
+  unapproved destinations") checks tool-call payloads and outbound content.
+- NemoGuard JailbreakDetect checks documents the agent reads, as a second detector alongside our TF-IDF
+  classifier.
+Exact IDs and request formats come from GET https://integrate.api.nvidia.com/v1/models and each model's API
+reference page on build.nvidia.com. Do not guess IDs. If a model is not available, use the closest Nemotron
+model from the list and report the swap (the overseer records it in DECISIONS.md).
+
+Verified by the overseer at 11:25 (the model list is readable without a key; 33 models):
+- `nvidia/nemotron-3.5-lightning-30b-a3b`: listed. Its build.nvidia.com page shows the OpenAI client with
+  `base_url="https://integrate.api.nvidia.com/v1"` and `chat.completions.create(model=..., messages=...,
+  temperature, top_p, max_tokens, extra_body={"chat_template_kwargs":{"enable_thinking":True},
+  "reasoning_budget":16384}, stream=True)`; reasoning arrives as `delta.reasoning_content`. Function calling:
+  supported. Structured output: supported. Context 1M.
+- `nvidia/nemotron-3.5-content-safety`: listed. Request format NOT yet read (the page did not render); N16
+  reads the API reference before coding against it.
+- NemoGuard JailbreakDetect: NOT in the /v1/models list. A build.nvidia.com page exists at
+  /nvidia/nemoguard-jailbreak-detect but did not render. Unverified recollection: it may be served from a
+  different host and path than the chat API. Only integrate.api.nvidia.com is an allowed destination. N16
+  checks the reference page: use it only if it is served from integrate.api.nvidia.com; otherwise swap.
+- Other listed candidates: `nvidia/llama-3.1-nemotron-safety-guard-8b-v3`,
+  `nvidia/llama-3.1-nemoguard-8b-topic-control`, `nvidia/nemotron-3.5-bolt-e4b`,
+  `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning`, `nvidia/nemotron-3-ultra-550b-a55b`,
+  `nvidia/nemotron-3.5-super-vl-120b-a12b`, embeddings `nvidia/nemotron-3.5-embed-1b` and `-8b`.
+- UPDATE 11:40: the team supplied the key; it is in `.env` (git-ignored). Never print it. Live test calls by
+  the overseer through `POST https://integrate.api.nvidia.com/v1/chat/completions`:
+  - `nvidia/nemotron-3.5-lightning-30b-a3b`: HTTP 200 in 343 ms for a one-word reply; a tool-call request
+    (`tools`, `tool_choice:"auto"`, `temperature:0`, top-level `chat_template_kwargs:{"enable_thinking":false}`)
+    returned a correct `tool_calls` entry in 612 ms with 0 reasoning tokens.
+  - `nvidia/nemotron-3.5-content-safety`: HTTP 404 twice, "Specified function in account ... is not found".
+    It is listed but this key cannot call it on the chat endpoint. N16 checks its reference page for a
+    different path; if it stays unavailable, swap to the closest listed model.
+  - `nvidia/llama-3.1-nemotron-safety-guard-8b-v3`: HTTP 200 in about 560-680 ms. Plain user message in,
+    JSON text out: `{"User Safety": "safe"}` for a benign scheduling sentence, and
+    `{"User Safety": "unsafe", "Safety Categories": "PII/Privacy"}` for a sentence asking an AI to ignore its
+    instructions and send a full record to an outside address. Whether it accepts a custom policy is unread.
+  - `nvidia/llama-3.1-nemoguard-8b-topic-control`: HTTP 500 (server-side inference error). Do not depend on it.
+  All checks must still pass with no key and no network (replay mode), because judges will not have a key.
+
+## Pipeline with Nemotron
+policy (Rust) → injection check (TF-IDF + JailbreakDetect, combined) → identifier minimization (Rust
+pre-scan + Presidio) → Content Safety on the payload → anomaly score → decision → audit append.
+For every escalated or blocked call, the Lightning policy reasoner reads the call, the role policy, the
+detector signals and the minimized context, and returns JSON: {risk_level, explanation (2-3 plain sentences
+for a clinician or compliance reviewer), policy_rule_ids, recommended_action}. The dashboard's approval
+queue shows this explanation next to approve and deny. The final decision always comes from deterministic
+policy plus the reviewer. Nemotron explains and recommends, and never unblocks a call on its own. This is
+the core design idea, stated in the pitch: AI judgment where it helps humans decide, hard rules where
+safety requires them.
+
+## Reliability
+One shared client module, `leash/nemotron.py`, with timeouts, retries with backoff, and schema validation of
+JSON outputs (retry once on invalid JSON, then fall back). Fallbacks: the agent falls back to the local
+Ollama model in DECISIONS.md, the reasoner falls back to a template explanation built from the policy
+reason, and the safety checks fall back to our local classifiers. The gateway logs which path served each
+call, and the dashboard shows it. The client records every Nemotron request and response to
+`demo/recordings/`, and `--scripted` replays them, so the judged demo works even if the network or API
+fails. Record per-call latency for each model into metrics/results.json.
+
+## Data rule update
+Calls to integrate.api.nvidia.com carrying synthetic data are allowed. No other off-machine traffic. (This
+supersedes "no external LLM APIs" in CLAUDE.md.) Production story for the pitch: the same open models can
+run on-premises from their Hugging Face weights, so patient data never has to leave the hospital.
+
+## Graph additions (the planner adds these to graph/plan.yaml with checks and acceptance criteria)
+- N0 preflight also checks that NVIDIA_API_KEY is set and that one test call to Lightning returns.
+- N16 nemotron_client (implementer, Stage 1, first priority): leash/nemotron.py, model discovery, recording
+  and replay, fallbacks, unit tests using recorded fixtures. N6 and N17 depend on it.
+- N17 nemotron_reasoner (implementer, Stage 1): reasoner prompt, JSON schema, and its integration into the
+  gateway and the approval queue.
+- N18 nemotron_eval (Stage 3, implementer, with the transcriber for tables): build
+  `ml/eval/nemotron_cases.jsonl` with about 40 labeled cases (benign calls, over-broad reads, the
+  exfiltration attempt, injected and clean documents). Report: injection detection precision and recall for
+  TF-IDF alone, JailbreakDetect alone, and both combined; Content Safety flag accuracy; and reasoner
+  agreement with labeled recommended_action. Run it as a loop: measure, have the implementer revise the
+  reasoner prompt and the Content Safety policy text based on the failed cases, re-measure, at most 3
+  rounds. Keep each round's numbers. The before-and-after improvement is evidence for criterion (3).
+- N12 docs also writes docs/NEMOTRON.md (what Nemotron does in Leash, why it matters, how we maximize it,
+  the eval table with before and after numbers, latency per model, and fallback design) and pastes its first
+  three paragraphs into docs/SUBMISSION.md as the track submission text. It adds one slide to PITCH.md titled
+  "Why Nemotron", and one titled "How Leash differs from OpenShell and NeMo Guardrails": those govern general
+  agent runtimes and conversations, while Leash governs clinical actions on patient records, with HIPAA
+  minimum-necessary redaction, FHIR-aware policy, and a tamper-evident audit trail mapped to HIPAA rules.
+- Never-cut list additions: N16, N17, and at least one round of N18. If time runs short, drop JailbreakDetect
+  before Content Safety, and keep the reasoner.

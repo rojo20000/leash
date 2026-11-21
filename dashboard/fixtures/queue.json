@@ -1,0 +1,120 @@
+{
+ "items": [
+  {
+   "queue_id": "q-0001",
+   "kind": "alert",
+   "status": "pending",
+   "created_at": "2026-11-21T14:01:00Z",
+   "call_id": "c0005",
+   "session_id": "demo-protected",
+   "tool": "send_email",
+   "args": {
+    "to": [
+     "records-transfer@outside-clinic.example"
+    ],
+    "subject": "Record",
+    "body": "Synthetic patient summary"
+   },
+   "decision": "block",
+   "reasons": [
+    {
+     "code": "EMAIL_DOMAIN_NOT_ALLOWED",
+     "stage": "policy",
+     "detail": "outside-clinic.example not allowed"
+    }
+   ],
+   "reviewed_by": null,
+   "reviewed_at": null,
+   "note": "",
+   "reasoner": {
+    "served_by": "replay",
+    "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "latency_ms": 812.4,
+    "risk_level": "critical",
+    "explanation": "This send_email call addressed a patient record summary to an address outside the clinic's approved domains. Sending it would move patient information off the clinic's systems. Recommend deny and confirm the block.",
+    "policy_rule_ids": [
+     "email.allowed_domains"
+    ],
+    "recommended_action": "deny",
+    "advisory": true,
+    "error": ""
+   }
+  },
+  {
+   "queue_id": "q-0002",
+   "kind": "approval",
+   "status": "pending",
+   "created_at": "2026-11-21T14:01:00Z",
+   "call_id": "c0007",
+   "session_id": "demo-protected",
+   "tool": "read_record",
+   "args": {
+    "patient_id": "pt-0099"
+   },
+   "decision": "escalate",
+   "reasons": [
+    {
+     "code": "RECORD_RATE_EXCEEDED",
+     "stage": "policy",
+     "detail": "11 distinct patients in 300 s"
+    }
+   ],
+   "reviewed_by": null,
+   "reviewed_at": null,
+   "note": "",
+   "reasoner": {
+    "served_by": "replay",
+    "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "latency_ms": 640.1,
+    "risk_level": "medium",
+    "explanation": "The agent opened many different patient charts in a short window, more than a scheduling role normally needs. This may be a bulk read; a reviewer should check the session before approving.",
+    "policy_rule_ids": [
+     "rate.max_records"
+    ],
+    "recommended_action": "needs_more_info",
+    "advisory": true,
+    "error": ""
+   }
+  },
+  {
+   "queue_id": "q-0003",
+   "kind": "approval",
+   "status": "pending",
+   "created_at": "2026-11-21T14:01:00Z",
+   "call_id": "c0008",
+   "session_id": "demo-protected",
+   "tool": "send_email",
+   "args": {
+    "to": [
+     "pt-0042@example.test"
+    ],
+    "subject": "Reminder",
+    "body": "Synthetic reminder"
+   },
+   "decision": "escalate",
+   "reasons": [
+    {
+     "code": "CONTENT_SAFETY_FLAGGED",
+     "stage": "policy",
+     "detail": "diagnosis and date of birth in body"
+    }
+   ],
+   "reviewed_by": null,
+   "reviewed_at": null,
+   "note": "",
+   "reasoner": {
+    "served_by": "replay",
+    "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "latency_ms": 701.8,
+    "risk_level": "high",
+    "explanation": "The outgoing message body includes a diagnosis and a date of birth, which go beyond what an appointment reminder needs. Recommend deny and ask for a minimal reminder instead.",
+    "policy_rule_ids": [
+     "gateway.content_safety"
+    ],
+    "recommended_action": "deny",
+    "advisory": true,
+    "error": ""
+   }
+  }
+ ]
+}

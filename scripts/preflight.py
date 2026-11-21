@@ -67,7 +67,53 @@ def check_tool(name, cmd, args=("--version",), minimum=None, optional=False):
     report(True, name, v)
 
 
+def nemotron_checks():
+    """Nemotron rows: (ok True/False/None, name, detail). Never prints or returns any part of the key."""
+    import tempfile
+
+    sys.path.insert(0, str(ROOT))
+    import leash.nemotron as nm
+
+    rows = []
+    from_env = bool(os.environ.get("NVIDIA_API_KEY"))
+    nm.load_dotenv()
+    has_key = bool(os.environ.get("NVIDIA_API_KEY"))
+    if has_key:
+        rows.append((True, "nvidia_key", "set (from " + ("environment)" if from_env else ".env)")))
+    else:
+        rows.append((False, "nvidia_key", "NVIDIA_API_KEY not set: add NVIDIA_API_KEY=... to leash/.env "
+                     "(git-ignored). Live Nemotron is off; replay mode still works."))
+    saved = {k: os.environ.get(k) for k in ("LEASH_NEMOTRON", "LEASH_NEMOTRON_RECORDINGS")}
+    with tempfile.TemporaryDirectory() as tmp:  # preflight writes no recordings
+        os.environ["LEASH_NEMOTRON"], os.environ["LEASH_NEMOTRON_RECORDINGS"] = "live", tmp
+        try:
+            nm._reset()
+            ids = nm.list_models(refresh=True)
+            if ids:
+                roles = "; ".join(
+                    f"{r}={i['id']}" + (f" (swap from {i['requested']})" if i["swapped"] else "")
+                    for r, i in nm.config()["models"].items())
+                rows.append((True, "nvidia_models", f"{len(ids)} models; {roles}"))
+            else:
+                rows.append((False, "nvidia_models", nm._models_error or "no models returned"))
+            if has_key:
+                r = nm.chat([{"role": "user", "content": "Reply with the single word ok."}], max_tokens=5)
+                rows.append((True, "lightning_call", f"{r.latency_ms:.0f} ms, {r.model}") if r.ok
+                            else (False, "lightning_call", r.error))
+            else:
+                rows.append((None, "lightning_call", "no key"))
+        finally:
+            for k, v in saved.items():
+                os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+            nm._reset()
+    return rows
+
+
 def main():
+    if sys.argv[1:] == ["--only", "nemotron"]:
+        for row in nemotron_checks():
+            report(*row)
+        sys.exit(1 if failed else 0)
     py = sys.version.split()[0]
     report(sys.version_info >= (3, 12), "python", f"{py} ({sys.executable})")
     if find_exe("uv"):

@@ -1,0 +1,44 @@
+Return to clinic in three months or sooner if symptoms worsen.
+Continue {med} and recheck labs before the next visit.
+Will coordinate with {staff} regarding specialist availability.
+Patient educated on warning signs that warrant a call to the office or an emergency visit.
+Repeat basic metabolic panel in two weeks and forward the results to {clinic}.
+Start a low-sodium diet and increase daily walking to thirty minutes as tolerated.
+Referral placed to cardiology for further evaluation of the abnormal echocardiogram findings.
+Plan reviewed with {name}, who verbalized understanding and agreed with the approach.
+Schedule a follow-up visit in six weeks to reassess blood pressure control.
+No changes to the current regimen today; reassess at the next scheduled appointment.
+Imaging ordered to clarify the finding and results will be discussed by phone when available.
+Counsel the patient on fall prevention and recommend a home safety evaluation.
+Document the advance directive discussion and place a copy in the chart.
+Adjust the dose of {med} downward and monitor for dizziness over the coming week.
+Continue physical therapy twice weekly and reassess range of motion at the next session.
+Discussed the option of a sleep study; the patient will consider it and call back.
+Vaccination catch-up recommended; patient will return to the nurse clinic next month.
+Refer to the diabetes education program and request a copy of the completed curriculum.
+Follow up on the pending culture results and contact the patient if any action is needed.
+Encourage smoking cessation resources; patient declined pharmacotherapy at this time.
+Obtain prior records from {clinic} before making any change to the long-term plan.
+Patient to keep a daily symptom diary and bring it to the next appointment.
+Plan to reassess kidney function after the medication change has had time to take effect.
+Discussed risks and benefits of the proposed procedure; consent to be signed at pre-op.
+Hold non-urgent elective procedures until the infection has resolved and labs are normal.
+Advised to seek care immediately for chest pain, fainting, or new shortness of breath.
+Coordinate with {staff} to arrange transportation for the upcoming specialist visit.
+Continue current management and address any new concerns at the next routine visit.
+Lab work reviewed and no further testing is needed at this stage of care.
+Plan to taper the medication slowly over four weeks while monitoring mood and sleep.
+Patient will return for a repeat audiogram in six months to track hearing changes.
+Set a goal of lowering the blood pressure target by the next quarterly check.
+Recommend an updated vaccine series and provide written information before the next visit.
+Will forward the summary to the referring clinic once the consult note is finalized.
+Discussed the plan with {name}, and the patient agreed to start the new exercise routine.
+Monitor weight weekly at home and report any gain of more than three pounds in two days.
+Arrange a bone density follow-up in two years given the current osteopenia results.
+Plan to transition the patient to a longer-acting formulation if symptoms persist.
+Final plan agreed upon today; the patient will call the clinic with any questions afterward.
+Medication refills authorized for ninety days with one refill remaining on the current prescription.
+Specialist input requested on the complex case; will update the plan when the reply arrives.
+Patient instructed to hydrate well and avoid alcohol until the repeat labs are reviewed.
+Scheduled a nurse call in one week to check on tolerance of the new dose.
+Return precautions reviewed in detail, and the patient repeated the key points back accurately.

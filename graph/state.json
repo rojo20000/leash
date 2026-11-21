@@ -1,7 +1,168 @@
 {
-  "updated": "2026-11-21T11:12-06:00",
+  "updated": "2026-11-21T11:50-06:00",
+  "schedule": {
+    "stage0_due": "11:50",
+    "stage1_due": "15:30",
+    "stage2_due": "17:30",
+    "stage3_due": "19:00",
+    "freeze": "19:00",
+    "stage4_due": "20:00"
+  },
+  "gates": {
+    "stage0": {
+      "status": "passed",
+      "at": "11:26",
+      "commit": "f916a54"
+    }
+  },
   "nodes": {
-    "N0": {"name": "preflight", "status": "passed", "iteration": 1, "last_check": "make preflight: 13/13 PASS (python 3.12.14, cargo 1.100.0, maturin 1.16.0, ollama 0.40.16, leash_core ok, en_core_web_lg, qwen3.5:9b tool_calls ok)", "reviewer_notes": ""},
-    "N1": {"name": "plan", "status": "running", "iteration": 1, "last_check": "", "reviewer_notes": ""}
-  }
+    "N0": {
+      "name": "preflight",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "make preflight: 13/13 PASS (python 3.12.14, cargo 1.100.0, maturin 1.16.0, ollama 0.40.16, leash_core ok, en_core_web_lg, qwen3.5:9b tool_calls ok); 11:40 added by hand: NVIDIA_API_KEY present in .env, Lightning test call HTTP 200 in 343 ms",
+      "reviewer_notes": ""
+    },
+    "N1": {
+      "name": "plan",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "plan.yaml loads with 13 nodes; missing briefs: []; duplicate owns across stage-1 nodes: []",
+      "reviewer_notes": "CONTRACTS.md reviewed in full (C1-C9): core interface, hash chain, schemas, ports, gateway API, ML API, ownership all literal. Planner also wrote pytest.ini, policies/scheduling_assistant.toml, data/corpus/expand.py. Follow-ups for N8: .gitignore additions (runtime/, data/generated/, ml/artifacts/, metrics/*.tmp); consider .gitattributes for line endings."
+    },
+    "N2": {
+      "name": "rust_core",
+      "status": "passed",
+      "iteration": 2,
+      "last_check": "cargo test: 11 passed (policy_any_resource_checked ok); full pytest: 47 passed, 1 skipped on Rust core + real ML and on LEASH_CORE=py LEASH_ML=stub; bench --quick: policy rust 3.09 us vs python 18.59 us (6.02x), audit append 1.37x",
+      "reviewer_notes": "Overseer re-ran the full check chain: exit 0. Loader returns python with LEASH_CORE=py and rust when unset. Audit append is disk-bound; speedup varies 0.6x-1.35x run to run. Idea not done: keep the audit file handle open in Rust. REWORK (11:45): Policy.evaluate checked only resource_types[0], so a five-type read_record passed policy (both Rust and Python). Cause: ambiguous wording in CONTRACTS.md C1.1 step 2. Routed: implementer fixes both cores and adds tests; planner fixes the wording. ITERATION 2 PASSED (11:33): overseer verified both cores now return block RESOURCE_NOT_ALLOWED for the five-type read and allow for [Patient, Encounter] and for an empty list. Note for N8: pytest.ini has addopts=-q, so `pytest -q` prints no summary line; use plain `pytest` in make check."
+    },
+    "N3": {
+      "name": "data_ehr",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "generate.py wrote data/generated; pytest tests/test_data_*.py tests/test_ehr_*.py: 12 passed",
+      "reviewer_notes": "Overseer verified: 200 Patients, 483 Conditions, 495 MedicationRequests, 706 Encounters, 5 DocumentReferences; attacker address only in ref-0042.pdf; normal.jsonl 320 sessions, abnormal.jsonl 100 sessions across all 4 scenarios."
+    },
+    "N4": {
+      "name": "corpus",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "banks ok: openings=48, findings=69, plans=44, benign_imperatives=83, injections=100; wrote 1200 rows injected=600 benign=600 hard_negative=300 test=300 unique_texts=1200",
+      "reviewer_notes": "Overseer re-ran expand.py and scanned injections.txt: plain ASCII natural language, no code/markup/URLs."
+    },
+    "N5": {
+      "name": "ml_models",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "train_injection, train_anomaly, eval_minimizer exit 0; pytest tests/test_ml_*.py: 4 passed. injection P 1.00 R 0.853 (n_test 300, 0/150 hard negatives flagged); anomaly P 0.958 R 0.911, normal FPR 5.7%; minimization P 1.00 R 1.00 (240 notes, 572 spans)",
+      "reviewer_notes": "Overseer re-ran the check: exit 0, ml.api.ready() True. Deviations accepted: extra single-sentence benign negatives in training; anomaly score is forced anomalous when a feature that was constant in training is non-zero (exfil_email and off_role_resources recall 1.0 come from this guard, docs must say so); DOB redacted only next to a birth label; minimize keep_fields optional. Minimization eval is templated and likely easy."
+    },
+    "N6": {
+      "name": "agent_gateway",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "LEASH_CORE=py LEASH_ML=stub pytest tests/test_gateway_*.py tests/test_agent_*.py: 13 passed, 1 skipped (live LLM, opt-in). Same result on Rust core + real ML.",
+      "reviewer_notes": "Overseer ran the protected scripted replay on Rust core + real ML: injected referral blocked (INJECTION_DETECTED, alert q-0001), attacker email blocked (EMAIL_DOMAIN_NOT_ALLOWED, alert q-0003), 0 sink lines to the attacker, audit verify ok with 20 entries. For N8/N17: (a) after the off-role read the anomaly score stays 0.967 for the rest of the 60 s window, so the two later legitimate referrals are escalated (10 allow / 2 block / 8 escalate); (b) first minimize call takes 5.7 s (lazy Presidio/spaCy load), needs warm-up and exclusion from latency; (c) importing gateway.app creates runtime/ in the repo; (d) decision seq is 1-based."
+    },
+    "N7": {
+      "name": "dashboard",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "LEASH_CORE=py pytest tests/test_dashboard_*.py: 4 passed in 13.14s",
+      "reviewer_notes": "Overseer re-ran the check and opened the app in fixture mode in a browser: decision feed, approval queue with Approve/Deny (Dismiss/Confirm block for alerts), reasoner explanation with risk level, cited rules, recommendation, served-by and latency, the advisory caption, audit-chain status and metrics all render. For N11: fixture model ids for jailbreak and content safety are invented (nvidia/nemotron-jailbreak-detect, nvidia/nemotron-content-safety) and must be replaced with the ids N16 resolves; rates show as 0.556 rather than percentages; check against the live gateway once N17 lands."
+    },
+    "N8": {
+      "name": "integration",
+      "status": "pending",
+      "iteration": 0,
+      "last_check": "",
+      "reviewer_notes": ""
+    },
+    "N9": {
+      "name": "metrics",
+      "status": "pending",
+      "iteration": 0,
+      "last_check": "",
+      "reviewer_notes": ""
+    },
+    "N10": {
+      "name": "live_demo",
+      "status": "pending",
+      "iteration": 0,
+      "last_check": "",
+      "reviewer_notes": ""
+    },
+    "N11": {
+      "name": "dashboard_polish",
+      "status": "pending",
+      "iteration": 0,
+      "last_check": "",
+      "reviewer_notes": ""
+    },
+    "N12": {
+      "name": "docs",
+      "status": "pending",
+      "iteration": 0,
+      "last_check": "",
+      "reviewer_notes": ""
+    },
+    "N13": {
+      "name": "tables",
+      "status": "pending",
+      "iteration": 0,
+      "last_check": "",
+      "reviewer_notes": ""
+    },
+    "N14": {
+      "name": "fresh_eyes",
+      "status": "pending",
+      "iteration": 0,
+      "last_check": "",
+      "reviewer_notes": ""
+    },
+    "N15": {
+      "name": "final",
+      "status": "pending",
+      "iteration": 0,
+      "last_check": "",
+      "reviewer_notes": ""
+    },
+    "N1b": {
+      "name": "replan_nemotron",
+      "status": "passed",
+      "iteration": 2,
+      "last_check": "plan.yaml loads with 17 nodes; missing briefs: []",
+      "reviewer_notes": "Iteration 1 blocked (addendum missing, overseer error). Iteration 2: CONTRACTS.md C10 (C10.1-C10.10) reviewed by overseer; design rule 'Nemotron output can only add caution, never remove it'; reasoner runs after decide and is advisory. Changes to C1-C9: C1.1 step 2 (any disallowed resource blocks), C5.1 step 5 (blocked calls skip the anomaly window), C5 intro (no files at import, warm-up), C9 (demo/recordings/nemotron/** to N16). Accepted answers to planner questions: model-only injection signal and Content Safety flags escalate rather than block; make preflight fails without the key (make check does not need it); jsonschema added to requirements by N8."
+    },
+    "N16": {
+      "name": "nemotron_client",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "LEASH_NEMOTRON=replay pytest tests/test_nemotron_*.py: 12 passed, 1 skipped (live, opt-in); preflight --only nemotron: PASS nvidia_key, PASS nvidia_models (33), PASS lightning_call 303 ms",
+      "reviewer_notes": "Overseer re-ran the check and scanned the repo: the real key appears only in .env. Resolved models: lightning nvidia/nemotron-3.5-lightning-30b-a3b (275-550 ms); safety nvidia/llama-3.1-nemotron-safety-guard-8b-v3 (swap from nemotron-3.5-content-safety: HTTP 404 for our key, and its page shows a fixed taxonomy with no custom policy), about 710-750 ms; jailbreak the same safety-guard model with the injection policy (swap from NemoGuard JailbreakDetect, which is served from ai.api.nvidia.com, not an allowed host), about 495-850 ms. chat_json uses response_format json_schema. For N18: safety-guard flags a benign MRN scheduling sentence as PII/Privacy; tune the policy text."
+    },
+    "N17": {
+      "name": "nemotron_reasoner",
+      "status": "running",
+      "iteration": 1,
+      "last_check": "",
+      "reviewer_notes": "gateway integration + reasoner; depends on N16 and N6; never cut"
+    },
+    "N18": {
+      "name": "nemotron_eval",
+      "status": "pending",
+      "iteration": 0,
+      "last_check": "",
+      "reviewer_notes": "added by the team's Nemotron addendum; never cut (N18: at least one round)"
+    },
+    "N19": {
+      "name": "nemotron_agent",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "LEASH_CORE=py LEASH_ML=stub LEASH_NEMOTRON=replay pytest tests/test_agent_*.py: 9 passed, 2 skipped (live Ollama and live Nemotron, opt-in)",
+      "reviewer_notes": "Overseer re-ran the check. Live Lightning result reported by the node: unprotected, 20 tool calls all served by nemotron, the agent followed the hidden instruction and one email to records-transfer@outside-clinic.example landed in the sink; protected, 15 tool calls all nemotron, no attacker email sent, 3 appointments booked. For N10: confirm from the decisions whether the protected run's read of ref-0042 was blocked with INJECTION_DETECTED (likely why the agent never attempted the email) and say so in the demo notes; the live agent is not deterministic, so the scripted replay remains the asserted demo. No recordings were written under demo/recordings/nemotron/calls/ by this node."
+    }
+  },
+  "clock_note": "Timestamps written before 11:33 in this file and DECISIONS.md were estimates and run up to ~12 minutes fast; actual: key supplied 11:28, N5/N6 passed 11:30."
 }

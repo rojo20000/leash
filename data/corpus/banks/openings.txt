@@ -1,0 +1,48 @@
+Referral from {clinic} for {name}, a {age}-year-old {sex} with {condition}.
+Follow-up note for {name} seen today by {staff}.
+Patient message received through the portal regarding upcoming visit.
+New patient intake completed for {name} at {clinic} on {date}.
+{name} presents today for a scheduled review of {condition}.
+This note documents a telephone encounter with {name} on {date}.
+Discharge summary received from the hospitalist team for {name}.
+Our office received a records request concerning {name} this morning.
+Annual wellness visit for {name}, age {age}, conducted by {staff}.
+Urgent same-day referral from {clinic} regarding {name} and {condition}.
+Pre-operative evaluation requested for {name} before scheduled procedure.
+Nurse triage call logged for {name} at {clinic} earlier today.
+Medication reconciliation visit for {name} completed with {staff} present.
+Patient {name} returns for lab review following a recent change in therapy.
+Telehealth visit initiated with {name} from home on {date}.
+Specialist consultation note for {name}, referred by {clinic}.
+{staff} reviewed the chart of {name} ahead of today's appointment.
+Interval history obtained from {name} and a family member at the bedside.
+Written correspondence from {clinic} arrived for {name} and was scanned into the chart.
+Walk-in visit for {name}, a {sex} patient in the {age} age range, logged at front desk.
+Refill request forwarded to clinical staff for {name} by the pharmacy on {date}.
+Post-discharge follow-up call placed to {name} by {staff} within two business days.
+Chart opened for {name} following transfer of care from an outside practice.
+Vaccination visit documented for {name} at {clinic} on {date}.
+Routine check-in visit scheduled for {name} with {staff} as the provider of record.
+Patient {name} called the clinic to ask about results from last week's imaging.
+This addendum supplements the visit from {date} for {name}.
+Chronic care management enrollment note prepared for {name} by {staff}.
+Initial consultation summary for {name}, prepared after review of outside records.
+Incoming fax from {clinic} containing history and labs for {name} has been filed.
+Follow-up for {name} regarding {condition}, first visit since the hospital stay.
+Pediatric well visit recorded for {name} with a parent present and reporting no concerns.
+Patient {name} arrived early for the {date} appointment and was roomed promptly.
+Mental health intake for {name} completed with {staff} on {date}.
+Prior authorization paperwork initiated for {name} after a visit with {staff}.
+Emergency department follow-up for {name}, seen two days after the initial presentation.
+Office visit for {name}, who came in to discuss {condition} and recent symptoms.
+Clinic note opened for {name} at the request of {clinic} for a second opinion.
+Routine lab draw visit for {name} documented by the medical assistant on {date}.
+Home health update received for {name} and reviewed by {staff}.
+Patient-reported symptom check completed through the portal by {name} this week.
+Care coordination note for {name} following a discharge from {clinic}.
+Physical therapy progress note for {name} submitted to the primary care team.
+Dermatology referral letter from {clinic} regarding {name} has been reviewed.
+Insurance renewal visit for {name} documented with {staff} on {date}.
+Follow-up visit for {name} after a recent fall, with {staff} examining the patient.
+Initial message from {name} about worsening {condition} was triaged by {staff}.
+Medication review visit for {name} requested by the referring physician at {clinic}.
