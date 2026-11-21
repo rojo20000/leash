@@ -90,6 +90,18 @@ def test_recipient_single_address_parity(mod):
         assert got[:2] == ((want, "OK") if want == "allow" else (want, "EMAIL_DOMAIN_NOT_ALLOWED")), repr(r)
 
 
+def test_malformed_args_parity():  # A20: call_facts turns any JSON into string facts, so both cores answer the same
+    from agent.tools import call_facts
+    for tool, args, want in (("read_record", {"patient_id": 42, "resource_types": ["Patient"]}, ("allow", "OK")),
+                             ("read_record", {"patient_id": "pt-0001", "resource_types": [1]},
+                              ("block", "RESOURCE_NOT_ALLOWED")),
+                             ("send_email", {"to": [None]}, ("block", "EMAIL_DOMAIN_NOT_ALLOWED")),
+                             ("send_email", {"to": 5}, ("block", "EMAIL_DOMAIN_NOT_ALLOWED"))):
+        facts = call_facts(tool, args)
+        for mod in (core_py, rust):
+            assert tuple(mod.Policy.from_toml(POLICY).evaluate(tool, *facts, 0.0))[:2] == want, (mod, tool, args)
+
+
 def test_policy_bad_toml_parity():
     for bad in ['role = "x"', "not toml [", open(POLICY).read().replace("window_seconds = 300", 'window_seconds = "x"')]:
         for m in (core_py, rust):

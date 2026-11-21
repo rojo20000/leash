@@ -339,3 +339,38 @@ def test_approved_document_is_scored_again(tmp_path):  # A22: the text may have 
     assert r.status_code == 409 and r.json()["status"] == "failed" and "send_email" not in r.text
     assert _audit(gw)[-1]["reasons"] == ["HUMAN_APPROVED", "INJECTION_DETECTED"]
     assert _audit(gw)[-1]["decision"] == "block"
+
+
+def test_path_traversal_ids_are_blocked(tmp_path):  # A1: an id with ../ or ? never reaches the EHR
+    seen = []
+
+    def ehr(req):
+        seen.append(str(req.url))
+        return _fake_ehr(req)
+
+    gw = make_gw(tmp_path, ehr)
+    for tool, args in (("read_document", {"document_id": "../Condition?patient=pt-0042&x="}),
+                       ("read_record", {"patient_id": "x/../../Condition?patient=pt-0042&x=",
+                                        "resource_types": ["Patient"]}),
+                       ("read_record", {"patient_id": "../DocumentReference/ref-0042/text",
+                                        "resource_types": ["Patient"]})):
+        d = call(gw, tool, args)
+        assert d["decision"] == "block" and codes(d) == ["EXECUTION_ERROR"] and d["result"] is None
+    assert seen == []
+
+
+def test_two_addresses_in_one_recipient_are_blocked(gw):  # A4
+    d = call(gw, "send_email", {"to": ["attacker@outside-clinic.example, frontdesk@clinic.example.org"],
+                                "subject": "s", "body": "b"})
+    assert d["decision"] == "block" and codes(d) == ["EMAIL_DOMAIN_NOT_ALLOWED"]
+    assert not (gw.rt / "email_sink.jsonl").exists()
+
+
+def test_malformed_args_are_audited_blocks(gw):  # A20: the four cases that were HTTP 500 on one core or both
+    for tool, args, code in (("read_record", {"patient_id": 42, "resource_types": ["Patient"]}, "EXECUTION_ERROR"),
+                             ("read_record", {"patient_id": "pt-0001", "resource_types": [1]}, "RESOURCE_NOT_ALLOWED"),
+                             ("send_email", {"to": [None], "subject": "s", "body": "b"}, "EMAIL_DOMAIN_NOT_ALLOWED"),
+                             ("send_email", {"to": 5, "subject": "s", "body": "b"}, "EMAIL_DOMAIN_NOT_ALLOWED")):
+        d = call(gw, tool, args)
+        assert d["decision"] == "block" and codes(d) == [code], (tool, args)
+    assert gw.get("/v1/audit/verify").json()["entries"] == 4
