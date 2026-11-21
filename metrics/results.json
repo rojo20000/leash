@@ -21,7 +21,7 @@
     "contamination": 0.02,
     "f1": 0.9342,
     "false_positive_rate_normal": 0.057,
-    "generated_at": "2026-11-21T18:53:06+00:00",
+    "generated_at": "2026-11-21T19:42:28+00:00",
     "k": 33.9319,
     "n_test_abnormal": 2089,
     "n_test_normal": 1457,
@@ -31,20 +31,37 @@
     "threshold": 0.5
   },
   "bench": {
-    "generated_at": "2026-11-21T18:53:45+00:00",
+    "generated_at": "2026-11-21T19:44:59+00:00",
+    "n": 100000,
+    "python": {
+      "audit_append_us": 490.046,
+      "policy_us": 12.363
+    },
+    "quick": false,
+    "rust": {
+      "audit_append_us": 241.524,
+      "policy_us": 3.063
+    },
+    "speedup": {
+      "audit_append": 2.03,
+      "policy": 4.04
+    }
+  },
+  "bench_quick": {
+    "generated_at": "2026-11-21T19:45:27+00:00",
     "n": 10000,
     "python": {
-      "audit_append_us": 274.012,
-      "policy_us": 16.808
+      "audit_append_us": 322.45,
+      "policy_us": 11.242
     },
     "quick": true,
     "rust": {
-      "audit_append_us": 209.014,
-      "policy_us": 3.1
+      "audit_append_us": 234.256,
+      "policy_us": 3.076
     },
     "speedup": {
-      "audit_append": 1.31,
-      "policy": 5.42
+      "audit_append": 1.38,
+      "policy": 3.65
     }
   },
   "demo": {
@@ -56,7 +73,7 @@
     },
     "core": "rust",
     "driver": "scripted",
-    "generated_at": "2026-11-21T18:53:53+00:00",
+    "generated_at": "2026-11-21T19:43:14+00:00",
     "ml": "real",
     "nemotron_mode": "replay",
     "protected_blocked": true,
@@ -69,9 +86,71 @@
     "verify_clean": true,
     "verify_tampered": false
   },
+  "gateway": {
+    "calls": 245,
+    "core": "rust",
+    "generated_at": "2026-11-21T18:59:14+00:00",
+    "latency_ms": {
+      "by_stage": {
+        "anomaly": {
+          "p50": 6.3675,
+          "p95": 6.7099
+        },
+        "audit": {
+          "p50": 0.3717,
+          "p95": 0.4955
+        },
+        "content_safety": {
+          "p50": 0.2466,
+          "p95": 0.3169
+        },
+        "injection": {
+          "p50": 0.0,
+          "p95": 1.3845
+        },
+        "jailbreak": {
+          "p50": 0.0,
+          "p95": 0.264
+        },
+        "minimize": {
+          "p50": 0.0349,
+          "p95": 8.12
+        },
+        "policy": {
+          "p50": 0.0078,
+          "p95": 0.0108
+        },
+        "reasoner": {
+          "p50": 0.0,
+          "p95": 0.5612
+        }
+      },
+      "p50": 7.3903,
+      "p95": 17.1404
+    },
+    "latency_ms_replay": {
+      "calls": 245,
+      "p50": 8.3679,
+      "p95": 19.5677,
+      "rates": {
+        "allow": 0.7143,
+        "block": 0.1224,
+        "escalate": 0.1633
+      }
+    },
+    "ml": "real",
+    "nemotron_mode": "off",
+    "rates": {
+      "allow": 0.7143,
+      "block": 0.1224,
+      "escalate": 0.1633
+    },
+    "sessions": 13,
+    "workload": "10 scripted-recording sessions x 20 calls + 3 bulk-read sessions x 15 read_record"
+  },
   "injection": {
     "f1": 0.9209,
-    "generated_at": "2026-11-21T18:53:01+00:00",
+    "generated_at": "2026-11-21T19:42:21+00:00",
     "hard_negative_false_positives": 0,
     "n_test": 300,
     "n_test_hard_negative": 150,
@@ -109,7 +188,7 @@
         "recall": 1.0
       }
     },
-    "generated_at": "2026-11-21T18:53:10+00:00",
+    "generated_at": "2026-11-21T19:42:33+00:00",
     "n_notes": 240,
     "n_spans": 572,
     "precision": 1.0,

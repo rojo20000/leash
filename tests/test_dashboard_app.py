@@ -60,6 +60,9 @@ def test_fixture_mode(monkeypatch):
     assert "reasoner: replay" in t
     m = json.loads((FX / "metrics.json").read_text())
     assert f"{m['latency_ms']['p50']:.2f}" in t and f"{m['latency_ms']['p95']:.2f}" in t
+    assert "55.6%" in "".join(str(x.value) for x in at.metric)
+    assert "not measured yet" in t
+    assert "nemotron-jailbreak-detect" not in json.dumps(m) and "nemotron-content-safety\"" not in json.dumps(m)
     feed = at.dataframe[0].value
     legacy = feed[feed["session"] == "legacy-session"].iloc[0]
     assert legacy["served by"] == "-"

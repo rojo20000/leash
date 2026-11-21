@@ -29,6 +29,10 @@ def fmt(v, nd=2):
     return DASH if v is None else (f"{v:.{nd}f}" if isinstance(v, float) else str(v))
 
 
+def pct(v):
+    return DASH if v is None else f"{v * 100:.1f}%"
+
+
 def served_by(d):
     n = d.get("nemotron")
     if not n:
@@ -61,7 +65,8 @@ def act(qid, action):
         return
     try:
         client.review(qid, action)
-        st.toast(f"{qid}: {action} done")
+        st.session_state["flash"] = f"{qid}: {action} done"
+        st.rerun()  # refetch so the queue, audit-chain count and feed reflect the review
     except (httpx.HTTPError, OSError) as e:
         st.error(f"{qid}: could not {action} ({type(e).__name__})")
 
@@ -71,6 +76,8 @@ auto = st.sidebar.toggle("Auto-refresh every 2 s", value=False)
 st.sidebar.button("Refresh")
 
 st.title("Leash")
+if "flash" in st.session_state:
+    st.toast(st.session_state.pop("flash"))
 if client.fixtures_dir():
     st.warning("FIXTURE MODE: synthetic data read from files, not from a gateway.")
 
@@ -103,13 +110,15 @@ st.header("Decision feed")
 rows = []
 for d in reversed((decisions or {}).get("decisions", [])):
     rows.append({"time": d.get("ts"), "session": d.get("session_id"), "tool": d.get("tool"),
-                 "decision": d.get("decision"),
+                 "decision": d.get("decision"), "added ms": (d.get("latency_ms") or {}).get("added"),
+                 "served by": served_by(d),
                  "reasons": "; ".join(r["code"] + (f" ({r['detail']})" if r.get("detail") else "")
-                                      for r in d.get("reasons", [])),
-                 "added ms": (d.get("latency_ms") or {}).get("added"), "served by": served_by(d)})
+                                      for r in d.get("reasons", []))})
 if rows:
-    st.dataframe(pd.DataFrame(rows).style.map(lambda v: f"color:{COLORS.get(v, 'inherit')};font-weight:600",
-                                              subset=["decision"]), hide_index=True)
+    st.dataframe(pd.DataFrame(rows).style
+                 .apply(lambda r: ["background-color:#cf222e33" if r["decision"] == "block" else ""] * len(r), axis=1)
+                 .map(lambda v: f"color:{COLORS.get(v, 'inherit')};font-weight:600", subset=["decision"]),
+                 hide_index=True, column_config={"reasons": st.column_config.TextColumn(width="large")})
 else:
     st.text("No decisions yet" if decisions is not None else DASH)
 
@@ -141,7 +150,7 @@ m = metrics or {}
 rates, lat = m.get("rates") or {}, m.get("latency_ms") or {}
 c = st.columns(5)
 for col, k, label in zip(c, ("allow", "escalate", "block"), ("Auto-approved", "Escalated", "Blocked")):
-    col.metric(label, fmt(rates.get(k), 3))
+    col.metric(label, pct(rates.get(k)))
 c[3].metric("Added p50 ms", fmt(lat.get("p50")))
 c[4].metric("Added p95 ms", fmt(lat.get("p95")))
 stages = lat.get("by_stage") or {}
@@ -150,8 +159,8 @@ st.dataframe([{"stage": s, "p50": v.get("p50"), "p95": v.get("p95")} for s, v in
 
 models = m.get("models") or {}
 st.subheader("Model quality")
-st.dataframe([{"model": k, "precision": (models.get(k) or {}).get("precision"),
-               "recall": (models.get(k) or {}).get("recall")} for k in ("injection", "anomaly", "minimization")],
+st.dataframe([{"model": k, "precision": pct((models.get(k) or {}).get("precision")),
+               "recall": pct((models.get(k) or {}).get("recall"))} for k in ("injection", "anomaly", "minimization")],
              hide_index=True)
 st.subheader("Rust vs Python benchmark")
 bench = models.get("bench")
@@ -162,6 +171,14 @@ else:
     st.dataframe([{"op": op, "rust us": rust.get(f"{op}_us"), "python us": py.get(f"{op}_us"),
                    "speedup": sp.get(op)} for op in ("policy", "audit_append")], hide_index=True)
 
+st.subheader("Gateway benchmark")
+gw = models.get("gateway")
+if isinstance(gw, dict) and gw:  # shape owned by bench/; shown as measured
+    st.dataframe([{"metric": k, "value": v if not isinstance(v, (dict, list)) else json.dumps(v)}
+                  for k, v in gw.items()], hide_index=True)
+else:
+    st.text("not measured yet")
+
 st.subheader("Nemotron")
 nm = m.get("nemotron") or {}
 sb = nm.get("served_by") or {}
@@ -169,15 +186,17 @@ st.dataframe([{"step": s, **(sb.get(s) or {})} for s in ("jailbreak", "content_s
              if sb else [{"step": DASH}], hide_index=True)
 st.dataframe([{"model": k, "p50": v.get("p50"), "p95": v.get("p95"), "n": v.get("n"), "source": v.get("source")}
               for k, v in (nm.get("latency_ms") or {}).items()] or [{"model": DASH}], hide_index=True)
-st.text("Resolved models: " + (", ".join(f"{k}={v}" for k, v in (nm.get("models") or {}).items()) or DASH))
+st.dataframe([{"role": k, "served model": v.get("id"), "requested": v.get("requested"), "swapped": v.get("swapped"),
+               "verified": v.get("verified")} for k, v in (nm.get("models") or {}).items()] or [{"role": DASH}],
+             hide_index=True)
 rounds = (((models.get("nemotron") or {}).get("eval") or {}).get("rounds")) or []
 if rounds:
     def _h(r):
         return r.get("holdout") or {}
     st.dataframe([{"round": r.get("round"),
-                   "holdout injection recall (combined)": ((_h(r).get("injection") or {}).get("combined") or {}).get("recall"),
-                   "content safety accuracy": _h(r).get("content_safety_accuracy"),
-                   "reasoner action agreement": _h(r).get("reasoner_action_agreement")} for r in rounds],
+                   "holdout injection recall (combined)": pct(((_h(r).get("injection") or {}).get("combined") or {}).get("recall")),
+                   "content safety accuracy": pct(_h(r).get("content_safety_accuracy")),
+                   "reasoner action agreement": pct(_h(r).get("reasoner_action_agreement"))} for r in rounds],
                  hide_index=True)
 
 if auto:

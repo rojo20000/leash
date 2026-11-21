@@ -50,7 +50,7 @@ def main():
         "policy": round(py["policy_us"] / rs["policy_us"], 2),
         "audit_append": round(py["audit_append_us"] / rs["audit_append_us"], 2),
     }
-    write_metrics("bench", {
+    write_metrics("bench_quick" if quick else "bench", {
         "n": n, "quick": quick, "rust": rs, "python": py, "speedup": speed,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     })

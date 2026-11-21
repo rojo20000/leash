@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21T12:55-06:00",
+  "updated": "2026-11-21T13:50-06:00",
   "schedule": {
     "stage0_due": "11:50",
     "stage1_due": "15:30",
@@ -25,6 +25,12 @@
       "at": "12:13",
       "commit": "a44574b",
       "check": "make check exit 0 in 53 s: cargo test 11 passed; pytest 96 passed, 3 skipped; bench --quick policy 7.12x, audit append 1.33x; demo --scripted --assert PASS 1-5"
+    },
+    "stage3": {
+      "status": "passed",
+      "at": "13:49",
+      "commit": "(see git log: 'stage 3')",
+      "check": "make check exit 0: cargo test 11 passed; pytest 100 passed, 3 skipped; demo totals 17 allow, 3 block, 0 escalate; PASS 1-5"
     }
   },
   "nodes": {
@@ -45,9 +51,9 @@
     "N2": {
       "name": "rust_core",
       "status": "passed",
-      "iteration": 2,
+      "iteration": 3,
       "last_check": "cargo test: 11 passed (policy_any_resource_checked ok); full pytest: 47 passed, 1 skipped on Rust core + real ML and on LEASH_CORE=py LEASH_ML=stub; bench --quick: policy rust 3.09 us vs python 18.59 us (6.02x), audit append 1.37x",
-      "reviewer_notes": "Overseer re-ran the full check chain: exit 0. Loader returns python with LEASH_CORE=py and rust when unset. Audit append is disk-bound; speedup varies 0.6x-1.35x run to run. Idea not done: keep the audit file handle open in Rust. REWORK (11:45): Policy.evaluate checked only resource_types[0], so a five-type read_record passed policy (both Rust and Python). Cause: ambiguous wording in CONTRACTS.md C1.1 step 2. Routed: implementer fixes both cores and adds tests; planner fixes the wording. ITERATION 2 PASSED (11:33): overseer verified both cores now return block RESOURCE_NOT_ALLOWED for the five-type read and allow for [Patient, Encounter] and for an empty list. Note for N8: pytest.ini has addopts=-q, so `pytest -q` prints no summary line; use plain `pytest` in make check."
+      "reviewer_notes": "Overseer re-ran the full check chain: exit 0. Loader returns python with LEASH_CORE=py and rust when unset. Audit append is disk-bound; speedup varies 0.6x-1.35x run to run. Idea not done: keep the audit file handle open in Rust. REWORK (11:45): Policy.evaluate checked only resource_types[0], so a five-type read_record passed policy (both Rust and Python). Cause: ambiguous wording in CONTRACTS.md C1.1 step 2. Routed: implementer fixes both cores and adds tests; planner fixes the wording. ITERATION 2 PASSED (11:33): overseer verified both cores now return block RESOURCE_NOT_ALLOWED for the five-type read and allow for [Patient, Encounter] and for an empty list. Note for N8: pytest.ini has addopts=-q, so `pytest -q` prints no summary line; use plain `pytest` in make check. ITERATION 3 (13:48): `--quick` runs now write key bench_quick, so make check no longer overwrites the full benchmark. Full run (n=100000): policy rust 3.063 us vs python 12.363 us (4.04x); audit append 241.524 us vs 490.046 us (2.03x). Audit append is disk-bound and varied between 1.30x and 2.03x across full runs today; docs must say so."
     },
     "N3": {
       "name": "data_ehr",
@@ -93,24 +99,24 @@
     },
     "N9": {
       "name": "metrics",
-      "status": "running",
+      "status": "passed",
       "iteration": 1,
-      "last_check": "",
-      "reviewer_notes": ""
+      "last_check": "bench/gateway_latency.py exit 0; keys anomaly, bench, demo, gateway, injection, minimization, nemotron present. gateway: 245 calls, 13 sessions, rates allow 0.7143 / block 0.1224 / escalate 0.1633, added latency p50 7.39 ms, p95 17.14 ms (Nemotron off, Rust core, real ML, warm-up excluded). bench (n=100000, quick false): policy rust 3.172 us vs python 11.547 us (3.64x); audit append 243.364 us vs 316.257 us (1.30x)",
+      "reviewer_notes": "Overseer re-ran the benchmark and read the keys. Workload: 10 scripted-recording sessions x 20 calls + 3 bulk-read sessions x 15 read_record; the bulk-read sessions raise block and escalate. By stage (off) p50/p95 ms: policy 0.008/0.011, injection 0.0/1.42, minimize 0.036/8.16, anomaly 6.42/6.75, audit 0.39/0.51; anomaly scoring dominates. Caveat for docs: rates and added latency are measured with the Nemotron stages on their local fallbacks; live Nemotron stages add about 0.7 s p50 per Lightning call (metrics key nemotron) and the content-safety judge had 3 false alarms per split in the eval, so live auto-approval can be lower. The node did not re-run the ML scripts (its command was denied); those keys are current from the overseer's make check at 12:53."
     },
     "N10": {
       "name": "live_demo",
-      "status": "running",
+      "status": "passed",
       "iteration": 1,
-      "last_check": "",
-      "reviewer_notes": ""
+      "last_check": "check prints ok (scripted --assert exit 0, live_run.txt and docs/DEMO_SCRIPT.md non-empty); DEMO_SCRIPT.md: 8 rows, last timestamp 2:45-3:00, 404 spoken words, 19 backticked quotes all found in demo/output/*.txt, required line present",
+      "reviewer_notes": "Live run 1 (12:55, all calls served by nemotron, no fallbacks): unprotected agent followed the hidden instruction (486 chars incl. MRN-0000042 to the attacker address in the sink); protected run blocked the read of ref-0042 with INJECTION_DETECTED (0.9995, alert q-0001), so the agent never attempted the attacker email; content safety escalated 3 ordinary calls (update_appointment, 2 send_email); reasoner on the block: nemotron, 827 ms, critical, deny. The live unprotected agent leaked in 1 of 3 runs, so the scripted demo is the demo of record. FOLLOW-UP for the N13 transcriber: scripted_run.txt was first captured on the Python core; overseer regenerated it on the Rust core (what `make demo` shows), so 4 quotes in DEMO_SCRIPT.md need updating: resource \"Condition\" and domain \"outside-clinic.example\" use double quotes, `core=rust`, `(core rust)`. Recordings exist for both cores' request bodies (39 files), so replay works on either."
     },
     "N11": {
       "name": "dashboard_polish",
-      "status": "running",
+      "status": "passed",
       "iteration": 1,
-      "last_check": "",
-      "reviewer_notes": ""
+      "last_check": "LEASH_CORE=py pytest tests/test_dashboard_*.py: 4 passed in 14.09s; nothing listening on 8000/8001/8501",
+      "reviewer_notes": "Overseer re-ran the tests and viewed the screenshots: approval queue shows the two alerts (INJECTION_DETECTED on ref-0042, EMAIL_DOMAIN_NOT_ALLOWED on the attacker email) with the Nemotron explanation, risk, cited rule, recommendation, served-by and the advisory caption beside Dismiss / Confirm block; metrics show 85.0% / 0.0% / 15.0%, per-stage latency, model quality, Rust vs Python and the gateway benchmark. Run against the real gateway in replay mode; approve and confirm round trip keeps the audit chain intact (64 entries). Screenshots (Edge headless via DevTools): docs/img/dashboard-overview.png, approval-queue.png, metrics.png. Notes: the seeded session now has 2 alerts and 0 approval items; in replay the reasoner latency shown is the replay lookup time (0.5 ms), not the recorded live latency."
     },
     "N12": {
       "name": "docs",

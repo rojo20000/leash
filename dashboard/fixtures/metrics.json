@@ -145,9 +145,24 @@
    }
   },
   "models": {
-   "reasoner": "nvidia/nemotron-3.5-lightning-30b-a3b",
-   "jailbreak": "nvidia/nemotron-jailbreak-detect",
-   "content_safety": "nvidia/nemotron-content-safety"
+   "lightning": {
+    "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "requested": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "swapped": false,
+    "verified": true
+   },
+   "safety": {
+    "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "requested": "nvidia/nemotron-3.5-content-safety",
+    "swapped": true,
+    "verified": true
+   },
+   "jailbreak": {
+    "id": "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "requested": "nvidia/nemoguard-jailbreak-detect",
+    "swapped": true,
+    "verified": true
+   }
   }
  }
 }
