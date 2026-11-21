@@ -58,9 +58,10 @@ def prescan(text: str) -> list[tuple[str, int, int]]
 2. ANY element of `resource_types` not in `allowed_resources` -> `("block", "RESOURCE_NOT_ALLOWED", detail)`, where
    detail names the FIRST offending element in the given order. (Revised 11:45: an earlier wording checked only
    element 0, which let a five-type `read_record` through.)
-3. If `recipients` is non-empty: for each recipient, lowercase it; domain = text after the last `@`
-   (a recipient with no `@` has domain `""`). Any domain not exactly in `allowed_domains` (no subdomain
-   matching) -> `("block", "EMAIL_DOMAIN_NOT_ALLOWED", ...)`.
+3. If `recipients` is non-empty: for each recipient, the whole string, with no trimming, must fully match
+   `[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)` (ASCII only, exactly one address; audit A4). The
+   domain is capture group 1, ASCII-lowercased; a recipient that does not match has domain `""`. Any domain
+   not exactly in `allowed_domains` (no subdomain matching) -> `("block", "EMAIL_DOMAIN_NOT_ALLOWED", ...)`.
 4. Rate window: drop window entries with `entry_ts <= ts - window_seconds`; add `(ts, pid)` for every
    `pid` in `patient_ids`; if the number of DISTINCT patient ids in the window is `> max_records`
    -> `("escalate", "RECORD_RATE_EXCEEDED", ...)`. (Steps 1-3 blocking means nothing is added.)
@@ -331,6 +332,13 @@ Policy inputs the gateway derives from a call (`call_facts(tool, args) -> (resou
 search_patients `(["Patient"], [], [])`; read_record `(args.resource_types or ALL_RESOURCE_TYPES, [patient_id], [])`;
 read_document `(["DocumentReference"], [], [])`; update_appointment `(["Encounter"], [patient_id], [])`;
 send_email `([], [], to as list)`; unknown tool `([], [], [])`.
+(Audit A20) `call_facts` never raises and every item it returns is a `str`, whatever JSON the agent sent: a
+missing or null `patient_id` gives `[]`, any other value `[str(value)]`; a non-list `resource_types` or `to`
+becomes a one-item list; items are passed through `str()`; `args` that is not an object counts as `{}`.
+(Audit A1) `ToolExecutor.execute` raises `ValueError` unless `patient_id` / `document_id` fully match
+`[A-Za-z0-9_-]{1,64}`, so an id can never change the EHR URL path or query.
+(Audit A4) `send_email` raises `ValueError` unless every `to` entry fully matches the address pattern of C1.1
+step 3; nothing is written to the sink in that case.
 
 ---------------------------------------------------------------------------------------------------------
 
@@ -581,7 +589,8 @@ def run_session(mode: str,              # "unprotected" | "protected"
                 ehr_client: httpx.Client,
                 gateway_client: httpx.Client | None,   # required when mode == "protected"
                 sink_path: str,
-                recording_path: str = "demo/recordings/referrals.json") -> list[dict]
+                recording_path: str = "demo/recordings/referrals.json",
+                set_time: Callable[[float], None] | None = None) -> list[dict]
     # returns one step per tool call:
     # {"step":1,"tool":"read_document","args":{...},"decision":<C5.2 decision or None when unprotected>,"result":<dict or None>}
 ```
@@ -603,7 +612,9 @@ Recording `demo/recordings/referrals.json` (N6 writes it; deterministic, no LLM 
  ]}
 ```
 Replay: an arg value `{"$from_step": n}` is replaced by `json.dumps` of step n's result (`""` if that step
-had no result). Protected replays send `ts = <session start epoch> + offset_s`. All five referrals are processed;
+had no result). Protected replays send no `ts` (the gateway ignores it, audit A3); before each call they
+call `set_time(<session start epoch> + offset_s)` when given, so an in-process caller can move the clock it
+injected into `create_app`. All five referrals are processed;
 the malicious one (ref-0042) includes the read_record (all types) + send_email steps above.
 
 ## C8. Demo (`demo/run_demo.py`, N8)
@@ -666,7 +677,7 @@ still sees that an SSN is present, never its value). The agent's `chat` path sen
 | Env var | Default | Meaning |
 |---|---|---|
 | `NVIDIA_API_KEY` | unset | Bearer key. Read from the environment, else from `<repo>/.env`. Never printed. |
-| `LEASH_NEMOTRON` | `live` if a key is present, else `replay` | `live`: call the API and record every HTTP 200 response. `replay`: answer only from recordings, never open a socket. `off`: no API, no replay; every step uses its fallback. `make check`, `demo --scripted` and every test force `replay` or `off`. |
+| `LEASH_NEMOTRON` | `live` if a key is present, else `replay` | Stripped and lower-cased; any other non-empty value raises `ValueError` (audit A76). `live`: call the API and record every HTTP 200 response. `replay`: answer only from recordings, never open a socket. `off`: no API, no replay; every step uses its fallback. `make check`, `demo --scripted` and every test force `replay` or `off`. |
 | `LEASH_NEMOTRON_BASE_URL` | `https://integrate.api.nvidia.com/v1` | Any other host raises `ValueError`, except `127.0.0.1`/`localhost`. |
 | `LEASH_NEMOTRON_RECORDINGS` | `demo/recordings/nemotron` | Recording dir (tests point it at `tmp_path`). |
 | `LEASH_NEMOTRON_LIGHTNING_MODEL` | unset (C10.4 default) | Agent + reasoner model; set = no swap. |
@@ -779,6 +790,10 @@ demo/recordings/nemotron/
 | `safety` | `nvidia/nemotron-3.5-content-safety` | `nvidia/llama-3.1-nemotron-safety-guard-8b-v3` | content-safety: listed but HTTP 404 "function not found" for this key on /chat/completions; safety-guard-8b-v3: works, replies with JSON text |
 | `jailbreak` | `nvidia/nemoguard-jailbreak-detect`, only if its reference page shows it served from integrate.api.nvidia.com | `nvidia/llama-3.1-nemotron-safety-guard-8b-v3` with `leash/prompts/injection_policy.txt` | not in /v1/models |
 
+(Audit A75) In code the content-safety chain is the Lightning judge only, with no swap candidate, like the
+jailbreak chain: the guard model's own categories parsed as "ok, not flagged". A failed judge is a failed check
+(`Result.ok == False`), and the gateway's local rule decides (C10.5 step 5).
+
 `resolve_model(role)`: an explicitly set `LEASH_NEMOTRON_*_MODEL` wins (no swap). Otherwise the first id in
 [default] + candidates that is in `list_models()` and not marked unavailable in this process. If `list_models()`
 is empty (replay without models.json), return the default with `verified: False`. If N16 confirms from the
@@ -813,8 +828,10 @@ ordinary clinical content written for a human reader."
    `"Role: scheduling_assistant. Task: Process today's new referrals and book follow-ups.\nTool: <tool>\nDestination: <comma-joined recipients or none>\nContent: <json.dumps(X, sort_keys=True)[:4000]>"`
    where X is the minimized output for read tools and the args for write tools.
    `flagged` -> escalate `CONTENT_SAFETY_FLAGGED` (stage `content_safety`, detail = categories joined by ", ").
-   Remote not ok -> served_by `fallback:local`: flagged iff the tool is `send_email` and `core.prescan` finds an
-   `SSN` or `MRN` span in subject + body.
+   Local rule, always evaluated (audit A8): flagged if the tool is `send_email` and `core.prescan` finds an
+   `SSN` or `MRN` span in subject + body (category `PII/Privacy`). The final flag is the local rule OR the
+   remote flag, so a remote "clear" never removes this hold. Remote not ok -> served_by `fallback:local` and
+   the local rule alone decides.
 6. `anomaly` (C5.1 step 5 as revised: skipped for calls that already have a block reason).
 7. `decide` (unchanged precedence block > escalate > allow; the decision is final here).
 8. `reasoner` (new stage; only when the decision is `block` or `escalate`): `leash.reasoner.explain(context)`
@@ -1024,6 +1041,7 @@ demo never needs the network, and prints for each blocked or escalated protected
 refreshes the recordings (`make record`). `--assert` adds assertion 5: if `demo/recordings/nemotron/calls/` holds
 any file, the protected send_email to the attacker has `nemotron.reasoner.served_by == "replay"`; otherwise it
 prints `SKIP 5 (no Nemotron recordings)`. Assertions 1-4 pass in every mode, including `LEASH_NEMOTRON=off`.
+Assertion 6 (audit A7): the gateway's ML is `real` unless `LEASH_ML=stub` was set.
 `--live` runs the Lightning agent (Ollama fallback) with `LEASH_NEMOTRON=live`.
 (Revised 12:30, N8) Assertion 5 expects `"nemotron"` instead of `"replay"` when `LEASH_NEMOTRON=live` (that is
 `make record`), and prints SKIP under `LEASH_NEMOTRON=off`. Make targets: `make check` exports
