@@ -39,7 +39,10 @@ flowchart TD
 | `enabled` | `true` | `false` skips the reviewer; the trace says "Reviewer: off". |
 | `model` | `nemotron-mini` | Ollama model name. Install with `ollama pull nemotron-mini` (about 2.7 GB). |
 | `host` | `""` | Ollama address; empty means the same local Ollama as the chat model. Must be local. |
-| `timeout_s` | `20` | Longer than this counts as unavailable (fail closed). |
+| `timeout_s` | `60` | Longer than this counts as unavailable (fail closed). |
+| `stages` | `["pre", "post"]` | Which reviews run. `["pre"]` (or env `REVIEWER_STAGES=pre`) skips the after-model review to save time. |
+| `context_chars`, `answer_chars` | `600`, `600` | How much context (before) and answer (after) the reviewer reads, after the masked question. |
+| `num_ctx`, `num_predict` | `1536`, `80` | Reviewer window and verdict length; the startup preload uses the same window, so Ollama never reloads. |
 | `fail_mode` | `hold` | What "unavailable" means: the turn becomes amber and is held for a person. |
 | `when_model_missing` | `skip` | While the model is not installed: `skip` = report the reviewer as off (trace warning, Network shows it down, `/api/me` → `reviewer.state = "missing"`) without holding answers; `hold` = hold every answer until it is installed. |
 

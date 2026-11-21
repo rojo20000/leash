@@ -405,7 +405,7 @@ class App:
             base["_audit"] = self.audit.write("request_blocked", sess["user"], reasons=inp["reasons"], text=masked)
             return {**base, "tier": "red", "reasons": inp["reasons"], "review_id": item["id"]}
         prompt = f"Schedule:\n{context}\n\nQuestion: {masked}"
-        pre = self.reviewer.review("pre", f"Question: {masked}\n\nWhat the chat model will be given:\n{prompt}", sess["user"])
+        pre = self.reviewer.review("pre", masked, sess["user"], context=context)
         trace.append(pre["step"])
         base["_reviewer"] = _reviewer_meta(pre, None)
         if pre["tier"] == "red":
@@ -451,10 +451,9 @@ class App:
 
     # ---- grounding the general assistant in today's schedule ------------------
     def withhold_note(self, sess: dict, pid: str, note: dict, found: list[str]) -> None:
-        """Queue a note that looks like it carries instructions for a second person (once per open item)."""
+        """Queue a note that looks like it carries instructions for a second person (once: a lead decides it once)."""
         label = f"{note['type']} in record {pid}"
-        already = any(r["kind"] == "document" and r["status"] == "open" and r["reasons"][0] == label
-                      for r in self.reviews.all())
+        already = any(r["kind"] == "document" and r["reasons"][0] == label for r in self.reviews.all())
         if not already:
             self.queue("document", "red", sess, privacy.mask(note["text"])[0], [label] + found, None)
 
@@ -477,7 +476,7 @@ class App:
         labels: dict[str, str] = {}
         withheld, words, shown = 0, 0, 0
         lines = []
-        for a in appts[:MAX_CONTEXT_APPTS]:
+        for a in appts[:llm.demo_fast(self.policy).get("max_context_appts", MAX_CONTEXT_APPTS)]:
             pid = a["patient_id"]
             labels.setdefault(pid, _label(len(labels)))
             block = [f"- {a['time']} {labels[pid]} ({pid}): {a['visit_type']}, {a['status'].replace('_', ' ')}"
@@ -711,6 +710,23 @@ class App:
             if sess.get("history_pid") != patient["id"]:
                 sess["history"], sess["history_pid"] = [], patient["id"]
             context_summary = f"record {patient['id']}"
+            # A note that tries to instruct the AI makes the whole record suspect: stop here (red, before any model
+            # is called) until a clinical lead has looked at the queued document. After that, the note stays
+            # withheld and answers are amber.
+            label = f"in record {patient['id']}"
+            if doc_reasons and any(r["kind"] == "document" and r["status"] == "open" and label in r["reasons"][0]
+                                   for r in self.reviews.all()):
+                reasons = doc_reasons + inp["reasons"] + [
+                    "Questions about this record are stopped until a clinical lead reviews the flagged document."]
+                item = self.queue(kind, "red", sess, masked, reasons, None)
+                entry = self.audit.write("request_blocked", sess["user"], reasons=reasons,
+                                         flags=inp["flags"] + ["document_injection"], masked_tags=tags, text=log_text)
+                self.audit.write("patient_context_used", sess["user"], patient_id=patient["id"],
+                                 documents_withheld=len(doc_reasons))
+                trace.append({"step": "Routed", "status": "blocked",
+                              "detail": "red: record has a flagged document; nothing sent to any model"})
+                return {**base, "tier": "red", "reasons": reasons, "review_id": item["id"], "_audit": entry,
+                        "_context": context_summary}
         elif kind == "chat":
             if sess.get("history_pid"):
                 sess["history"], sess["history_pid"] = [], None
@@ -726,8 +742,7 @@ class App:
         pre = post = None
         if kind == "chat":  # the reviewer model sees what the chat model would see, before it does
             # question first, so a long context can never push it past the reviewer's length cap
-            pre = self.reviewer.review("pre", f"Question: {masked}\n\nWhat the chat model will be given:\n{model_input}",
-                                       sess["user"])
+            pre = self.reviewer.review("pre", masked, sess["user"], context=model_input if model_input != masked else None)
             trace.append(pre["step"])
             if pre["tier"] == "red":
                 reasons = doc_reasons + inp["reasons"] + _reviewer_reasons(pre)
@@ -1232,12 +1247,18 @@ def run(app: App | None = None):
             print(f"Ollama doesn't have the model '{want}'. Installed: {', '.join(models) or 'none'}.")
             print("Set model.chat_model in config/policy.json to one of those, or run:  ollama pull " + want)
         else:
-            def _warm():
+            def _warm():  # one after the other, so the two models never load at the same time
                 try:
                     took = llm.warm(app.policy)
                     print(f"Model {want} loaded and ready ({took:.0f}s).")
                 except Exception as e:
                     print("Couldn't preload the model:", e)
+                if app.reviewer.state()["state"] == "on":
+                    try:
+                        took = app.reviewer.warm()
+                        print(f"Reviewer {app.reviewer.model} loaded and ready ({took:.0f}s).")
+                    except Exception as e:
+                        print("Couldn't preload the reviewer:", e)
             print(f"Loading {want} in the background so the first answer is quicker...")
             threading.Thread(target=_warm, daemon=True).start()
     print("Reviewer:", app.reviewer.state()["message"])

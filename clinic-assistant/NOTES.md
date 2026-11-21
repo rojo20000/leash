@@ -46,10 +46,6 @@ return the record to Clinic Assistant.
 HTTP only on 127.0.0.1, no SSO/MFA, a shared demo PIN, SQLite single-writer (one app process per data
 folder), no disk encryption or off-machine audit copy. See "Not done yet" in `README.md`.
 
-## Done in 2.12
-
-Reviewer on/off demo switch (audited, stored in `clinic.db`), three one-click attack scenarios, `docs/DEMO.md`.
-
 ## Assistant actions (v2.13)
 
 The assistant now works like a staff agent: a command typed in **Ask a general question**, the patient chat
@@ -112,6 +108,7 @@ Researched, not built yet (what real clinic assistants do):
 | Run Leash's Nemotron stages against local Ollama (limit 1) | Nothing leaves the machine, end to end | Leash-side env change + re-measure |
 | Real-model reviewer check and timeout tuning (limit 2) | Demo reliability | Small |
 | Assistant actions: waitlist, batch reminders, no-show follow-up (see above) | The assistant does more of the clinic's routine work, still approval-only | Medium |
+| Reviewer on/off demo switch and demo script (coming in 2.12) | Show what is caught with and without Nemotron | Small |
 | Bulk import script through `ClinicDB.write_many` (limit 3) | Load more synthetic data with full change history | Small |
 | OS-level egress check in the Network view (limit 4) | Prove "nothing leaves" for every process | Medium |
 | Per-role Leash policy for human users (limit 5) | Fewer false holds in integrated mode | Leash-side |

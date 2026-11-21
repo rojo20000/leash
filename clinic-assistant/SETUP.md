@@ -37,11 +37,13 @@ Open http://127.0.0.1:8642. Windows: `set MOCK_LLM=1` (cmd) or `$env:MOCK_LLM=1`
 | --- | --- | --- |
 | `dr_lee` | clinician | Patients, calendar, assistant, chart edits, messages |
 | `nurse_kim` | nurse | Same as clinician, cannot approve messages |
-| `lead_ana` | clinical_lead | Adds the red review queue, everyone's conversations, the Network page and the reviewer demo switch. **Demo presenter.** |
+| `lead_ana` | clinical_lead | Adds the red review queue and everyone's conversations |
 | `desk_sam` | receptionist | Schedule, check-in, booking, front desk assistant (no clinical fields) |
 | `auditor_ray` | auditor | Audit log, QA sample, conversation history |
 | `net_ops` | network_engineer | Network view only |
-| `admin_kai` | admin | Audit, red queue, conversations, Network, reviewer demo switch |
+
+`admin` exists as a role (audit, red queue, network) but has no demo account; add one with
+`python3 manage_users.py add <name> admin`.
 
 **Demo PIN: `1234`** (`config/policy.json` → `confidential.pin`). Needed to show MRN, birth date, phone,
 address and member id, and to save a new patient or chart entry. Each reveal is logged. Demo only.
@@ -57,12 +59,7 @@ The app notices a newly installed model within 30 seconds; no restart. Until `ne
 installed the reviewer reports itself as off (`reviewer.when_model_missing: "skip"`) instead of holding
 every answer. **The reviewer has only been tested with the stand-in so far**; run `python3 live_check.py`
 after pulling the models to check it end to end on a temporary copy of the data.
-How it works: `docs/REVIEWER.md`.
-
-**Reviewer demo (2.12):** sign in as `lead_ana` → Ask a question → Demo scenarios. Switch the reviewer off, run the
-three attack prompts (they get through the fixed filters), switch it back on and run them again (the reviewer
-catches them). The switch is stored in `clinic.db` and every flip is audited. Script for judges: `docs/DEMO.md`
-(about 3 minutes, works offline with `MOCK_LLM=1`). Design write-up: https://claude.ai/artifact/Xwta3gMSPoC3bSB2x3gRyw
+How it works: `docs/REVIEWER.md`. Design write-up: https://claude.ai/artifact/Xwta3gMSPoC3bSB2x3gRyw
 
 ## 6. Where the data lives
 
@@ -124,4 +121,4 @@ results: "Human front end: Clinic Assistant" in the repo's top-level `README.md`
 MOCK_LLM=1 python3 -m unittest        # or, from the repo root: make clinic-check
 ```
 
-98 tests (1 skipped), about 30 seconds, no network, no Ollama.
+80 tests (1 skipped), about 30 seconds, no network, no Ollama.
