@@ -112,3 +112,18 @@ def test_missing_reasoner(monkeypatch, tmp_path):
     at = run(monkeypatch, tmp_path / "fx")
     assert not at.exception
     assert any("No explanation available" in i.value for i in at.info)
+
+
+def test_review_sends_the_reviewer_token(monkeypatch):  # A2
+    import httpx
+    import dashboard.client as client
+    seen = {}
+
+    def post(url, **kw):
+        seen.update(kw, url=url)
+        return httpx.Response(200, json={"status": "approved"}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(client.httpx, "post", post)
+    monkeypatch.setenv("LEASH_REVIEW_TOKEN", "t0k")
+    assert client.review("q-0001", "approve") == {"status": "approved"}
+    assert seen["headers"] == {"X-Leash-Token": "t0k"} and seen["url"].endswith("/v1/queue/q-0001/approve")

@@ -84,7 +84,8 @@ def test_run_session_requires_gateway(ehr, tmp_path):
         run_session("protected", "scripted", "s", ehr, None, str(tmp_path / "s.jsonl"))
 
 
-def test_dashboard_seed_survives_a_gateway_start(ehr, tmp_path):  # A3: scripts/serve.py seeds before the gateway starts
+def test_dashboard_seed_survives_a_gateway_start(ehr, tmp_path, monkeypatch):  # A3: serve.py seeds before the gateway starts
+    monkeypatch.setenv("LEASH_REVIEW_TOKEN", "seed-test-token")  # the seed resets the gateway state (A2)
     from gateway.app import create_app
     from scripts.serve import seed
     steps = seed(ehr, str(tmp_path / "rt"))

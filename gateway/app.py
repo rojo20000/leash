@@ -4,6 +4,7 @@
 Design rule: Nemotron output can only add caution, never remove it. Detectors may turn an allow into an escalate;
 the reasoner runs after the decision is final and never changes decision, reasons, result or queue status."""
 import hashlib
+import hmac
 import json
 import os
 import threading
@@ -16,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from agent.tools import ToolExecutor, call_facts
@@ -47,6 +48,13 @@ class ToolCall(BaseModel):
 class Review(BaseModel):
     reviewer: str = "reviewer"
     note: str = ""
+
+
+def reviewer_only(x_leash_token: str = Header("")):
+    """Review and admin routes need the shared secret LEASH_REVIEW_TOKEN (read per request; unset = closed)."""
+    want = os.environ.get("LEASH_REVIEW_TOKEN", "")
+    if not want or not hmac.compare_digest(x_leash_token.encode(), want.encode()):
+        raise HTTPException(403, "reviewer token required")
 
 
 def _now_iso():
@@ -363,11 +371,11 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None, clock=time.t
                 "reasons": ["HUMAN_APPROVED" if approve else "HUMAN_DENIED"], "reviewer": body.reviewer}))
             return {"queue_id": queue_id, "status": item["status"], "result": result}
 
-    @app.post("/v1/queue/{queue_id}/approve")
+    @app.post("/v1/queue/{queue_id}/approve", dependencies=[Depends(reviewer_only)])
     def approve(queue_id: str, body: Review = Review()):
         return review(queue_id, True, body)
 
-    @app.post("/v1/queue/{queue_id}/deny")
+    @app.post("/v1/queue/{queue_id}/deny", dependencies=[Depends(reviewer_only)])
     def deny(queue_id: str, body: Review = Review()):
         return review(queue_id, False, body)
 
@@ -405,7 +413,7 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None, clock=time.t
                                  "latency_ms": nemotron.latency_summary(),
                                  "models": nemotron.config()["models"]}}
 
-    @app.post("/v1/admin/reset")
+    @app.post("/v1/admin/reset", dependencies=[Depends(reviewer_only)])
     def reset():
         with lock:
             for p in (p_audit, p_audit + ".head", p_dec, p_queue):

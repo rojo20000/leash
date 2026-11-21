@@ -278,6 +278,7 @@ One JSON object per line, sessions contiguous, events time-ordered within a sess
 | `LEASH_OLLAMA_URL` | `http://127.0.0.1:11434` | |
 | `LEASH_LIVE_LLM` | unset | `1` enables live-LLM tests (`@pytest.mark.live`) |
 | `LEASH_DASHBOARD_FIXTURES` | unset | dir of fixture JSON; dashboard reads it instead of the gateway |
+| `LEASH_REVIEW_TOKEN` | unset | shared secret for the gateway's approve, deny and reset routes (C5.4), read per request; unset or empty = those routes answer 403. Set for the gateway and the dashboard, never for the agent. `scripts/serve.py` generates a random one if unset. |
 
 Runtime files (all under `$LEASH_RUNTIME_DIR`, created on demand, git-ignored):
 `audit.jsonl` + `audit.jsonl.head` (C1.3), `queue.json` (C5.4), `decisions.jsonl` (one decision JSON per line),
@@ -430,6 +431,12 @@ Human review appends `{"kind":"review","ts":...,"call_id":...,"queue_id":...,"de
 | `POST /v1/admin/reset` | | `{"status":"reset"}`; clears decisions, queue, audit log + head, session history, policy window |
 
 Unknown `queue_id` -> 404. Approving/denying a non-pending item -> 409.
+
+(Audit A2) `POST /v1/queue/{queue_id}/approve`, `POST /v1/queue/{queue_id}/deny` and `POST /v1/admin/reset` require
+the header `X-Leash-Token` equal to `$LEASH_REVIEW_TOKEN` (compared with `hmac.compare_digest`). Missing or wrong
+header, or the variable unset or empty -> 403 `{"detail":"reviewer token required"}` (fail closed).
+`POST /v1/tool-call` and every `GET` route need no token. `dashboard/client.py` `review()` sends the header from
+its own environment.
 
 Queue item (`queue.json` holds `{"items":[...]}`):
 ```json

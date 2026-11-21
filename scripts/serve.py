@@ -6,6 +6,7 @@ child processes terminated in `finally`, so nothing is left running. Uses LEASH_
 Resets the gateway's runtime state (runtime/ audit log, decisions, queue) before seeding.
 """
 import os
+import secrets
 import subprocess
 import sys
 import time
@@ -40,7 +41,7 @@ def seed(ehr_client, runtime_dir):
     now = [time.time()]
     g = TestClient(create_app(ehr_client=ehr_client, runtime_dir=runtime_dir, clock=lambda: now[0]))
     ehr_client.post("/admin/reset")
-    g.post("/v1/admin/reset")
+    g.post("/v1/admin/reset", headers={"X-Leash-Token": os.environ.get("LEASH_REVIEW_TOKEN", "")}).raise_for_status()
     return run_session("protected", "scripted", "demo-protected", ehr_client, g, os.devnull,
                        str(ROOT / "demo" / "recordings" / "referrals.json"),
                        set_time=lambda t: now.__setitem__(0, t))
@@ -50,6 +51,8 @@ def main():
     os.environ.setdefault("LEASH_NEMOTRON", "replay")
     os.environ.setdefault("LEASH_EHR_URL", EHR)
     os.environ.setdefault("LEASH_GATEWAY_URL", GW)
+    if not os.environ.get("LEASH_REVIEW_TOKEN"):  # shared by the gateway and the dashboard children; never printed
+        os.environ["LEASH_REVIEW_TOKEN"] = secrets.token_hex(16)
     uv = [sys.executable, "-m", "uvicorn", "--host", "127.0.0.1", "--log-level", "warning"]
     procs = []
     try:
