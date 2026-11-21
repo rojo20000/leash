@@ -21,7 +21,7 @@ Design: https://claude.ai/artifact/Xwta3gMSPoC3bSB2x3gRyw
 ### 2. The reviewer is only tested with the stand-in
 All reviewer tests use the stand-in (`MOCK_LLM=1` / `REVIEWER_MOCK=1`). Before the demo: `ollama pull
 nemotron-mini`, run `python3 live_check.py`, and check that answers are not held by timeouts on the
-demo machine (`reviewer.timeout_s` is 20 s; an Intel Mac CPU may need more).
+demo machine (`reviewer.timeout_s` is 60 s since 2.14; an Intel Mac CPU may need more).
 
 ### 3. Live updates only through the app
 Patients, chart entries and appointments update in real time, each with a `change_log` row, but only
@@ -45,6 +45,10 @@ return the record to Clinic Assistant.
 ### 6. Prototype security gaps (before any real data)
 HTTP only on 127.0.0.1, no SSO/MFA, a shared demo PIN, SQLite single-writer (one app process per data
 folder), no disk encryption or off-machine audit copy. See "Not done yet" in `README.md`.
+
+## Done in 2.12
+
+Reviewer on/off demo switch (audited, stored in `clinic.db`), three one-click attack scenarios, `docs/DEMO.md`.
 
 ## Assistant actions (v2.13)
 
@@ -108,7 +112,6 @@ Researched, not built yet (what real clinic assistants do):
 | Run Leash's Nemotron stages against local Ollama (limit 1) | Nothing leaves the machine, end to end | Leash-side env change + re-measure |
 | Real-model reviewer check and timeout tuning (limit 2) | Demo reliability | Small |
 | Assistant actions: waitlist, batch reminders, no-show follow-up (see above) | The assistant does more of the clinic's routine work, still approval-only | Medium |
-| Reviewer on/off demo switch and demo script (coming in 2.12) | Show what is caught with and without Nemotron | Small |
 | Bulk import script through `ClinicDB.write_many` (limit 3) | Load more synthetic data with full change history | Small |
 | OS-level egress check in the Network view (limit 4) | Prove "nothing leaves" for every process | Medium |
 | Per-role Leash policy for human users (limit 5) | Fewer false holds in integrated mode | Leash-side |
