@@ -54,6 +54,20 @@ def test_explain_maps_ok_result(monkeypatch):
         assert o["risk_level"] == "critical" and o["explanation"] == GOOD["explanation"] and o["advisory"] is True
 
 
+@pytest.mark.parametrize("code,model,shown", [  # A74: (risk, action) is never milder than the template's
+    ("CONTENT_SAFETY_FLAGGED", ("low", "approve"), ("high", "deny")),
+    ("EXECUTION_ERROR", ("medium", "needs_more_info"), ("medium", "deny")),  # each field clamped on its own
+    ("TOOL_REQUIRES_APPROVAL", ("critical", "deny"), ("critical", "deny")),  # a stricter model answer is kept
+    ("TOOL_REQUIRES_APPROVAL", ("low", "needs_more_info"), ("low", "needs_more_info"))])
+def test_explain_never_milder_than_template(monkeypatch, code, model, shown):
+    reply = dict(GOOD, risk_level=model[0], recommended_action=model[1],
+                 policy_rule_ids=[reasoner.REASON_TO_RULE[code]])
+    monkeypatch.setattr(nemotron, "chat_json", lambda *a, **k: ok_result(dict(reply)))
+    o = reasoner.explain(ctx([code], decision="escalate"))
+    assert o["served_by"] == "replay" and o["error"] == "" and o["explanation"] == GOOD["explanation"]
+    assert (o["risk_level"], o["recommended_action"]) == shown
+
+
 def test_explain_falls_back_when_not_ok(monkeypatch):
     bad = nemotron.Result(False, "unavailable", "", None, 5.0, None, "timeout")
     monkeypatch.setattr(nemotron, "chat_json", lambda *a, **k: bad)
