@@ -94,7 +94,9 @@
       "register_patient",
       "edit_chart",
       "view_history",
-      "view_all_conversations"
+      "view_all_conversations",
+      "toggle_reviewer",
+      "view_network"
     ],
     "auditor": [
       "view_audit",
@@ -107,7 +109,8 @@
       "review_red",
       "view_history",
       "view_all_conversations",
-      "view_network"
+      "view_network",
+      "toggle_reviewer"
     ],
     "receptionist": [
       "view_schedule",
@@ -172,6 +175,15 @@
       "\\b(diagnos\\w*|medication\\w*|medicine\\w*|meds|dose|dosage|prescri\\w*|symptom\\w*|allerg\\w*|lab\\w*|results?|condition\\w*|treatment\\w*|blood pressure|pain|sick|side effects?|pregnan\\w*|refill\\w*)\\b"
     ]
   },
+  "assistant_actions": {
+    "_comment": "2.12. The assistant turns chat commands into proposals; nothing changes until a person whose role has the listed permission approves (app/actions.py). Clinical drafts can only be proposed by clinical roles. Changing a pin_field or adding to the chart needs the confidential PIN.",
+    "permissions": {"reschedule": "book", "book": "book", "cancel": "book", "fill_slot": "book",
+                    "update_contact": "register_patient", "remind": "send_reminder",
+                    "handover": "edit_chart", "referral": "draft_message"},
+    "clinical": ["handover", "referral"],
+    "propose_permissions": ["chat", "frontdesk_chat"],
+    "pin_fields": ["phone", "address", "member_id"]
+  },
   "confidential": {
     "_comment": "DEMO ONLY. These fields stay hidden on every screen until the PIN is typed, every time, and each reveal is logged. 1234 is a demo PIN; a real clinic would use each person's own PIN or badge tap.",
     "pin": "1234",
@@ -188,12 +200,12 @@
   "vectors": {
     "_comment": "Local vector store in data/vectors.sqlite (append-only, hash-chained). Leave ollama_embed_model empty to use the built-in offline embedder; set it to e.g. nomic-embed-text after `ollama pull nomic-embed-text`, then recalibrate the threshold for that embedder.",
     "ollama_embed_model": "",
-    "_ollama_embed_model": "Empty = built-in offline hashing-1024 embedder. Set to a local Ollama embedding model (e.g. nomic-embed-text) only after `ollama pull` and after adding its calibrated threshold below. If Ollama or the model is missing, the app falls back to hashing-1024.",
     "injection_similarity": {
       "hashing-1024": 0.33
     },
-    "_injection_similarity": "Cosine at or above which a note is withheld as a likely prompt injection, keyed by embedder mode. Used only on notes, never on chat questions. hashing-1024 = 0.33 (calibrated). There is deliberately no ollama:nomic-embed-text key: with no key, the vector match is off for that embedder and the fixed document_injection_patterns still apply. To calibrate: score the 12 injection examples' rewordings and the clinic's normal notes with that embedder, pick the value that withholds the rewordings and no normal note, then add \"ollama:nomic-embed-text\": <value> here.",
     "similar_cases": 3,
+    "_ollama_embed_model": "Empty = built-in offline hashing-1024 embedder. Set to a local Ollama embedding model (e.g. nomic-embed-text) only after `ollama pull` and after adding its calibrated threshold below. If Ollama or the model is missing, the app falls back to hashing-1024.",
+    "_injection_similarity": "Cosine at or above which a note is withheld as a likely prompt injection, keyed by embedder mode. Used only on notes, never on chat questions. hashing-1024 = 0.33 (calibrated). There is deliberately no ollama:nomic-embed-text key: with no key, the vector match is off for that embedder and the fixed document_injection_patterns still apply. To calibrate: score the 12 injection examples' rewordings and the clinic's normal notes with that embedder, pick the value that withholds the rewordings and no normal note, then add \"ollama:nomic-embed-text\": <value> here.",
     "_similar_cases": "How many other patients the Similar cases panel shows (the patient itself is never included)."
   },
   "leash": {
@@ -227,5 +239,15 @@
     "_comment": "Network view (network_engineer role). leash_url: optional local policy gateway, empty = disabled. public_probe: a public address tried once a minute (1 second timeout) to report whether this machine can reach the internet; the app itself never uses it. Empty = don't probe.",
     "leash_url": "",
     "public_probe": ""
+  },
+  "reviewer": {
+    "_comment": "A second local model (NVIDIA Nemotron via Ollama) reviews every assistant turn: before the chat model sees the request, and after it answers. It can only raise a tier, never lower one. Install: ollama pull nemotron-mini (about 2.7 GB). Fail closed: if it is on but unreachable, too slow or gives bad output, the answer is held for a person (amber). when_model_missing: 'skip' = while the model is not installed yet, report the reviewer as off (trace, Home and Network) instead of holding every answer; 'hold' = hold every answer until it is installed. host: empty = the same local Ollama as the chat model.",
+    "enabled": true,
+    "model": "nemotron-mini",
+    "host": "",
+    "timeout_s": 20,
+    "fail_mode": "hold",
+    "when_model_missing": "skip",
+    "_demo": "For demos, a clinical lead or admin can switch the reviewer off and on at runtime (Ask a question > Demo scenarios, or POST /api/reviewer). That switch is stored in data/clinic.db and audited; this file is never changed by it."
   }
 }

@@ -84,6 +84,8 @@ async function start() {
     const o = el("option", null, `${k}: ${v}`); o.value = k; group.append(o);
   });
   $("mock-banner").hidden = !me.mock;
+  showReviewer(me.reviewer);
+  if (can("toggle_reviewer")) loadReviewer();
   opts = await api("/api/chart/options").catch(() => null);
   if (opts) regSetup();
   const h = new Date().getHours();
@@ -107,6 +109,8 @@ $("logout").addEventListener("click", async () => {
   await api("/api/logout", {}).catch(() => {});
   $("chat-log").replaceChildren(); $("pt-chat-log").replaceChildren(); showLogin();
 });
+
+$("today-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
 // ---- tabs ----------------------------------------------------------------
 function showTab(name) {
@@ -132,6 +136,91 @@ function showTab(name) {
   if (name === "network") loadNetwork();
 }
 document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+// ---- Leash tab (integrated mode): every record comes through the Leash gateway ----
+function leashReasoner(d) {
+  const box = el("div", "leash-box");
+  if (d.reasons && d.reasons.length) {
+    const ul = el("ul", "reasons");
+    d.reasons.forEach((r) => ul.append(el("li", null, `${r.code} (${r.stage}): ${r.detail}`)));
+    box.append(el("h3", null, "Reasons"), ul);
+  }
+  const x = d.reasoner;
+  if (x) {
+    box.append(el("h3", null, "Leash's explanation (advisory: a reviewer makes the final call)"), el("p", null, x.explanation),
+      el("p", "muted", `Risk: ${x.risk_level}`), el("p", "muted", `Recommended: ${x.recommended_action}`),
+      el("p", "muted", `Rules: ${(x.policy_rule_ids || []).join(", ")}`), el("p", "muted", `Source: ${x.served_by}`));
+  }
+  return box;
+}
+
+function leashShow(d) {
+  const out = $("leash-result"); out.replaceChildren();
+  out.append(el("p", "muted", `Request id: ${d.call_id}`));
+  if (d.state === "allow") {
+    out.append(el("span", "tier green", "Allowed by Leash"), el("p", null, d.view === "full" ? "Full chart" : "Scheduling view"));
+    Object.entries((d.result && d.result.resources) || {}).forEach(([type, list]) => {
+      out.append(el("h3", null, `${type} (${list.length})`), el("pre", "leash-pre", JSON.stringify(list, null, 2)));
+    });
+    out.append(el("h3", null, "Removed by Leash"));
+    if (d.redactions && d.redactions.length) {
+      const ul = el("ul", "reasons");
+      d.redactions.forEach((r) => ul.append(el("li", null, `${r.path} (${r.kind}, ${r.source})`)));
+      out.append(ul);
+    } else out.append(el("p", "muted", "Nothing removed"));
+    return;
+  }
+  const wait = d.state === "escalate";
+  const box = leashReasoner(d); box.classList.add(wait ? "wait" : "blocked");
+  out.append(el("span", `tier ${wait ? "amber" : "red"}`, wait ? "Waiting for review in Leash" : "Blocked by Leash"));
+  if (wait) {
+    out.append(el("p", null, `Queue id: ${d.queue_id}`));
+    const p = el("p", null, "Approve or deny it in the Leash dashboard at ");
+    const a = el("a", null, d.dashboard_url); a.href = d.dashboard_url; a.target = "_blank"; a.rel = "noopener";
+    p.append(a); out.append(p);
+  }
+  out.append(box);
+}
+
+async function leashCall(path, body) {
+  $("leash-error").textContent = "";
+  try { return await api(path, body); }
+  catch (err) { $("leash-error").textContent = err.message; $("leash-result").replaceChildren(); return null; }
+}
+
+async function leashOpen(id, view) {
+  $("leash-result").replaceChildren();
+  const d = await leashCall("/api/leash/open", { patient_id: id, view });
+  if (d) leashShow(d);
+}
+
+[["leash-open-sched", "scheduling"], ["leash-open-full", "full"]].forEach(([id, view]) => $(id).addEventListener("click", () => {
+  const pid = $("leash-pid").value.trim();
+  if (!/^pt-\d{4}$/.test(pid)) {
+    $("leash-error").textContent = "Enter a patient id like pt-0042."; $("leash-result").replaceChildren(); return;
+  }
+  leashOpen(pid, view);
+}));
+
+$("leash-search-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const list = $("leash-results"); list.replaceChildren(); $("leash-result").replaceChildren();
+  const d = await leashCall("/api/leash/search", { q: $("leash-q").value });
+  if (!d) return;
+  if (d.state !== "allow") return leashShow(d);
+  const pts = (d.result && d.result.patients) || [];
+  if (!pts.length) list.append(el("li", "muted", "No patients found."));
+  pts.forEach((p) => {
+    const n = (p.name && p.name[0]) || null;
+    const name = n ? `${(n.given || []).join(" ")} ${n.family || ""}`.trim() : p.id;
+    const li = el("li", "row"), t = el("div", "row-text"), btns = el("div", "leash-btns");
+    t.append(el("strong", null, name || p.id), el("span", "muted", p.id));
+    [["Scheduling view", "scheduling"], ["Full chart (Leash will block)", "full"]].forEach(([label, view]) => {
+      const b = el("button", "ghost small-btn", label); b.type = "button"; b.onclick = () => leashOpen(p.id, view); btns.append(b);
+    });
+    li.append(t, btns); list.append(li);
+  });
+});
 
 document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.go)));
 
@@ -334,10 +423,77 @@ function showAnswer(r, log = $("chat-log")) {
     body.append(el("p", null, r.reasons.join(" ")));
   }
   const answer = log.lastElementChild;
-  if (r.trace) addTrace(r.trace, log);
+  if (r.trace) { addTrace(r.trace, log); reviewerReadout(r.trace, log); }
   // Show the start of the answer; the log (or the page) scrolls for the rest.
   answer.scrollIntoView({ block: answer.offsetHeight > log.clientHeight ? "start" : "nearest" });
 }
+
+// ---- reviewer: what Nemotron said about this answer, and the demo switch -------
+function reviewerReadout(trace, log) {
+  const steps = trace.filter((t) => t.step.startsWith("Reviewer"));
+  if (!steps.length) return;
+  const box = el("div", "rv-readout");
+  const off = steps.find((t) => t.step === "Reviewer");
+  if (off) {
+    box.classList.add("off");
+    const line = el("div", "line"); line.append(icon("warn"), el("span", null, `Not checked: reviewer ${off.detail}`));
+    box.append(line);
+  } else {
+    let caught = false;
+    steps.forEach((t) => {
+      const when = t.step.includes("before") ? "before model" : "after model";
+      const [tier, ...rest] = t.detail.split(": ");
+      const why = rest.join(": ").replace(/ \(\d+ ms, [^)]*\)$/, "");
+      const line = el("div", "line");
+      if (t.status === "ok") line.append(icon("ok"), el("span", null, `Reviewer (${when}): no concerns`));
+      else if (tier === "off") line.append(icon("warn"), el("span", null, `Not checked (${when}): ${why}`));
+      else { caught = true; line.append(icon(t.status), el("span", null, `Caught by reviewer (${when}, ${tier}): ${why}`)); }
+      box.append(line);
+    });
+    box.classList.add(caught ? "caught" : steps.some((t) => t.status !== "ok") ? "off" : "clear");
+  }
+  log.append(box);
+}
+
+function showReviewer(r) {
+  if (!r) return;
+  const off = r.state === "off" && (r.enabled === false || r.demo_off);
+  $("reviewer-off-banner").hidden = !off;
+  $("reviewer-off-by").textContent = off && r.changed_by ? `Switched off by ${r.changed_by}.` : "";
+  const t = $("reviewer-toggle");
+  if (t && r.enabled !== undefined) {
+    t.textContent = `Reviewer: ${r.enabled ? "on" : "off"} (demo)`;
+    t.setAttribute("aria-pressed", String(!!r.enabled));
+    $("reviewer-status").textContent = `${r.model}: ${r.message || r.state}`
+      + (r.changed_by ? ` Last switched by ${r.changed_by}, ${shortWhen(r.changed_at)} UTC.` : "");
+  }
+}
+
+async function loadReviewer() {
+  let r;
+  try { r = await api("/api/reviewer"); } catch { return; }
+  showReviewer(r);
+  const list = $("demo-scenarios");
+  list.replaceChildren(...(r.scenarios || []).map((sc, i) => {
+    const li = el("li"); const txt = el("div");
+    txt.append(el("strong", null, `${i + 1}. ${sc.title}`), el("span", "muted", sc.tests));
+    const b = el("button", "small-btn", "Run"); b.type = "button";
+    b.onclick = () => {
+      if ($("chat-form").querySelector("button").disabled) return;
+      ask($("chat-log"), $("chat-input"), $("chat-form").querySelector("button"), { message: sc.prompt });
+    };
+    li.append(b, txt); return li;
+  }));
+}
+
+$("reviewer-toggle").addEventListener("click", async () => {
+  const t = $("reviewer-toggle"); t.disabled = true;
+  try {
+    const r = await api("/api/reviewer", { enabled: t.getAttribute("aria-pressed") !== "true" });
+    showReviewer(r);
+  } catch (err) { alert(err.message); }
+  t.disabled = false;
+});
 
 // Enter sends, Shift+Enter adds a line.
 function enterToSend(textarea, form) {
@@ -402,9 +558,17 @@ const listInto = (node, items) => node.replaceChildren(...items.map((t) => el("l
 function renderRecord(p, root, onAsk) {
   if (!root.firstElementChild) root.append($("tpl-record").content.cloneNode(true));
   const f = (k) => root.querySelector(`[data-f="${k}"]`);
-  f("name").textContent = `${p.name.given} ${p.name.family}`;
-  f("meta").textContent = `${p.age} years · ${p.sex}`
-    + (p.insurance ? ` · ${p.insurance.plan} · prefers ${p.preferred_contact.toLowerCase()}${p.language !== "English" ? ` · ${p.language}` : ""}` : "");
+  f("name").textContent = `${String(p.name.family).toUpperCase()}, ${p.name.given}`;  // family name first, in capitals, as on clinical patient banners
+  f("meta").replaceChildren(el("strong", null, `${p.age} years · ${p.sex}`),
+    p.insurance ? ` · ${p.insurance.plan} · prefers ${p.preferred_contact.toLowerCase()}${p.language !== "English" ? ` · ${p.language}` : ""}` : "");
+  const alg = f("alg");
+  if (alg) {
+    const real = (p.allergies || []).filter((x) => !/^(no known|nka|none)/i.test(String(x).trim()));
+    const has = real.length > 0;
+    alg.className = `banner-alg${has ? " has" : ""}`;
+    alg.replaceChildren(el("span", "banner-k", "Allergies"),
+      el("span", "banner-v", has ? real.join(", ") : "No known allergies"));
+  }
   f("ident").replaceChildren(identBlock(p.id, p.locked || []));
   const att = f("attention"); att.replaceChildren();
   if (p.attention.length) {
@@ -419,7 +583,7 @@ function renderRecord(p, root, onAsk) {
   }
   listInto(f("conditions"), p.conditions); listInto(f("meds"), p.medications); listInto(f("allergies"), p.allergies);
   f("obs").replaceChildren(...[...p.observations].sort((a, b) => b.date.localeCompare(a.date)).map((o) => {
-    const tr = el("tr"); tr.append(el("td", null, o.date), el("td", null, o.name), el("td", null, `${o.value} ${o.unit}`.trim()), el("td", "muted", o.ref));
+    const tr = el("tr"); tr.append(el("td", null, o.date), el("td", null, o.name), el("td", "num", `${o.value} ${o.unit}`.trim()), el("td", "muted", o.ref));
     return tr;
   }));
   f("notes").replaceChildren(...p.notes.map((n) => {
@@ -903,7 +1067,8 @@ function schedRow(a, d) {
   else if (can("send_reminder") && !isToday && a.status === "booked") act.append(toggle(a.reminder && a.reminder.sent_at ? "Details" : "Reminder"));
   else if (can("room_patient") && isToday && a.status === "arrived") act.append(step("Start visit", "in_room"));
   else if (can("room_patient") && a.status === "in_room") act.append(step("Finish visit", "done", "ghost small-btn"));
-  tr.append(el("td", "time", a.time), who, el("td", null, a.visit_type), el("td", null, a.clinician_name), st, act);
+  who.className = "who-c"; st.className = "st";
+  tr.append(el("td", "time", a.time), who, el("td", "visit", a.visit_type), el("td", "with", a.clinician_name), st, act);
   const out = [tr];
   if (sched.open === a.id) out.push(detailRow(a, d));
   return out;
@@ -1122,7 +1287,7 @@ function clinEntries(c) {
 
 // The key shows the same tints as the strips, each with its word.
 document.querySelector(".cal-key").replaceChildren(...CAL_ORDER.map((st) => {
-  const k = el("span", "key-item"); k.append(el("span", `key-sw s-${st}`), el("span", null, st === "in_room" ? "In room now" : STATUS_WORD[st])); return k;
+  const k = el("span", "key-item"); k.append(el("span", `key-sw s-${st}`), el("span", null, STATUS_WORD[st])); return k;
 }));
 const calMobile = window.matchMedia("(max-width: 720px)");
 calMobile.addEventListener("change", () => { if (!$("tab-calendar").hidden) loadCalendar(); });
@@ -1257,7 +1422,7 @@ function calMonth(from, byDate) {
 // One column per clinician (day) or per day (week). Strips sit at their start time, 2.4px a minute,
 // so one 20-minute slot is 48px. Status is a tint AND a word on every strip.
 const BOARD_PX = 2.4;
-const STRIP_WORD = { ...STATUS_WORD, in_room: "In room now" };
+const STRIP_WORD = { ...STATUS_WORD };
 const toMin = (hhmm) => { const [h, m] = String(hhmm).split(":").map(Number); return h * 60 + m; };
 const hhmm = (m) => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
 const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
@@ -1534,6 +1699,14 @@ const conv = { items: [], users: new Set(), patients: new Set(), names: {}, open
 const CONV_TIER = { green: "Ready to read", amber: "Check first", red: "Stopped", error: "Not sent", redirect: "Redirected" };
 fillSelect($("conv-tier"), [["", "Any result"], ...Object.entries(CONV_TIER)]);
 const convTier = (t) => el("span", `tier ${t === "redirect" ? "amber" : t}`, CONV_TIER[t] || t || "unknown");
+// Result column: the final label, and under it what the reviewer said before / after the model.
+function convResult(c) {
+  const box = el("span", "conv-result"); box.append(convTier(c.tier));
+  const rv = c.reviewer_pre_tier || c.reviewer_post_tier
+    ? `Reviewer ${c.reviewer_pre_tier || "-"} / ${c.reviewer_post_tier || "-"}${c.reviewer_ok === false ? " (unavailable)" : ""}`
+    : "Reviewer off";
+  box.append(el("span", "conv-rv", rv)); return box;
+}
 const shortWhen = (iso) => (iso ? iso.replace("T", " ").slice(0, 16) : "");
 
 async function loadConversations() {
@@ -1574,7 +1747,7 @@ function drawConversations() {
     b.append(el("span", "conv-when", shortWhen(c.at)),
       el("span", "conv-who", `${c.user || "?"}${c.role ? ` · ${c.role.replace("_", " ")}` : ""}`),
       el("span", `conv-pt${pname ? "" : " none"}`, pname || "General"),
-      el("span", "conv-q", c.question || ""), convTier(c.tier));
+      el("span", "conv-q", c.question || ""), convResult(c));
     b.onclick = () => { conv.open = conv.open === c.id ? null : c.id; drawConversations(); };
     box.append(b);
     if (conv.open === c.id) box.append(convDetail(c));
@@ -1595,6 +1768,10 @@ function convDetail(c) {
   fact("Model", c.model);
   if (typeof c.duration_ms === "number") fact("Time taken", c.duration_ms >= 1000 ? `${(c.duration_ms / 1000).toFixed(1)} s` : `${c.duration_ms} ms`);
   fact("What the model was given", c.context_summary);
+  if (c.reviewer_pre_tier || c.reviewer_post_tier)
+    fact("Reviewer (Nemotron)", `before model: ${c.reviewer_pre_tier || "not run"} · after model: ${c.reviewer_post_tier || "not run"}`
+      + (c.reviewer_ok === false ? " · unavailable, held" : ""));
+  else fact("Reviewer (Nemotron)", "not checked (off)");
   d.append(el("div", "label", "Details"), facts);
   d.append(el("div", "label", "Changes made after this answer"));
   const ch = c.changes || [];
@@ -1728,91 +1905,6 @@ function netDiagram(nodes, edges) {
 }
 $("net-refresh").addEventListener("click", loadNetwork);
 setInterval(() => { if (me && !document.hidden && !$("tab-network").hidden) loadNetwork(); }, 10000);
-
-// ---- Leash tab (integrated mode): every record comes through the Leash gateway ----
-function leashReasoner(d) {
-  const box = el("div", "leash-box");
-  if (d.reasons && d.reasons.length) {
-    const ul = el("ul", "reasons");
-    d.reasons.forEach((r) => ul.append(el("li", null, `${r.code} (${r.stage}): ${r.detail}`)));
-    box.append(el("h3", null, "Reasons"), ul);
-  }
-  const x = d.reasoner;
-  if (x) {
-    box.append(el("h3", null, "Leash's explanation (advisory: a reviewer makes the final call)"), el("p", null, x.explanation),
-      el("p", "muted", `Risk: ${x.risk_level}`), el("p", "muted", `Recommended: ${x.recommended_action}`),
-      el("p", "muted", `Rules: ${(x.policy_rule_ids || []).join(", ")}`), el("p", "muted", `Source: ${x.served_by}`));
-  }
-  return box;
-}
-
-function leashShow(d) {
-  const out = $("leash-result"); out.replaceChildren();
-  out.append(el("p", "muted", `Request id: ${d.call_id}`));
-  if (d.state === "allow") {
-    out.append(el("span", "tier green", "Allowed by Leash"), el("p", null, d.view === "full" ? "Full chart" : "Scheduling view"));
-    Object.entries((d.result && d.result.resources) || {}).forEach(([type, list]) => {
-      out.append(el("h3", null, `${type} (${list.length})`), el("pre", "leash-pre", JSON.stringify(list, null, 2)));
-    });
-    out.append(el("h3", null, "Removed by Leash"));
-    if (d.redactions && d.redactions.length) {
-      const ul = el("ul", "reasons");
-      d.redactions.forEach((r) => ul.append(el("li", null, `${r.path} (${r.kind}, ${r.source})`)));
-      out.append(ul);
-    } else out.append(el("p", "muted", "Nothing removed"));
-    return;
-  }
-  const wait = d.state === "escalate";
-  const box = leashReasoner(d); box.classList.add(wait ? "wait" : "blocked");
-  out.append(el("span", `tier ${wait ? "amber" : "red"}`, wait ? "Waiting for review in Leash" : "Blocked by Leash"));
-  if (wait) {
-    out.append(el("p", null, `Queue id: ${d.queue_id}`));
-    const p = el("p", null, "Approve or deny it in the Leash dashboard at ");
-    const a = el("a", null, d.dashboard_url); a.href = d.dashboard_url; a.target = "_blank"; a.rel = "noopener";
-    p.append(a); out.append(p);
-  }
-  out.append(box);
-}
-
-async function leashCall(path, body) {
-  $("leash-error").textContent = "";
-  try { return await api(path, body); }
-  catch (err) { $("leash-error").textContent = err.message; $("leash-result").replaceChildren(); return null; }
-}
-
-async function leashOpen(id, view) {
-  $("leash-result").replaceChildren();
-  const d = await leashCall("/api/leash/open", { patient_id: id, view });
-  if (d) leashShow(d);
-}
-
-[["leash-open-sched", "scheduling"], ["leash-open-full", "full"]].forEach(([id, view]) => $(id).addEventListener("click", () => {
-  const pid = $("leash-pid").value.trim();
-  if (!/^pt-\d{4}$/.test(pid)) {
-    $("leash-error").textContent = "Enter a patient id like pt-0042."; $("leash-result").replaceChildren(); return;
-  }
-  leashOpen(pid, view);
-}));
-
-$("leash-search-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const list = $("leash-results"); list.replaceChildren(); $("leash-result").replaceChildren();
-  const d = await leashCall("/api/leash/search", { q: $("leash-q").value });
-  if (!d) return;
-  if (d.state !== "allow") return leashShow(d);
-  const pts = (d.result && d.result.patients) || [];
-  if (!pts.length) list.append(el("li", "muted", "No patients found."));
-  pts.forEach((p) => {
-    const n = (p.name && p.name[0]) || null;
-    const name = n ? `${(n.given || []).join(" ")} ${n.family || ""}`.trim() : p.id;
-    const li = el("li", "row"), t = el("div", "row-text"), btns = el("div", "leash-btns");
-    t.append(el("strong", null, name || p.id), el("span", "muted", p.id));
-    [["Scheduling view", "scheduling"], ["Full chart (Leash will block)", "full"]].forEach(([label, view]) => {
-      const b = el("button", "ghost small-btn", label); b.type = "button"; b.onclick = () => leashOpen(p.id, view); btns.append(b);
-    });
-    li.append(t, btns); list.append(li);
-  });
-});
 
 // ---- live: other people's changes show up without a reload -----------------
 setInterval(() => {

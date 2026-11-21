@@ -97,6 +97,7 @@ def status(app) -> dict:
     entries = app.audit.read(limit=1_000_000)  # newest first
     calls = [e for e in entries if e["event"] == "model_call"]
     ollama_calls = [e for e in calls if str(e["details"].get("to", "")).startswith("ollama")]
+    reviewer_calls = [e for e in calls if "reviewer" in str(e["details"].get("to", ""))]
     staff = [e for e in entries if e.get("user")]
     recent = lambda rows: sum(1 for e in rows if (_ts(e["ts"]) or now) >= day_ago)
 
@@ -139,6 +140,9 @@ def status(app) -> dict:
          else ("Reachable." if leash_up else "Not reachable (1 second timeout).")},
     ]
 
+    nodes.insert(2, app.reviewer.network_node())  # drawn next to the chat model it checks
+    byid = {n["id"]: n for n in nodes}
+
     # --- edges ---
     def last(rows):
         return rows[0]["ts"] if rows else None
@@ -149,20 +153,23 @@ def status(app) -> dict:
     edges = [
         {"from": "browsers", "to": "app", "protocol": "HTTP over loopback", "purpose": "Staff web page and API",
          "status": "up" if sessions else "unknown", "last_seen": last(staff), "calls_24h": recent(staff)},
+        {"from": "app", "to": "reviewer", "protocol": "HTTP over loopback (Ollama API)",
+         "purpose": "Checks every request before and after the chat model", "status": byid["reviewer"]["status"],
+         "last_seen": last(reviewer_calls), "calls_24h": recent(reviewer_calls)},
         {"from": "app", "to": "ollama", "protocol": "HTTP over loopback (Ollama API)",
          "purpose": "Model answers, warm-up and model list", "status": o_status if ollama_last_ok is not False else "down",
          "last_seen": last(ollama_calls), "calls_24h": recent(ollama_calls)},
         {"from": "app", "to": "clinic_db", "protocol": "SQLite file (local disk)",
-         "purpose": "Patients, appointments, change log, conversations", "status": nodes[3]["status"],
+         "purpose": "Patients, appointments, change log, conversations", "status": byid["clinic_db"]["status"],
          "last_seen": last_change, "calls_24h": changes_24h[0]},
         {"from": "app", "to": "vectors", "protocol": "SQLite file (local disk)",
-         "purpose": "Similar cases and injection detection (masked text only)", "status": nodes[4]["status"],
+         "purpose": "Similar cases and injection detection (masked text only)", "status": byid["vectors"]["status"],
          "last_seen": None, "calls_24h": None},
         {"from": "app", "to": "audit_log", "protocol": "Append-only file (local disk)",
-         "purpose": "Tamper-evident record of every action", "status": nodes[5]["status"],
+         "purpose": "Tamper-evident record of every action", "status": byid["audit_log"]["status"],
          "last_seen": last(entries), "calls_24h": recent(entries)},
         {"from": "app", "to": "leash", "protocol": "HTTP", "purpose": "Optional policy gateway",
-         "status": nodes[6]["status"], "last_seen": None, "calls_24h": None},
+         "status": byid["leash"]["status"], "last_seen": None, "calls_24h": None},
     ]
 
     # --- egress ---

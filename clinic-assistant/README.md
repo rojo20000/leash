@@ -1,6 +1,6 @@
 # Clinic Assistant: a restricted local medical AI (prototype)
 
-> **In the Leash repo:** this folder is Clinic Assistant v2.7, the human-facing front end for Leash. `data/clinic.db` and `data/vectors.sqlite` are committed synthetic snapshots; check them with `python3 scripts/verify_db.py` and `python3 scripts/verify_stores.py`. Planning and handoff docs are in `handoff/`.
+> **Team setup (Leash repo):** start with [`SETUP.md`](SETUP.md). Agents: read [`AGENTS.md`](AGENTS.md) first. Limits and roadmap: [`NOTES.md`](NOTES.md). `data/clinic.db` and `data/vectors.sqlite` are the shared synthetic snapshot.
 
 A small web app that puts a **gatekeeper** between people and a local AI model.
 Nobody talks to the model directly. Every request is signed in, masked, checked,
@@ -8,6 +8,27 @@ answered on this computer only, checked again, and written to a tamper-evident l
 
 **Prototype. Use synthetic (made-up) patient data only.** It is not a medical device
 and has not been validated for clinical use.
+
+## New in 2.12: a before-and-after demo of the reviewer
+
+- **Demo switch**: a clinical lead or admin can switch the Nemotron reviewer off and on at runtime (Ask a question > Demo scenarios, or `GET`/`POST /api/reviewer`). It's stored in `data/clinic.db`, never in `config/policy.json`, and every flip is in the audit log (`reviewer_toggled`, who, from, to). While it's off, every screen shows an amber bar "Reviewer is OFF (demo)", and every answer's checks say "Reviewer: switched off for demo by <name>".
+- **Three one-click attack prompts** (indirect prompt injection, an unsafe stop-your-blood-thinner instruction, and bait for identifiers and a made-up patient). The fixed filters let all three through; the reviewer catches them. Under each answer a box says what the reviewer caught, before or after the model, or that it wasn't checked. Conversations show the reviewer's verdicts.
+- **Judge script**: `docs/DEMO.md` (3 minutes, works offline with `MOCK_LLM=1`). New demo account `admin_kai` (admin); clinical leads can now also see the Network page.
+
+## New in 2.13: assistant actions (approve before anything changes)
+
+- **The assistant can do the chores, not just answer.** Type a command in any assistant box: "Move Desmond F. from Tuesday to Wednesday 10am", "Book syn-007 tomorrow at 9:20 with Dr Osei", "Cancel syn-004's appointment tomorrow", "Fill the 11:00 slot tomorrow with Dr Lee", "Change syn-012's phone to 555-0199", "Remind syn-007 about their appointment", and for clinicians "Draft a handover for syn-004" or "Draft a referral for syn-003 to cardiology for rising INR". "What can the assistant do?" under each box lists the examples for your role.
+- **It only proposes.** You get a card with the change (before -> after) and Approve / Edit / Reject. Nothing is written until a person whose role allows it approves (front desk: scheduling and contact details; clinicians: chart and referral drafts; auditors, admins and network engineers: none), with the PIN for confidential fields and chart notes. Approval writes through the normal paths, so `change_log` shows the approver.
+- **Checked like answers.** Each proposal goes past the guardrails and the Nemotron reviewer: red blocks it, amber holds it until the approver confirms. Two matching patients or a taken slot gives a "pick one" card with choices; it never guesses. Details, flow chart and the not-yet-built list: `NOTES.md` -> "Assistant actions (v2.13)".
+
+## New in 2.11: a second model reviews every answer (NVIDIA Nemotron)
+
+- **What it does.** Every doctor-assistant and front-desk-assistant turn now goes past a separate local reviewer model twice: **before** the chat model (the masked question plus the minimized record or schedule) and **after** it (the answer). It looks for prompt injection, unsafe clinical advice, identifiers, invented patients and out-of-scope requests, and answers `green`, `amber` or `red`.
+- **It can only make things stricter.** The reviewer can raise a tier, never lower one; the fixed guardrails stay in charge. A red before the model means the chat model is never called (the request goes to a second person). Amber or red after the model holds the answer, exactly like today.
+- **Fails closed.** If the reviewer is on but unreachable, too slow (`timeout_s`, 20 s) or gives unusable output, the answer is held for a person: "Reviewer unavailable; held for a person."
+- **Turn it on on the Mac:** `ollama pull nemotron-mini` (about 2.7 GB, one time). That's all: `reviewer.enabled` is already `true` in `config/policy.json`, and the app starts using the model as soon as it's installed (checked every 30 seconds, no restart needed).
+- **Until the model is installed** (`reviewer.when_model_missing: "skip"`, the shipped setting), answers are not held; instead the reviewer is reported as off: a yellow "Reviewer (before model): off: Model not installed: run ollama pull nemotron-mini" line in every answer's safety checks, a **down** Reviewer box on the Network page (so Home shows a service down for network roles), `reviewer.state = "missing"` in `/api/me`, and a line when the app starts. Set it to `"hold"` to hold every answer until the model is there. Set `enabled` to `false` to switch the reviewer off (the trace then says "Reviewer: off").
+- **Logged, without content.** Audit events `reviewer_pre` / `reviewer_post` (tier, reasons, ms, ok, model) and a `model_call` per reviewer call; conversation-log rows gain `reviewer_pre_tier`, `reviewer_post_tier`, `reviewer_reasons`, `reviewer_ok` (new columns added safely; old rows still verify). Details and a flow chart: `docs/REVIEWER.md`.
 
 ## New in 2.5: grounded answers, conversation log, network view
 
@@ -31,7 +52,7 @@ and has not been validated for clinical use.
 - **Error-proofed flows**: buttons stay off until inputs are valid, only open times can be booked, check-in needs the identity checks, steps can't be skipped, two people can't change the same appointment at once, and anything that can't be undone needs a second press.
 - **Faster answers**: the model is loaded when the app starts and kept loaded for 30 minutes; answers are capped in length.
 
-See `docs/DEMO-SCRIPT.md` for an 8-minute walkthrough.
+See `docs/DEMO.md` for the 3-minute reviewer demo for judges, and `docs/DEMO-SCRIPT.md` for an 8-minute walkthrough.
 
 ## What it enforces
 
@@ -93,6 +114,8 @@ Needs Python 3.8+ (check with `python3 --version`) and Ollama. Nothing else to i
 ```bash
 # 1. Get a model (one-time). MedGemma 1.5 4B is a community build of Google's model.
 ollama pull MedAIBase/MedGemma1.5:4b
+# Optional, recommended: the reviewer model that checks every answer (about 2.7 GB)
+#   ollama pull nemotron-mini
 #    On an Intel Mac this runs on the CPU and is slow. For faster testing try:
 #    ollama pull llama3.2:3b   then set "chat_model": "llama3.2:3b" in config/policy.json
 
@@ -112,7 +135,7 @@ python3 run.py
 
 No model yet? Start with `MOCK_LLM=1 python3 run.py` to click through the app with a stand-in model.
 
-Run the checks: `python3 -m unittest -v` (46 tests, uses the stand-in model).
+Run the checks: `python3 -m unittest -v` (59 tests, uses the stand-in model and a stand-in reviewer).
 
 Optional upgrades:
 - Better name detection: `pip install presidio-analyzer presidio-anonymizer && python3 -m spacy download en_core_web_lg`. The app uses it automatically when installed.
@@ -140,6 +163,8 @@ app/db.py            clinic database (SQLite): patients, appointments, change lo
 app/ehr.py           patients (read and written through app/db.py), synthetic generator
 app/schedule.py      appointments, booking and check-in rules
 app/network.py       network view (no patient data)
+app/reviewer.py      the reviewer model (Nemotron via Ollama), before and after the chat model
+app/actions.py       assistant actions: chat commands -> proposals -> human approval
 scripts/verify_db.py database counts and change-log check
 app/users.py         accounts and password hashing
 static/              the web page (no external scripts)
