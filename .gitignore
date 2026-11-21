@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/
+*.pyd
+*.so
+dist/
+build/
+
+# Rust
+target/
+**/*.rs.bk
+
+# Secrets
+.env
+.env.*
+
+# Model files (>50 MB kept out; also listed by extension)
+*.gguf
+*.safetensors
+*.bin
+*.onnx
+*.pt
+*.pth
+*.ckpt
+models/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.claude/settings.local.json
