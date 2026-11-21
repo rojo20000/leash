@@ -8,7 +8,7 @@
   },
   "model": {
     "ollama_url": "http://127.0.0.1:11434",
-    "chat_model": "MedAIBase/MedGemma1.5:4b",
+    "chat_model": "llama3.2:latest",
     "safety_model": "",
     "temperature": 0.2,
     "timeout_seconds": 180,
@@ -71,7 +71,8 @@
       "view_schedule",
       "room_patient",
       "register_patient",
-      "edit_chart"
+      "edit_chart",
+      "view_history"
     ],
     "nurse": [
       "view_patients",
@@ -80,7 +81,8 @@
       "view_schedule",
       "room_patient",
       "register_patient",
-      "edit_chart"
+      "edit_chart",
+      "view_history"
     ],
     "clinical_lead": [
       "view_patients",
@@ -90,15 +92,22 @@
       "review_red",
       "view_schedule",
       "register_patient",
-      "edit_chart"
+      "edit_chart",
+      "view_history",
+      "view_all_conversations"
     ],
     "auditor": [
       "view_audit",
-      "qa_review"
+      "qa_review",
+      "view_history",
+      "view_all_conversations"
     ],
     "admin": [
       "view_audit",
-      "review_red"
+      "review_red",
+      "view_history",
+      "view_all_conversations",
+      "view_network"
     ],
     "receptionist": [
       "view_schedule",
@@ -107,6 +116,9 @@
       "send_reminder",
       "frontdesk_chat",
       "register_patient"
+    ],
+    "network_engineer": [
+      "view_network"
     ]
   },
   "access": {
@@ -199,5 +211,10 @@
   "logging": {
     "store_masked_text": true,
     "store_raw_text": false
+  },
+  "network": {
+    "_comment": "Network view (network_engineer role). leash_url: optional local policy gateway, empty = disabled. public_probe: a public address tried once a minute (1 second timeout) to report whether this machine can reach the internet; the app itself never uses it. Empty = don't probe.",
+    "leash_url": "",
+    "public_probe": "1.1.1.1:443"
   }
 }

@@ -6,10 +6,26 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.request
+import weakref
 from urllib.parse import urlparse
 
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+
+# Every call to the model server is recorded (where to, which endpoint, how long, ok or not; never any
+# content) in the audit log of each running app. The network view reads these back.
+SINKS: "weakref.WeakSet" = weakref.WeakSet()
+
+
+def _record(url: str, what: str, ms: int, ok: bool, model: str | None = None) -> None:
+    to = urlparse(url).netloc or url
+    for sink in list(SINKS):
+        try:
+            sink.write("model_call", None, **{"from": "app", "to": f"ollama {to}", "what": what,
+                                              "model": model, "ms": ms, "ok": ok})
+        except Exception:
+            pass  # recording must never break an answer
 
 
 def _assert_local(url: str) -> None:
@@ -24,13 +40,25 @@ def _post(url: str, payload: dict, timeout: int) -> dict:
                                  headers={"Content-Type": "application/json"})
     # Bypass any system proxy so the request cannot leave the machine.
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    with opener.open(req, timeout=timeout) as r:
-        return json.loads(r.read())
+    t0, ok = time.time(), False
+    try:
+        with opener.open(req, timeout=timeout) as r:
+            out = json.loads(r.read())
+        ok = True
+        return out
+    finally:
+        _record(url, urlparse(url).path, int((time.time() - t0) * 1000), ok, payload.get("model"))
 
 
 def chat(policy: dict, messages: list[dict], system: str | None = None) -> str:
     if os.environ.get("MOCK_LLM") == "1":
         last = messages[-1]["content"]
+        for sink in list(SINKS):
+            try:
+                sink.write("model_call", None, **{"from": "app", "to": "stand-in model (MOCK_LLM)",
+                                                  "what": "/api/chat", "model": "mock", "ms": 0, "ok": True})
+            except Exception:
+                pass
         return f"(stand-in model) I received {len(last)} characters. Summary would appear here."
     m = policy["model"]
     out = _post(f"{m['ollama_url']}/api/chat", {
@@ -44,15 +72,19 @@ def chat(policy: dict, messages: list[dict], system: str | None = None) -> str:
     return out["message"]["content"]
 
 
-def installed_models(policy: dict) -> list[str] | None:
+def installed_models(policy: dict, timeout: float = 3) -> list[str] | None:
     """Model names Ollama has on this machine, or None if Ollama isn't running."""
+    url = f"{policy['model']['ollama_url']}/api/tags"
+    t0, out = time.time(), None
     try:
         _assert_local(policy["model"]["ollama_url"])
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        with opener.open(f"{policy['model']['ollama_url']}/api/tags", timeout=3) as r:
-            return [x["name"] for x in json.loads(r.read()).get("models", [])]
+        with opener.open(url, timeout=timeout) as r:
+            out = [x["name"] for x in json.loads(r.read()).get("models", [])]
     except Exception:
-        return None
+        out = None
+    _record(url, "/api/tags", int((time.time() - t0) * 1000), out is not None)
+    return out
 
 
 def warm(policy: dict) -> float | None:

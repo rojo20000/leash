@@ -35,11 +35,14 @@
       <nav id="tabs">
         <button data-tab="home">Home</button>
         <button data-tab="schedule" data-perm="view_schedule">Schedule</button>
+        <button data-tab="calendar" data-perm="view_schedule">Calendar</button>
         <button data-tab="patients" data-perm="view_patients">Patients</button>
         <button data-tab="chat" data-perm="chat">Ask a question</button>
+        <button data-tab="conversations" data-perm="chat,frontdesk_chat,view_all_conversations">Conversations</button>
         <button data-tab="review" data-perm="chat,review_red,qa_review">Needs review <span id="review-count" class="count" hidden></span></button>
         <button data-tab="outbox" data-perm="draft_message,approve_message">Messages</button>
         <button data-tab="audit" data-perm="view_audit">Audit log</button>
+        <button data-tab="network" data-perm="view_network">Network</button>
       </nav>
       <div class="who"><span id="who-name"></span><span id="who-role" class="pill"></span><span id="who-model" class="model" title="The AI model runs on this computer"></span></div>
       <button id="logout" class="ghost">Sign out</button>
@@ -58,6 +61,7 @@
             <h2 class="sub-h">Latest chart updates</h2>
             <div id="home-recent" class="rows"></div>
           </div>
+          <p id="db-status" class="db-line" hidden></p>
         </section>
         <aside class="guide" data-perm="check_in">
           <h2>Your day at the front desk</h2>
@@ -117,7 +121,7 @@
             <h2>Book an appointment</h2>
             <form id="book-form" novalidate>
               <label>Patient
-                <input id="book-q" type="search" placeholder="Type 2+ letters of a name, or a birth date (YYYY-MM-DD)" autocomplete="off">
+                <input id="book-q" type="search" placeholder="Name, or birth date YYYY-MM-DD" autocomplete="off">
               </label>
               <div id="book-results" class="pick-list"></div>
               <div id="book-picked" class="picked" hidden></div>
@@ -144,6 +148,50 @@
       </div>
     </section>
 
+    <section id="tab-calendar" class="tab cal-layout" hidden>
+      <div class="cal-main">
+        <div class="row-between cal-head">
+          <div>
+            <h2 id="cal-title">Calendar</h2>
+            <p id="cal-counts" class="muted"></p>
+          </div>
+          <div class="sched-controls">
+            <div class="seg" role="group" aria-label="Move through the calendar">
+              <button type="button" id="cal-prev" class="ghost small-btn" aria-label="Previous"><svg class="icon nav" viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5L5.5 8l4.5 4.5"/></svg></button>
+              <button type="button" id="cal-today" class="ghost small-btn">Today</button>
+              <button type="button" id="cal-next" class="ghost small-btn" aria-label="Next"><svg class="icon nav" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg></button>
+            </div>
+            <div class="seg" role="group" aria-label="View">
+              <button type="button" data-cal-view="day" class="ghost small-btn" aria-pressed="false">Day</button>
+              <button type="button" data-cal-view="week" class="ghost small-btn" aria-pressed="true">Week</button>
+              <button type="button" data-cal-view="month" class="ghost small-btn" aria-pressed="false">Month</button>
+            </div>
+            <select id="cal-clin" aria-label="Clinician"></select>
+          </div>
+        </div>
+        <p class="cal-key" aria-label="Status key"></p>
+        <p id="cal-error" class="error" role="alert"></p>
+        <div id="cal-body" class="cal-body" aria-live="polite"></div>
+      </div>
+      <aside id="cal-panel" class="cal-panel" hidden aria-labelledby="cal-panel-title" tabindex="-1">
+        <div class="cal-panel-head">
+          <div>
+            <h2 id="cal-panel-title">Appointment</h2>
+            <p id="cal-panel-when" class="muted"></p>
+          </div>
+          <button type="button" id="cal-close" class="ghost small-btn" aria-label="Close panel (Escape)"><svg class="icon close" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg> Close</button>
+        </div>
+        <dl id="cal-appt" class="facts"></dl>
+        <div id="cal-actions" class="actions"></div>
+        <div id="cal-record"></div>
+        <section id="cal-changes" hidden>
+          <h3>Changes</h3>
+          <p class="muted">Every registration, booking and chart change for this patient, newest first.</p>
+          <ol id="cal-history" class="history"></ol>
+        </section>
+      </aside>
+    </section>
+
     <section id="tab-patients" class="tab panes" hidden>
       <aside class="pane pane-list">
         <div class="pane-head row-between"><div><h2>Patients</h2><p class="muted">Most to check first</p></div>
@@ -155,22 +203,7 @@
         <div id="patient-empty" class="empty"><strong>Pick a patient from the list.</strong><span class="muted">Start at the top: that person has the most to check. Their record opens here, and you can ask the assistant about them alongside it.</span></div>
         <div id="patient-view" hidden>
           <div class="record">
-            <header class="record-head">
-              <h2 id="pt-name" class="record-title"></h2>
-              <p id="pt-meta" class="muted"></p>
-              <div id="pt-ident" class="ident"></div>
-              <p class="synthetic">Made-up record for testing</p>
-            </header>
-            <div id="pt-attention"></div>
-            <div class="pt-grid">
-              <div><h3>Conditions</h3><ul id="pt-conditions"></ul></div>
-              <div><h3>Medications</h3><ul id="pt-meds"></ul></div>
-              <div><h3>Allergies</h3><ul id="pt-allergies"></ul></div>
-            </div>
-            <h3>Results</h3>
-            <div class="table-wrap"><table><thead><tr><th>Date</th><th>Test</th><th>Value</th><th>Reference</th></tr></thead><tbody id="pt-obs"></tbody></table></div>
-            <h3>Notes and documents</h3>
-            <div id="pt-notes"></div>
+            <div id="pt-core"></div>
             <section id="entry-box" class="entry" data-perm="edit_chart">
               <h3>Add to this chart</h3>
               <p class="muted">Additions only. Nothing already in the chart can be changed or deleted; corrections go in as an addendum, and every addition is kept in the history below.</p>
@@ -190,7 +223,7 @@
                 </label>
                 <div id="entry-fields"></div>
                 <div id="entry-allergy" class="allergy-warn" hidden></div>
-                <div class="pin-row"><label>PIN <input id="entry-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4 digits"></label>
+                <div class="pin-row"><label>PIN <input id="entry-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••"></label>
                   <button id="entry-btn" type="submit" disabled>Add to chart</button></div>
                 <p id="entry-summary" class="summary muted"></p>
                 <p id="entry-msg" class="error" role="alert"></p>
@@ -236,6 +269,24 @@
       <p class="hint">Enter to send · Shift+Enter for a new line</p>
     </section>
 
+    <section id="tab-conversations" class="tab page wide" hidden>
+      <div class="row-between sched-head">
+        <div>
+          <h2>Conversations</h2>
+          <p id="conv-sub" class="muted">Every question asked of the assistant and what it answered, newest first.</p>
+        </div>
+        <div class="sched-controls">
+          <select id="conv-user" aria-label="Person"></select>
+          <select id="conv-patient" aria-label="Patient"></select>
+          <select id="conv-tier" aria-label="Result"></select>
+          <button type="button" id="conv-refresh" class="ghost small-btn">Refresh</button>
+        </div>
+      </div>
+      <p id="conv-error" class="error" role="alert"></p>
+      <div class="conv-head" aria-hidden="true"><span>When</span><span>Who</span><span>Patient</span><span>Question</span><span>Result</span></div>
+      <div id="conv-list" class="conv-list"></div>
+    </section>
+
     <section id="tab-review" class="tab page" hidden>
       <div class="row-between">
         <h2>Needs review</h2>
@@ -277,6 +328,38 @@
         </table>
       </div>
     </section>
+
+    <section id="tab-network" class="tab page wide" hidden>
+      <div class="row-between sched-head">
+        <div>
+          <h2>Network</h2>
+          <p id="net-sub" class="muted">Every connection the app makes, and proof it can't reach the internet.</p>
+        </div>
+        <div class="sched-controls">
+          <span id="net-checked" class="muted small"></span>
+          <button type="button" id="net-refresh" class="ghost small-btn">Refresh</button>
+        </div>
+      </div>
+      <p id="net-error" class="error" role="alert"></p>
+      <div class="net-grid">
+        <section>
+          <h3 class="net-h">Connections</h3>
+          <p class="net-key"></p>
+          <div id="net-diagram" class="net-diagram"></div>
+          <h3>Services</h3>
+          <div class="table-wrap"><table class="net-table"><thead><tr><th>Service</th><th>Address</th><th>Status</th><th>Detail</th></tr></thead><tbody id="net-nodes"></tbody></table></div>
+          <h3>Links</h3>
+          <div class="table-wrap"><table class="net-table"><thead><tr><th>From</th><th>To</th><th>Protocol</th><th>Purpose</th><th>Status</th><th>Last seen</th><th class="num">Calls, 24 h</th></tr></thead><tbody id="net-edges"></tbody></table></div>
+        </section>
+        <aside class="net-side">
+          <h3 class="net-h">Outbound internet</h3>
+          <p id="net-egress" class="net-egress"></p>
+          <ul id="net-checks" class="net-checks"></ul>
+        </aside>
+      </div>
+      <h3>Recent calls</h3>
+      <div class="table-wrap"><table class="net-table"><thead><tr><th>Time</th><th>From</th><th>To</th><th>What</th><th>Result</th><th class="num">ms</th></tr></thead><tbody id="net-calls"></tbody></table></div>
+    </section>
   </div>
   <dialog id="reg-dialog" aria-labelledby="reg-title">
     <form id="reg-form" novalidate>
@@ -295,11 +378,29 @@
         <label>Language <select id="reg-language"></select></label>
       </div>
       <ul id="reg-problems" class="problems"></ul>
-      <div class="pin-row"><label>PIN <input id="reg-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4 digits"></label>
+      <div class="pin-row"><label>PIN <input id="reg-pin" class="pin" type="password" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="••••"></label>
         <button id="reg-btn" type="submit" disabled>Register patient</button></div>
       <p id="reg-msg" class="error" role="alert"></p>
     </form>
   </dialog>
+  <template id="tpl-record">
+    <header class="record-head">
+      <h2 class="record-title" data-f="name"></h2>
+      <p class="muted" data-f="meta"></p>
+      <div class="ident" data-f="ident"></div>
+      <p class="synthetic">Made-up record for testing</p>
+    </header>
+    <div data-f="attention"></div>
+    <div class="pt-grid">
+      <div><h3>Conditions</h3><ul data-f="conditions"></ul></div>
+      <div><h3>Medications</h3><ul data-f="meds"></ul></div>
+      <div><h3>Allergies</h3><ul data-f="allergies"></ul></div>
+    </div>
+    <h3>Results</h3>
+    <div class="table-wrap"><table><thead><tr><th>Date</th><th>Test</th><th>Value</th><th>Reference</th></tr></thead><tbody data-f="obs"></tbody></table></div>
+    <h3>Notes and documents</h3>
+    <div data-f="notes"></div>
+  </template>
   <script src="/app.js"></script>
 </body>
 </html>

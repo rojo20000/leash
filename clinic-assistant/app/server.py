@@ -22,8 +22,9 @@ from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import VERSION, llm, privacy
+from . import VERSION, llm, network, privacy
 from .audit import AuditLog
+from .db import ClinicDB
 from .ehr import EHR
 from .guardrails import REVIEW_NOTE, Guardrails, worst
 from .schedule import Schedule, ScheduleError
@@ -42,6 +43,43 @@ SECURITY_HEADERS = {
 }
 MAX_BODY = 20_000
 HISTORY_TURNS = 10
+MAX_CONTEXT_APPTS = 25
+MAX_CONTEXT_WORDS = 1400
+GROUNDING = ("You are given today's clinic schedule from the clinic's own database, with each patient shown as a "
+             "label like 'Patient A (syn-004)'. Use only the patients and facts listed there. Refer to patients by "
+             "their label. If asked about someone who is not listed, say they are not on today's list. Never invent "
+             "patients, labels, results, dates or record ids. If the list doesn't answer the question, say what is missing.")
+LABEL_MENTION = re.compile(r"\b(?i:patient)\s+(?:(?i:tag)\s+)?([A-Z]{1,2}|\d+)\b|\b(syn-\d{3,})\b")
+
+
+def _label(i: int) -> str:
+    return "Patient " + (chr(65 + i) if i < 26 else chr(64 + i // 26) + chr(65 + i % 26))
+
+
+def _abnormal(o: dict) -> bool:
+    """True when a result is outside its reference range (only for the simple, parseable ranges)."""
+    v, ref = o.get("value"), str(o.get("ref", "")).strip()
+    try:
+        if isinstance(v, str) and "/" in v and ref.startswith("<") and "/" in ref:
+            sys_, dia = (float(x) for x in v.split("/"))
+            rs, rd = (float(x) for x in ref[1:].split("/"))
+            return sys_ >= rs or dia >= rd
+        if isinstance(v, str) and ref.lower() == "negative":
+            return v.lower() != "negative"
+        x = float(v)
+        m = re.match(r"^([\d.]+)\s*-\s*([\d.]+)", ref)
+        if m:
+            return not float(m[1]) <= x <= float(m[2])
+        m = re.match(r"^([<>])\s*([\d.]+)", ref)
+        if m:
+            return x >= float(m[2]) if m[1] == "<" else x <= float(m[2])
+    except (TypeError, ValueError):
+        pass
+    return False
+
+
+def _audit_ref(entry: dict | None) -> dict | None:
+    return {"event": entry["event"], "ts": entry["ts"], "hash": entry["hash"]} if entry else None
 
 
 class JsonStore:
@@ -85,19 +123,24 @@ class App:
         self.policy = json.loads((root / "config" / "policy.json").read_text())
         data = data_dir or root / "data"
         data.mkdir(parents=True, exist_ok=True)
+        self.data = data
         self.users = UserStore(data / "users.json", self.policy["roles"])
         self.audit = AuditLog(data / "audit.jsonl")
+        llm.SINKS.add(self.audit)  # every call to the model server is recorded here (no content)
         self.outbox = JsonStore(data / "outbox.json")
         self.reviews = JsonStore(data / "reviews.json")
-        self.ehr = EHR(data / "patients.json")
+        # The clinic database (data/clinic.db): source of truth for patients and appointments, with an
+        # append-only, hash-chained change_log of who changed what.
+        self.db = ClinicDB(data / "clinic.db")
+        self.ehr = EHR(data / "patients.json", self.db)
         self.views: dict[str, list[tuple[float, str]]] = {}
         self.guard = Guardrails(self.policy)
         # Local append-only vector store: similar-case search and reworded-injection detection.
         self.vectors = VectorStore(data / "vectors.sqlite", Embedder(self.policy))
         index_all(self.vectors, list(self.ehr.patients.values()), privacy.mask)
         self.guard.vectors = self.vectors
-        self.chart = AuditLog(data / "chart_history.jsonl")  # what was added to each chart, by whom (hash-chained)
-        self.schedule = Schedule(data / "schedule.json", self.policy["clinic"], self.ehr.patients)
+        self.chart = self.db  # chart history now lives in clinic.db's change_log (replaces chart_history.jsonl)
+        self.schedule = Schedule(data / "schedule.json", self.policy["clinic"], self.ehr.patients, db=self.db)
         fd = self.policy["frontdesk"]
         self.fd_fields = fd["allowed_fields"]
         self.fd_redirect = [re.compile(x, re.I) for x in fd["clinical_redirect_patterns"]]
@@ -185,10 +228,8 @@ class App:
             if dup:
                 raise RecordError(f"{v['given']} {v['family']} with that birth date is already registered. "
                                   "Search for them instead of adding them again.")
-            p = self.ehr.add_patient(v)
+            p = self.ehr.add_patient(v, by=sess["user"], role=sess["role"])
         reindex(self.vectors, p, privacy.mask)
-        self.chart.write("patient_registered", sess["user"], patient_id=p["id"],
-                         summary="Registered as a new patient")
         self.audit.write("patient_registered", sess["user"], patient_id=p["id"])
         return p
 
@@ -207,31 +248,49 @@ class App:
                     self.queue("document", "red", sess, privacy.mask(change["text"])[0],
                                [f"{change['type']} in record {pid}"] + found, None)
             apply_entry(p, change, sess["user"])
-            self.ehr.save()
+            self.ehr.save_patient(p, sess["user"], sess["role"], "chart_entry", summary)
         reindex(self.vectors, p, privacy.mask)
-        self.chart.write("chart_" + change["kind"], sess["user"], patient_id=pid, summary=summary,
-                         change={k: v for k, v in change.items() if k != "kind"})
         self.audit.write("chart_updated", sess["user"], patient_id=pid, kind=change["kind"])
         return p, warnings
 
-    def history(self, pid: str | None, limit: int = 500) -> list[dict]:
-        rows = self.chart.read(limit=100000)
+    def history(self, pid: str, limit: int = 500) -> list[dict]:
+        """Every tracked change to one patient and their appointments, newest first (from change_log)."""
+        return self.db.history(pid, limit)
+
+    def recent_changes(self, limit: int = 30) -> list[dict]:
+        """The latest changes people made to patient records (not imports), for the home screen."""
         out = []
-        for r in rows:
-            if pid is None or r["details"].get("patient_id") == pid:
-                p = self.ehr.get(r["details"].get("patient_id", ""))
-                out.append({"ts": r["ts"], "user": r["user"], "event": r["event"],
-                            "patient_id": r["details"].get("patient_id"),
-                            "patient": f"{p['name']['given']} {p['name']['family']}" if p else "",
-                            "summary": r["details"].get("summary", ""), "change": r["details"].get("change")})
+        for r in self.db.history(None, 200, include_system=False):
+            if r["entity"] != "patient":
+                continue
+            p = self.ehr.patients.get(r["entity_id"])
+            out.append({"ts": r["at"], "user": r["by"], "event": r["action"], "patient_id": r["entity_id"],
+                        "patient": f"{p['name']['given']} {p['name']['family']}" if p else "",
+                        "summary": r["summary"], "change": None})
             if len(out) >= limit:
                 break
         return out
 
+    def calendar(self, sess: dict, start: date, end: date, clinician: str | None) -> dict:
+        """Appointments day by day. Demo days within 14 days of today are filled the first time they're seen."""
+        today = self.schedule.now().date()
+        d = start
+        while d <= end:
+            if abs((d - today).days) <= 14:
+                self.schedule.ensure_day(d)
+            d += timedelta(days=1)
+        by_day: dict[str, list[dict]] = {}
+        for a in self.schedule.between(start.isoformat(), end.isoformat(), clinician):
+            by_day.setdefault(a["date"], []).append(self.appt_view(sess, a))
+        days = [(start + timedelta(days=i)).isoformat() for i in range((end - start).days + 1)]
+        return {"from": start.isoformat(), "to": end.isoformat(), "today": today.isoformat(),
+                "clinicians": [{"id": k, "name": v} for k, v in self.policy["clinic"]["clinicians"].items()],
+                "days": [{"date": x, "appointments": by_day.get(x, [])} for x in days]}
+
     # ---- schedule and front desk -----------------------------------------
     def appt_view(self, sess: dict, a: dict) -> dict:
         """One appointment as this role may see it. Front desk gets the allow-listed fields only."""
-        p = self.ehr.get(a["patient_id"]) or {}
+        p = self.ehr.patients.get(a["patient_id"]) or {}
         out = {k: a[k] for k in ("id", "date", "time", "clinician", "visit_type", "status", "cancel_reason",
                                  "reminder")}
         out["clinician_name"] = self.policy["clinic"]["clinicians"].get(a["clinician"], a["clinician"])
@@ -286,9 +345,10 @@ class App:
                   "detail": "schedule and open times; no clinical records, names or birth dates"},
                  {"step": "Identifiers masked", "status": "ok", "detail": ", ".join(tags) if tags else "none found"}]
         unmask = lambda t: re.sub(r"\[P\d+\]", lambda m: name_of.get(m.group(0), m.group(0)), t)
-        base = {"masked_input": unmask(masked), "model_saw": masked, "masked_tags": tags, "trace": trace}
+        base = {"masked_input": unmask(masked), "model_saw": masked, "masked_tags": tags, "trace": trace,
+                "_context": "today's and tomorrow's schedule (front desk view)"}
         if any(r.search(masked) for r in self.fd_redirect):
-            self.audit.write("frontdesk_redirected", sess["user"], text=masked)
+            base["_audit"] = self.audit.write("frontdesk_redirected", sess["user"], text=masked)
             trace.append({"step": "Scope check", "status": "warn", "detail": "clinical question: not for front desk"})
             return {**base, "tier": "redirect",
                     "reasons": ["That's a clinical question. The front desk can't see clinical information, "
@@ -298,13 +358,13 @@ class App:
                       "detail": "; ".join(inp["reasons"]) or "no flags"})
         if inp["tier"] == "red":
             item = self.queue("frontdesk", "red", sess, masked, inp["reasons"], None)
-            self.audit.write("request_blocked", sess["user"], reasons=inp["reasons"], text=masked)
+            base["_audit"] = self.audit.write("request_blocked", sess["user"], reasons=inp["reasons"], text=masked)
             return {**base, "tier": "red", "reasons": inp["reasons"], "review_id": item["id"]}
         try:
             raw = llm.chat(self.policy, [{"role": "user", "content": f"Schedule:\n{context}\n\nQuestion: {masked}"}],
                            system=self.policy["frontdesk"]["system_prompt"])
         except Exception as e:
-            self.audit.write("model_error", sess["user"], error=str(e)[:200])
+            base["_audit"] = self.audit.write("model_error", sess["user"], error=str(e)[:200])
             trace.append({"step": "Local model", "status": "blocked", "detail": "not reachable"})
             return {**base, "tier": "error", "reasons": ["The local model is not reachable. Is Ollama running?"]}
         trace.append({"step": "Local model", "status": "ok", "detail": f"{self.policy['model']['chat_model']}, on this machine"})
@@ -313,15 +373,135 @@ class App:
             reasons = out["reasons"] if out["tier"] == "red" else ["The answer strayed into clinical topics."]
             item = self.queue("frontdesk", "red", sess, masked, reasons, out["text"])
             trace.append({"step": "Output check", "status": "blocked", "detail": "; ".join(reasons)})
-            self.audit.write("model_answer", sess["user"], tier="red", text=masked, role="frontdesk")
+            base["_audit"] = self.audit.write("model_answer", sess["user"], tier="red", text=masked, role="frontdesk")
             return {**base, "tier": "red", "reasons": reasons, "review_id": item["id"]}
         trace.append({"step": "Output check", "status": "ok", "detail": "no flags"})
-        self.audit.write("model_answer", sess["user"], tier=out["tier"], text=masked, role="frontdesk")
+        base["_audit"] = self.audit.write("model_answer", sess["user"], tier=out["tier"], text=masked, role="frontdesk")
+        base["_answer"] = out["text"].replace(REVIEW_NOTE, "")
         reply = unmask(out["text"].replace(REVIEW_NOTE, ""))
         for c, label in self.policy["clinic"]["clinicians"].items():
             reply = reply.replace(c, label)
         return {**base, "tier": out["tier"], "reasons": out["reasons"],
                 "reply": reply + "\n\n---\nAI draft. Check the schedule before you tell a patient."}
+
+    # ---- grounding the general assistant in today's schedule ------------------
+    def withhold_note(self, sess: dict, pid: str, note: dict, found: list[str]) -> None:
+        """Queue a note that looks like it carries instructions for a second person (once per open item)."""
+        label = f"{note['type']} in record {pid}"
+        already = any(r["kind"] == "document" and r["status"] == "open" and r["reasons"][0] == label
+                      for r in self.reviews.all())
+        if not already:
+            self.queue("document", "red", sess, privacy.mask(note["text"])[0], [label] + found, None)
+
+    def today_context(self, sess: dict) -> dict | None:
+        """Today's appointments from the database, for the assistant when no patient is open.
+
+        Patients appear as 'Patient A (syn-004)': never a name, record number, birth date or contact.
+        Clinical roles also get conditions, things to check, abnormal latest results, allergies and the
+        latest note (scanned first; a flagged note is withheld). Schedule-only roles get times and status.
+        Other roles get nothing (None).
+        """
+        clinical = self.can(sess, "view_patients")
+        if not (clinical or self.can(sess, "view_schedule")):
+            return None
+        now = self.schedule.now()
+        today = now.date()
+        self.schedule.ensure_day(today)
+        mine = sess["user"] in self.policy["clinic"]["clinicians"]
+        appts = [a for a in self.schedule.day(today.isoformat()) if not mine or a["clinician"] == sess["user"]]
+        labels: dict[str, str] = {}
+        withheld, words, shown = 0, 0, 0
+        lines = []
+        for a in appts[:MAX_CONTEXT_APPTS]:
+            pid = a["patient_id"]
+            labels.setdefault(pid, _label(len(labels)))
+            block = [f"- {a['time']} {labels[pid]} ({pid}): {a['visit_type']}, {a['status'].replace('_', ' ')}"
+                     + ("" if mine else f", with {a['clinician']}")]
+            p = self.ehr.patients.get(pid) if clinical else None
+            if p:
+                block.append(f"  {p['age']}-year-old {p['sex']}. Conditions: {'; '.join(p['conditions'][:3]) or 'none recorded'}")
+                if p["attention"]:
+                    block.append("  Needs attention: " + "; ".join(p["attention"][:3]))
+                latest = {}
+                for o in sorted(p["observations"], key=lambda o: o["date"]):
+                    latest[o["name"]] = o
+                ab = [o for o in latest.values() if _abnormal(o)]
+                if ab:
+                    block.append("  Abnormal latest results: " + "; ".join(
+                        f"{o['name']} {o['value']} {o['unit']}".strip() + f" (reference {o['ref']})" for o in ab[:4]))
+                block.append("  Allergies: " + "; ".join(p["allergies"]))
+                if p["notes"]:
+                    n = max(p["notes"], key=lambda n: n["date"])
+                    found = self.guard.scan_document(n["text"])
+                    if found:
+                        withheld += 1
+                        self.withhold_note(sess, pid, n, found)
+                        block.append("  Latest note: withheld by the safety check")
+                    else:
+                        ago = (today - date.fromisoformat(n["date"])).days
+                        text = n["text"] if len(n["text"]) <= 160 else n["text"][:157] + "..."
+                        block.append(f"  Latest note ({ago} days ago, {n['type'].lower()}): {text}")
+            size = len(" ".join(block).split())
+            if words + size > MAX_CONTEXT_WORDS:
+                break
+            words += size
+            shown += 1
+            lines += block
+        head = (f"Today's schedule ({'your patients' if mine else 'whole clinic'}): {len(appts)} appointment"
+                f"{'' if len(appts) == 1 else 's'}" + (f", first {shown} shown" if shown < len(appts) else "")
+                + f". It is now {now.strftime('%H:%M')}.")
+        if not appts:
+            lines.append("- No appointments today.")
+        if clinical:
+            open_items = [r for r in self.visible_reviews(sess) if r["status"] == "open"]
+            lines.append(f"Open review items for you: {len(open_items)}.")
+        labels = {pid: lab for pid, lab in labels.items() if any(f"({pid})" in line for line in lines)}
+        return {"text": privacy.mask(head + "\n" + "\n".join(lines))[0], "labels": labels, "count": shown,
+                "total": len(appts), "withheld": withheld, "clinical": clinical}
+
+    @staticmethod
+    def unknown_patients(answer: str, labels: dict[str, str]) -> list[str]:
+        """Patient labels or record ids in an answer that were not in the context the model was given."""
+        letters = {lab.split(" ", 1)[1] for lab in labels.values()}
+        bad = []
+        for m in LABEL_MENTION.finditer(answer):
+            if (m[1] and m[1] not in letters) or (m[2] and m[2] not in labels):
+                bad.append(m[0])
+        return sorted(set(bad))
+
+    # ---- conversation log ------------------------------------------------
+    def log_turn(self, sess: dict, kind: str, patient_id: str | None, result: dict, t0: float) -> dict:
+        """Save one assistant turn to clinic.db (masked question, checked answer) and strip internal keys."""
+        audit, context, answer = result.pop("_audit", None), result.pop("_context", None), result.pop("_answer", None)
+        if result["tier"] in ("red", "error", "redirect"):
+            answer = None
+        row = self.db.log_conversation({
+            "id": uuid.uuid4().hex[:12], "user": sess["user"], "role": sess["role"], "kind": kind,
+            "patient_id": patient_id, "question": result.get("model_saw", result.get("masked_input")),
+            "answer": answer, "tier": result["tier"], "reasons": result.get("reasons") or [],
+            "review_id": result.get("review_id"), "model": self.policy["model"]["chat_model"],
+            "duration_ms": int((time.time() - t0) * 1000), "context_summary": context,
+            "audit_ref": _audit_ref(audit)})
+        result["conversation_id"] = row["id"]
+        return result
+
+    @staticmethod
+    def strip_internal(result: dict) -> dict:
+        for k in ("_audit", "_context", "_answer"):
+            result.pop(k, None)
+        return result
+
+    def conversations(self, sess: dict, limit: int, user: str | None, patient_id: str | None) -> dict:
+        see_all = self.can(sess, "view_all_conversations")
+        items = self.db.conversations(limit, user if see_all else sess["user"], patient_id)
+        open_amber = {r["id"] for r in self.reviews.all() if r["tier"] == "amber" and r["status"] == "open"}
+        for it in items:  # a held answer stays hidden from its asker until they confirm the review
+            it["answer_held"] = it["tier"] == "amber" and it["review_id"] in open_amber
+            if it["answer_held"] and it["user"] == sess["user"]:
+                it["answer"] = None
+        self.audit.write("conversations_viewed", sess["user"], count=len(items), all_users=see_all,
+                         filter_user=user if see_all else None, patient_id=patient_id)
+        return {"items": items, "can_see_all": see_all}
 
     def can(self, sess: dict, perm: str) -> bool:
         return perm in self.policy["roles"].get(sess["role"], [])
@@ -407,25 +587,22 @@ class App:
 
         if inp["tier"] == "red":
             item = self.queue(kind, "red", sess, masked, inp["reasons"], None)
-            self.audit.write("request_blocked", sess["user"], reasons=inp["reasons"], flags=inp["flags"],
-                             masked_tags=tags, text=log_text)
+            entry = self.audit.write("request_blocked", sess["user"], reasons=inp["reasons"], flags=inp["flags"],
+                                     masked_tags=tags, text=log_text)
             trace.append({"step": "Routed", "status": "blocked", "detail": "red: sent to a second reviewer"})
-            return {**base, "tier": "red", "reasons": inp["reasons"], "review_id": item["id"]}
+            return {**base, "tier": "red", "reasons": inp["reasons"], "review_id": item["id"], "_audit": entry,
+                    "_context": f"record {patient['id']}" if patient else None}
 
-        model_input, doc_reasons = masked, []
+        model_input, doc_reasons, ctx, system, context_summary = masked, [], None, None, "no context"
         if patient is not None:
             context, notes = self.ehr.model_context(patient)
             kept = []
             for n in notes:
                 found = self.guard.scan_document(n["text"])
                 if found:
-                    label = f"{n['type']} in record {patient['id']}"
-                    already = any(r["kind"] == "document" and r["status"] == "open" and r["reasons"][0] == label
-                                  for r in self.reviews.all())
                     doc_reasons.append(f"A {n['type'].lower()} ({n['ago']} days ago) was withheld from the model: "
                                        + " ".join(found))
-                    if not already:
-                        self.queue("document", "red", sess, privacy.mask(n["text"])[0], [label] + found, None)
+                    self.withhold_note(sess, patient["id"], n, found)
                 else:
                     kept.append(f"- {n['ago']} days ago, {n['type']}: {n['text']}")
             context = privacy.mask(context + "\nNotes:\n" + ("\n".join(kept) or "- none"))[0]
@@ -435,48 +612,67 @@ class App:
                           + (f"; {len(doc_reasons)} document withheld" if doc_reasons else "")})
             if sess.get("history_pid") != patient["id"]:
                 sess["history"], sess["history_pid"] = [], patient["id"]
-        elif kind == "chat" and sess.get("history_pid"):
-            sess["history"], sess["history_pid"] = [], None
+            context_summary = f"record {patient['id']}"
+        elif kind == "chat":
+            if sess.get("history_pid"):
+                sess["history"], sess["history_pid"] = [], None
+            ctx = self.today_context(sess)
+            if ctx is not None:  # ground general questions in today's schedule, never in the model's imagination
+                model_input = f"{ctx['text']}\n\nQuestion: {masked}"
+                system = self.policy["scope"]["system_prompt"] + "\n\n" + GROUNDING
+                context_summary = f"today's schedule, {ctx['count']} appts"
+                trace.append({"step": "Context", "status": "warn" if ctx["withheld"] else "ok",
+                              "detail": f"today's schedule ({ctx['count']} appointments) from local database"
+                              + ("" if ctx["clinical"] else ", schedule only")
+                              + (f"; {ctx['withheld']} note withheld" if ctx["withheld"] else "")})
         history = sess["history"] if kind == "chat" else []
         messages = history + [{"role": "user", "content": model_input}]
         try:
-            raw = llm.chat(self.policy, messages)
+            raw = llm.chat(self.policy, messages, system=system) if system else llm.chat(self.policy, messages)
         except Exception as e:  # model down: fail closed, never fall back to a cloud model
-            self.audit.write("model_error", sess["user"], error=str(e)[:200])
+            entry = self.audit.write("model_error", sess["user"], error=str(e)[:200])
             trace.append({"step": "Local model", "status": "blocked", "detail": "not reachable"})
-            return {**base, "tier": "error", "reasons": ["The local model is not reachable. Is Ollama running?"]}
+            return {**base, "tier": "error", "reasons": ["The local model is not reachable. Is Ollama running?"],
+                    "_audit": entry, "_context": context_summary}
         trace.append({"step": "Local model", "status": "ok",
                       "detail": f"{self.policy['model']['chat_model']}, {time.time() - t0:.1f}s, on this machine"})
 
         out = self.guard.check_output(raw, inp["flags"])
         trace.append({"step": "Output check", "status": tier_status[out["tier"]],
                       "detail": "; ".join(out["reasons"]) or "no flags"})
-        tier = worst(inp["tier"], out["tier"], "amber" if doc_reasons else "green")
+        invented = self.unknown_patients(raw, ctx["labels"]) if ctx else []
+        if invented:
+            out["reasons"].append("Mentions a patient not in today's list (" + ", ".join(invented[:3]) + ").")
+            out["flags"].append("unknown_patient")
+        tier = worst(inp["tier"], out["tier"], "amber" if doc_reasons or invented else "green")
         reasons = doc_reasons + inp["reasons"] + out["reasons"]
         if kind == "chat" and tier != "red":
-            sess["history"] = (messages + [{"role": "assistant", "content": raw}])[-2 * HISTORY_TURNS:]
+            # with today's context, history keeps only the question: the context is rebuilt fresh every turn
+            asked = {"role": "user", "content": masked} if ctx else messages[-1]
+            sess["history"] = (history + [asked, {"role": "assistant", "content": raw}])[-2 * HISTORY_TURNS:]
         if patient is not None:
             self.audit.write("patient_context_used", sess["user"], patient_id=patient["id"],
                              documents_withheld=len(doc_reasons))
-        self.audit.write("model_answer", sess["user"], model=self.policy["model"]["chat_model"], tier=tier,
-                         masked_tags=tags, flags=inp["flags"] + out["flags"], text=log_text)
+        entry = self.audit.write("model_answer", sess["user"], model=self.policy["model"]["chat_model"], tier=tier,
+                                 masked_tags=tags, flags=inp["flags"] + out["flags"], text=log_text)
+        meta = {"_audit": entry, "_context": context_summary, "_answer": out["text"]}
 
         if tier == "red":
             item = self.queue(kind, "red", sess, masked, reasons, out["text"])
             trace.append({"step": "Routed", "status": "blocked",
                           "detail": "red: answer withheld, sent to a second reviewer"})
-            return {**base, "tier": "red", "reasons": reasons, "review_id": item["id"]}
+            return {**base, "tier": "red", "reasons": reasons, "review_id": item["id"], **meta}
         if tier == "amber" and kind == "chat":
             item = self.queue(kind, "amber", sess, masked, reasons, out["text"])
             trace.append({"step": "Routed", "status": "warn", "detail": "amber: held for your review"})
-            return {**base, "tier": "amber", "reasons": reasons, "review_id": item["id"]}
+            return {**base, "tier": "amber", "reasons": reasons, "review_id": item["id"], **meta}
         sampled = tier == "green" and self.rng.random() < self.policy["tiers"].get("green_sample_rate", 0)
         if sampled:
             self.queue("qa_sample", "green", sess, masked, ["Random quality sample"], out["text"])
         trace.append({"step": "Routed", "status": "warn" if tier == "amber" else "ok",
                       "detail": ("amber: flagged for the approver" if tier == "amber" else "green: no flags")
                       + (", copied to QA sample" if sampled else "")})
-        return {**base, "tier": tier, "reasons": reasons, "reply": out["text"]}
+        return {**base, "tier": tier, "reasons": reasons, "reply": out["text"], **meta}
 
 
 def make_handler(app: App):
@@ -540,6 +736,16 @@ def make_handler(app: App):
                                        "mock": llm_is_mock()})
             if path == "/api/reviews":
                 return self.send(200, app.visible_reviews(s))
+            if path == "/api/db/status":
+                return self.send(200, app.db.status())
+            if path.startswith("/api/patients/") and path.endswith("/history") and path.count("/") == 4:
+                if not app.can(s, "view_history"):
+                    return self.send(403, {"error": "Your role cannot see record history."})
+                pid = path.split("/")[3]
+                if not app.ehr.patients.get(pid):
+                    return self.send(404, {"error": "No such patient."})
+                app.audit.write("patient_history_viewed", s["user"], patient_id=pid)
+                return self.send(200, app.history(pid))
             if path == "/api/patients" or path.startswith("/api/patients/"):
                 if not app.can(s, "view_patients"):
                     return self.send(403, {"error": "Your role cannot open patient records."})
@@ -549,8 +755,6 @@ def make_handler(app: App):
                 parts = path.split("/")  # ['', 'api', 'patients', id, (similar|history)]
                 if len(parts) == 5 and parts[4] == "similar":
                     return self.send(200, app.similar_cases(s, parts[3]))
-                if len(parts) == 5 and parts[4] == "history":
-                    return self.send(200, app.history(parts[3]))
                 p = app.ehr.get(path.rsplit("/", 1)[-1])
                 if not p:
                     return self.send(404, {"error": "No such patient."})
@@ -566,7 +770,7 @@ def make_handler(app: App):
             if path == "/api/chart/recent":
                 if not app.can(s, "view_patients"):
                     return self.send(403, {"error": "Not allowed."})
-                return self.send(200, app.history(None, 30))
+                return self.send(200, app.recent_changes(30))
             qs = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             arg = lambda k: qs.get(k, [""])[0][:80]
             if path == "/api/schedule":
@@ -578,6 +782,23 @@ def make_handler(app: App):
                 except ValueError:
                     return self.send(400, {"error": "Bad date."})
                 return self.send(200, app.schedule_payload(s, day))
+            if path == "/api/calendar":
+                if not app.can(s, "view_schedule"):
+                    return self.send(403, {"error": "Your role cannot see the schedule."})
+                today = app.schedule.now().date()
+                try:
+                    start = date.fromisoformat(arg("from")) if arg("from") else today
+                    end = date.fromisoformat(arg("to")) if arg("to") else start + timedelta(days=6)
+                except ValueError:
+                    return self.send(400, {"error": "Bad date. Use YYYY-MM-DD."})
+                if end < start:
+                    return self.send(400, {"error": "'to' must be on or after 'from'."})
+                if (end - start).days + 1 > 42:
+                    return self.send(400, {"error": "Pick at most 42 days."})
+                clinician = arg("clinician") or None
+                if clinician and clinician not in app.policy["clinic"]["clinicians"]:
+                    return self.send(400, {"error": "Unknown clinician."})
+                return self.send(200, app.calendar(s, start, end, clinician))
             if path == "/api/schedule/slots":
                 if not app.can(s, "book"):
                     return self.send(403, {"error": "Your role cannot book appointments."})
@@ -598,12 +819,25 @@ def make_handler(app: App):
                 if not (app.can(s, "draft_message") or app.can(s, "approve_message")):
                     return self.send(403, {"error": "Not allowed."})
                 return self.send(200, app.outbox.all()[::-1])
+            if path == "/api/conversations":
+                if not (app.can(s, "chat") or app.can(s, "frontdesk_chat") or app.can(s, "view_all_conversations")):
+                    return self.send(403, {"error": "Your role has no assistant conversations."})
+                try:
+                    limit = max(1, min(500, int(arg("limit") or 100)))
+                except ValueError:
+                    return self.send(400, {"error": "limit must be a number."})
+                return self.send(200, app.conversations(s, limit, arg("user") or None, arg("patient_id") or None))
+            if path == "/api/network":
+                if not app.can(s, "view_network"):
+                    return self.send(403, {"error": "Your role cannot see the network view."})
+                app.audit.write("network_viewed", s["user"])
+                return self.send(200, network.status(app))
             if path == "/api/audit":
                 if not app.can(s, "view_audit"):
                     return self.send(403, {"error": "Not allowed."})
                 app.audit.write("audit_viewed", s["user"])
                 return self.send(200, {"entries": app.audit.read(), "verify": app.audit.verify(),
-                                       "vectors": app.vectors.status()})
+                                       "vectors": app.vectors.status(), "database": app.db.status()})
             self.send(404, {"error": "Not found."})
 
         def do_POST(self):
@@ -655,7 +889,9 @@ def make_handler(app: App):
                     patient = app.ehr.get(str(data["patient_id"]))
                     if not patient:
                         return self.send(404, {"error": "No such patient."})
-                return self.send(200, app.ask_model(s, text, "chat", patient))
+                t0 = time.time()
+                result = app.ask_model(s, text, "chat", patient)
+                return self.send(200, app.log_turn(s, "chat", patient["id"] if patient else None, result, t0))
 
             if path == "/api/reveal":
                 if not (app.can(s, "view_patients") or app.can(s, "check_in")):
@@ -686,7 +922,8 @@ def make_handler(app: App):
                 text = str(data.get("message", "")).strip()
                 if not text:
                     return self.send(400, {"error": "Empty message."})
-                return self.send(200, app.frontdesk_ask(s, text[:2000]))
+                t0 = time.time()
+                return self.send(200, app.log_turn(s, "frontdesk", None, app.frontdesk_ask(s, text[:2000]), t0))
 
             if path.startswith("/api/schedule/"):
                 perms = app.policy["roles"][s["role"]]
@@ -696,7 +933,7 @@ def make_handler(app: App):
                             return self.send(403, {"error": "Your role cannot book appointments."})
                         a = app.schedule.book(s["user"], str(data.get("patient_id", "")), str(data.get("date", "")),
                                               str(data.get("time", "")), str(data.get("clinician", "")),
-                                              str(data.get("visit_type", "")))
+                                              str(data.get("visit_type", "")), role=s["role"])
                         app.audit.write("appointment_booked", s["user"], appointment=a["id"], patient_id=a["patient_id"],
                                         date=a["date"], time=a["time"], clinician=a["clinician"])
                         return self.send(200, app.appt_view(s, a))
@@ -704,14 +941,15 @@ def make_handler(app: App):
                         a = app.schedule.change_status(s["user"], perms, str(data.get("id", "")),
                                                        str(data.get("expected", "")), str(data.get("to", "")),
                                                        data.get("checks") if isinstance(data.get("checks"), dict) else {},
-                                                       data.get("reason"))
+                                                       data.get("reason"), role=s["role"])
                         app.audit.write("appointment_" + a["status"], s["user"], appointment=a["id"],
                                         patient_id=a["patient_id"])
                         return self.send(200, app.appt_view(s, a))
                     if path == "/api/schedule/reminder":
                         if not app.can(s, "send_reminder"):
                             return self.send(403, {"error": "Your role cannot send reminders."})
-                        a = app.schedule.reminder(s["user"], str(data.get("id", "")), str(data.get("action", "")))
+                        a = app.schedule.reminder(s["user"], str(data.get("id", "")), str(data.get("action", "")),
+                                                 role=s["role"])
                         app.audit.write("reminder_" + ("sent" if a["reminder"]["sent_at"] else "prepared"),
                                         s["user"], appointment=a["id"])
                         return self.send(200, {"appointment": app.appt_view(s, a),
@@ -767,7 +1005,7 @@ def make_handler(app: App):
                 prompt = (f"{comm['draft_instructions']}\n\nRecipient group: {group} "
                           f"({comm['allowed_recipient_groups'][group]})\n\nWhat the message should say:\n"
                           f"{instructions}")
-                result = app.ask_model(s, prompt, "draft")
+                result = app.strip_internal(app.ask_model(s, prompt, "draft"))
                 if result["tier"] in ("red", "error"):
                     return self.send(200, result)
                 tier, reasons = result["tier"], list(result["reasons"])

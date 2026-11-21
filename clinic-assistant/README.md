@@ -1,6 +1,6 @@
 # Clinic Assistant: a restricted local medical AI (prototype)
 
-> **In the Leash repo:** this folder is a snapshot of Clinic Assistant v2.3 (work in progress), the human-facing front end for Leash. `data/vectors.sqlite` is a committed synthetic snapshot; check it with `python3 scripts/verify_stores.py`. Planning and handoff docs are in `handoff/`. Nothing here changes the Leash code outside this folder.
+> **In the Leash repo:** this folder is Clinic Assistant v2.5, the human-facing front end for Leash. `data/clinic.db` and `data/vectors.sqlite` are committed synthetic snapshots; check them with `python3 scripts/verify_db.py` and `python3 scripts/verify_stores.py`. Planning and handoff docs are in `handoff/`.
 
 A small web app that puts a **gatekeeper** between people and a local AI model.
 Nobody talks to the model directly. Every request is signed in, masked, checked,
@@ -9,6 +9,30 @@ answered on this computer only, checked again, and written to a tamper-evident l
 **Prototype. Use synthetic (made-up) patient data only.** It is not a medical device
 and has not been validated for clinical use.
 
+## New in 2.5: grounded answers, conversation log, network view
+
+- **"Ask the assistant" now knows today's clinic.** With no patient open, each question is sent with today's schedule from `data/clinic.db` (a clinician gets their own list, others the whole clinic; at most 25 appointments): time, visit type, status, and for clinical roles the conditions, things to check, abnormal latest results, allergies and latest note. Patients appear only as labels like `Patient A (syn-004)`, never names, record numbers, birth dates or contact details, and the text is masked and scanned for hidden instructions first (a flagged note is withheld). The model is told to use only the listed patients and never invent any; an answer that names a patient who isn't in the list is held (amber). The trace shows "Context: today's schedule (N appointments) from local database".
+- **Conversation log**: every doctor-assistant and front-desk-assistant turn is saved in `clinic.db` (`conversations` table, append-only and hash-chained): masked question, checked answer, tier, reasons, model, time taken, what context was used, a link to the audit entry, and what that person changed in records afterwards. `GET /api/conversations`; clinical leads, auditors and admins see everyone's, others only their own.
+- **Network engineer role** (`net_ops`, role `network_engineer`): sees only `GET /api/network`, a live map of what talks to what (browsers, the app, Ollama, the database files, an optional Leash gateway), whether anything can leave the machine, and recent model calls. No patient data, no schedule, no assistant. Every call to Ollama is recorded in the audit log with where, how long and whether it worked, never the content. Settings: `network` in `config/policy.json`.
+
+## New in 2.4: a real clinic database
+
+- **`data/clinic.db`** (SQLite, ships with Python) is now the source of truth for registered patients and appointments. The front desk registers patients, books and checks them in; clinicians add clinical details. Reception cannot change clinical details (`edit_chart` is not in its role).
+- **Every change is tracked**: each write saves the record and a `change_log` entry (who, role, when, what, before and after) in one transaction. The change log is append-only (SQLite triggers refuse edits and deletes) and hash-chained, so a change made behind the app's back is found. Check it any time with `python3 scripts/verify_db.py`.
+- **Calendar**: `GET /api/calendar?from=&to=[&clinician=]` (up to 42 days) for browsing patients by day; `GET /api/patients/<id>/history` shows every change to a patient and their appointments (clinical roles, auditor and admin; not the front desk); `GET /api/db/status` shows counts and the chain check.
+- The assistant reads the patient straight from the database on every question, so it always sees the latest chart.
+
+## New in 2.3: a full clinic day
+
+- **Front desk role (`desk_sam`)**: schedule, check-in, booking, reminders and registering patients. The server builds every front-desk view from an allow-list in `config/policy.json` (`frontdesk.allowed_fields`), so clinical data never reaches those screens. Its assistant gets only the schedule, with patient names replaced by tags, and clinical questions are redirected without reaching the model.
+- **Doctor side**: today's patients with what needs checking, start and finish visits, full chart, add to the chart.
+- **PIN for confidential details**: birth date, phone, address, record number and insurance ID are hidden on every screen until the PIN is typed, every time. Demo PIN 1234 (`confidential.pin`). Five wrong tries lock the account for 5 minutes. Every reveal and wrong PIN is in the audit log.
+- **Adding to the database**: register patients and add notes, findings, results, medicines, allergies and things to check. Every field is validated (impossible lab values, allergy clashes and duplicate patients are refused). Nothing is edited or deleted: stopped medicines and resolved items are kept with who, when and why. Each addition goes into the hash-chained change log in `data/clinic.db` (2.4; this replaced `data/chart_history.jsonl`) and refreshes the patient's entry in the vector store.
+- **Error-proofed flows**: buttons stay off until inputs are valid, only open times can be booked, check-in needs the identity checks, steps can't be skipped, two people can't change the same appointment at once, and anything that can't be undone needs a second press.
+- **Faster answers**: the model is loaded when the app starts and kept loaded for 30 minutes; answers are capped in length.
+
+See `docs/DEMO-SCRIPT.md` for an 8-minute walkthrough.
+
 ## What it enforces
 
 | Rule | Where |
@@ -16,7 +40,7 @@ and has not been validated for clinical use.
 | Model must be on this machine; any non-local model address is refused, and there is no cloud fallback | `app/llm.py` |
 | The web app only listens on `127.0.0.1` (not reachable from the network) | `config/policy.json`, `app/server.py` |
 | Accounts are created by an admin on the command line; no self sign-up | `manage_users.py` |
-| Roles: clinician, nurse, clinical lead, auditor, admin, each with a fixed permission list | `config/policy.json` → `roles` |
+| Roles: clinician, nurse, clinical lead, auditor, admin, receptionist, network engineer, each with a fixed permission list | `config/policy.json` → `roles` |
 | Names, dates, phone numbers, MRNs, emails, addresses masked before the model or the log sees them | `app/privacy.py` |
 | Prompt-injection and off-topic requests blocked; urgent words add an emergency notice | `app/guardrails.py` + `scope` in policy |
 | Every answer is marked as a draft for clinician review; overconfident wording is flagged | `app/guardrails.py` |
@@ -39,9 +63,11 @@ Every request and answer is scored **green**, **amber** or **red** (`tiers` in t
 
 Screens: **Patients** (40 synthetic patients; open a record and chat with the assistant about it), **Ask the assistant** (general questions), **Review queue** (held, blocked and sampled items for your role), **Messages** (drafts for other people, clinician approval), **Audit log**.
 
-## Synthetic patients
+## Synthetic patients and the database
 
-`data/patients.json` is generated on first run from `app/ehr.py`: 40 made-up patients built from 13 scenarios that a clinician would need to act on (rising HbA1c, high potassium after an NSAID in kidney disease, INR 4.3 after ciprofloxacin on warfarin, fluid overload in heart failure, penicillin allergy with amoxicillin prescribed, possible pre-eclampsia, rising PHQ-9, falling hemoglobin on apixaban, and more). One referral letter is deliberately poisoned with hidden instructions.
+Patients and appointments live in `data/clinic.db` (tables `patients`, `appointments`, and the append-only, hash-chained `change_log`). On the first start of 2.4 an empty database is filled from `data/patients.json` and `data/schedule.json` if they exist (one `imported` change each, by `system`); the JSON files are left as they were and no longer written. With no JSON, patients are generated as below. Demo appointments are added the first time a day within 14 days of today is looked at (past days come out finished). Delete `data/clinic.db` to start again from the JSON files.
+
+The synthetic patients come from `app/ehr.py`: 40 made-up patients built from 13 scenarios that a clinician would need to act on (rising HbA1c, high potassium after an NSAID in kidney disease, INR 4.3 after ciprofloxacin on warfarin, fluid overload in heart failure, penicillin allergy with amoxicillin prescribed, possible pre-eclampsia, rising PHQ-9, falling hemoglobin on apixaban, and more). One referral letter is deliberately poisoned with hidden instructions.
 
 When someone asks about a patient, the model gets a minimum-necessary copy: no name, record number, birth date, phone or address, and dates turned into "N days ago". Each note is scanned first; a note with hidden instructions is withheld, the answer is held (amber), and the note goes to a clinical lead (red). Every record opened is logged, and opening more than 12 different records in 10 minutes is stopped and reported.
 
@@ -86,7 +112,7 @@ python3 run.py
 
 No model yet? Start with `MOCK_LLM=1 python3 run.py` to click through the app with a stand-in model.
 
-Run the checks: `python3 -m unittest -v` (20 tests, uses the stand-in model).
+Run the checks: `python3 -m unittest -v` (46 tests, uses the stand-in model).
 
 Optional upgrades:
 - Better name detection: `pip install presidio-analyzer presidio-anonymizer && python3 -m spacy download en_core_web_lg`. The app uses it automatically when installed.
@@ -110,8 +136,12 @@ app/guardrails.py    input and output checks
 app/llm.py           local-only model calls (Ollama)
 app/audit.py         hash-chained audit log
 app/vectorstore.py   local append-only vector store (SQLite)
-app/ehr.py           synthetic patient generator
+app/db.py            clinic database (SQLite): patients, appointments, change log
+app/ehr.py           patients (read and written through app/db.py), synthetic generator
+app/schedule.py      appointments, booking and check-in rules
+app/network.py       network view (no patient data)
+scripts/verify_db.py database counts and change-log check
 app/users.py         accounts and password hashing
 static/              the web page (no external scripts)
-data/                users, outbox, audit log (created on first run; keep private)
+data/                clinic.db, users, outbox, audit log (created on first run; keep private)
 ```

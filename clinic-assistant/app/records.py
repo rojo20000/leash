@@ -3,7 +3,7 @@
 Nothing here edits or deletes what is already in a chart. Every change is an
 addition: a new note, a new result, a medicine stopped (kept, with the date and
 reason), a flag resolved (kept, with how). Each change is also written to the
-hash-chained chart history (data/chart_history.jsonl), so the record of what was
+hash-chained change log in the clinic database (data/clinic.db), so the record of what was
 learned about a patient, and who added it, can be reviewed later and can't be
 quietly rewritten.
 """
