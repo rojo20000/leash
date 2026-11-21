@@ -32,6 +32,10 @@ def _int(d, table, key):
     return v
 
 
+# One plain ASCII address; the whole recipient string must match (same pattern in policy.rs).
+_ADDR = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)")
+
+
 class Policy:
     def __init__(self, d):
         role = d.get("role")
@@ -73,7 +77,8 @@ class Policy:
         if bad is not None:
             return ("block", "RESOURCE_NOT_ALLOWED", f"resource {bad!r} not allowed")
         for r in recipients:
-            dom = r.lower().rpartition("@")[2] if "@" in r else ""
+            m = _ADDR.fullmatch(r)  # no strip: str.strip and Rust trim disagree on some characters
+            dom = m.group(1).lower() if m else ""
             if dom not in self._domains:
                 return ("block", "EMAIL_DOMAIN_NOT_ALLOWED", f"domain {dom!r} not allowed")
         cutoff = ts - self._window

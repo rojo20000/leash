@@ -58,6 +58,38 @@ def test_policy_parity():
         assert getattr(a, f) == getattr(b, f)
 
 
+# A4: a recipient must be exactly one plain ASCII address, untrimmed. (recipient, decision)
+RECIPIENT_CASES = [
+    ("frontdesk@clinic.example.org", "allow"),
+    ("Bob@CLINIC.EXAMPLE.ORG", "allow"),
+    ("a.b+c%d_e-f@patients.example.org", "allow"),
+    ("attacker@outside-clinic.example, frontdesk@clinic.example.org", "block"),
+    ("a@b@patients.example.org", "block"),
+    ("x@evil.example @clinic.example.org", "block"),
+    (" frontdesk@clinic.example.org", "block"),
+    ("frontdesk@clinic.example.org ", "block"),
+    ("frontdesk@clinic.example.org\n", "block"),
+    ("frontdesk@clinic.example.org ", "block"),
+    ("a@b", "block"),
+    ("a@nodot", "block"),  # "nodot" is an allowed domain in the test policy below; no dot never matches
+    ("", "block"),
+    ("@clinic.example.org", "block"),
+    ("x@сlinic.example.org", "block"),  # Cyrillic es
+    ("x@clinic.example.org＠patients.example.org", "block"),  # fullwidth @
+    ("é@clinic.example.org", "block"),
+]
+NODOT = open(POLICY).read().replace('"patients.example.org"]', '"patients.example.org", "nodot"]')
+
+
+@pytest.mark.parametrize("mod", [core_py, rust], ids=["python", "rust"])
+def test_recipient_single_address_parity(mod):
+    p = mod.Policy.from_toml_str(NODOT)
+    assert "nodot" in p.allowed_domains
+    for r, want in RECIPIENT_CASES:
+        got = p.evaluate("send_email", [], [], ["frontdesk@clinic.example.org", r], 0.0)
+        assert got[:2] == ((want, "OK") if want == "allow" else (want, "EMAIL_DOMAIN_NOT_ALLOWED")), repr(r)
+
+
 def test_policy_bad_toml_parity():
     for bad in ['role = "x"', "not toml [", open(POLICY).read().replace("window_seconds = 300", 'window_seconds = "x"')]:
         for m in (core_py, rust):
