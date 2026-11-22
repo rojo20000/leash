@@ -96,3 +96,5 @@ Not pushed. Not checked: a real Ollama model (all runs used the stand-in); phone
 `main` (`fe49a37`) merged into the portal branch; 9 conflicted files resolved. See DECISIONS.md (18:10).
 Checks on the merged tree, from `clinic-assistant/`: `MOCK_LLM=1 python -m unittest` 175 tests OK (3 skipped: live Leash gateway, 2 Presidio); `python scripts/reset_demo_data.py --check` every chain OK; `python scripts/verify_db.py` exit 0; `python scripts/verify_stores.py` ALL CHECKS PASSED.
 Seen in a browser on the merged tree (port 8652, temp data, stand-in model): portal as `pt_lena` (appointments, message send), staff sidebar "Patient messages" with a hand-typed reply, a `patient-portal` draft with the patient picker, approve, send. Not re-clicked after the merge: the front desk "Portal requests" panel (covered by tests). `docs/ui-portal.png` retaken.
+
+2026-11-21 18:08: Added the `site/` demo: 12 arrow-navigated scenes in the Bedside scan design. `npm install`, typecheck and build pass. The final browser re-test was stopped early, and the audit scene still quotes the earlier run (entries=20, line 8) while `demo/output/scripted_run.txt` now shows entries=28, line 12.
