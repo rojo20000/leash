@@ -3,9 +3,32 @@
 For teammates and their agents. Everything runs on your own computer; all patient data is made up.
 Agents: read `AGENTS.md` for the rules first.
 
+## 0. New Mac, from nothing (copy and paste)
+
+Open Terminal and paste these one block at a time. Tested from a fresh clone on 2.14.1: setup takes
+under a second, all tests pass, the app answers on http://127.0.0.1:8642.
+
+```bash
+xcode-select --install          # only if git or python3 is missing; a window opens, click Install
+cd ~/Downloads
+git clone https://github.com/rojo20000/leash.git
+cd leash/clinic-assistant
+CLINIC_DEMO_PASSWORD='pick-12-or-more-chars' python3 scripts/bootstrap.py
+MOCK_LLM=1 python3 run.py       # leave this window open; Ctrl+C stops the app
+```
+
+Then open http://127.0.0.1:8642 and sign in as `lead_ana` (or any login in section 4) with the password
+you picked. PIN `1234`. For real answers instead of the stand-in, install Ollama and see section 5.
+Or, after the clone, double-click `Start Clinic Assistant.command` in Finder: it does setup, picks the
+real model if Ollama is running, and opens the browser.
+
+**Updating later:** starting the app adds today's appointments to `data/clinic.db`, so git sees it as
+changed. Before pulling: `git checkout -- data/clinic.db && git pull`, then start again.
+
 ## 1. Requirements
 
 - Python 3.8 or newer (`python3 --version`; on Windows `python --version`). Nothing to `pip install`.
+  On a new Mac, `xcode-select --install` provides both `git` and `python3`.
 - Optional, for real answers: [Ollama](https://ollama.com) running locally.
 
 ## 2. One-command setup
@@ -125,4 +148,6 @@ results: "Human front end: Clinic Assistant" in the repo's top-level `README.md`
 MOCK_LLM=1 python3 -m unittest        # or, from the repo root: make clinic-check
 ```
 
-110 tests (4 skipped without Presidio), about 30 seconds, no network, no Ollama.
+183 tests (up to 5 skipped: no Node, no Presidio, no running Leash gateway), about 35 seconds, no
+network, no Ollama. `make clinic-check` calls `python`; on a Mac where only `python3` exists, use the
+first command instead.

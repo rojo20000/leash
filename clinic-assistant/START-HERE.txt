@@ -1,4 +1,4 @@
-Clinic Assistant 2.3: how to start it
+Clinic Assistant 2.14.1: how to start it
 
 1. Open the Ollama app (for real answers). Without it the app runs in practice mode.
 2. In this folder, double-click "Start Clinic Assistant.command".
@@ -6,8 +6,9 @@ Clinic Assistant 2.3: how to start it
    (Or in Terminal:  bash "Start Clinic Assistant.command"  from this folder.)
 3. The first time, it asks you to pick one password for the demo accounts
    (or reuses the accounts from your earlier copy). Your browser then opens the app.
-4. Sign in as dr_lee. The top bar should say "Clinic Assistant v2.3".
+4. Sign in as lead_ana (demo presenter) or dr_lee. The app should say "v2.14.1".
    If it doesn't, an old copy is still open: close every Terminal window running it and repeat step 2.
 
 Keep the Terminal window open while you use the app. Close it to stop.
+Full steps for a new computer: SETUP.md, section 0.
 Made-up patients only. Nothing leaves this computer.
