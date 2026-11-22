@@ -29,7 +29,8 @@ export interface SceneHandle {
 }
 
 export interface SceneModule {
-  id: SceneId;
+  id: string;               // a scene file's id, or a talk part's id (shell/talk.ts)
+  base?: SceneId;           // talk parts: the scene whose picture, styles and ground they reuse
   title: string;            // rail title from section 1
   steps(): StepCopy[];      // number of steps is steps().length, at least 1
   mount(ctx: SceneContext): SceneHandle;
