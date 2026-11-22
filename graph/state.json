@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-21T17:36-06:00",
+  "updated": "2026-11-21T18:23-06:00",
   "schedule": {
     "stage0_due": "11:50",
     "stage1_due": "15:30",
@@ -256,6 +256,13 @@
       "iteration": 1,
       "last_check": "merged tree: make clinic-check Ran 104 tests OK (skipped=3); live-gateway test OK; Leash make check exit 0 (12 cargo tests; 174 passed, 3 skipped; PASS 1-6); 0 tracked files missing",
       "reviewer_notes": "Clinic Assistant 2.11-2.13, 31 files under clinic-assistant/. Reviewer is a local Ollama model (nemotron-mini, not installed here, not pulled), loopback enforced; reset script backs up and rebuilds, deletes nothing; tests delete only mkdtemp dirs; leash.enabled false by default. No conflicts. syraft-update-v2.5 deleted from GitHub beforehand at the team's request."
+    },
+    "N26": {
+      "name": "merge_syraft_update_v2_14",
+      "status": "passed",
+      "iteration": 1,
+      "last_check": "merged tree: Clinic Assistant unittest Ran 181 tests OK (skipped=4); Leash make check exit 0 (12 cargo tests; 174 passed, 3 skipped; PASS 1-6); 0 tracked files missing",
+      "reviewer_notes": "Clinic Assistant 2.14: reviewer speed fixes, red block for records with a flagged document, demo_fast preset, install tarball script. Local-only unchanged. Flagged for Sal: reviewer now reads 600-character excerpts, and a post-filter drops its identifier complaints when the regex masker finds nothing. Doc conflicts in README.md and AGENTS.md (portal vs 2.14) resolved by keeping both. Merged on top of another session's patient-portal merge."
     }
   },
   "clock_note": "Timestamps written before 11:33 in this file and DECISIONS.md were estimates and run up to ~12 minutes fast; actual: key supplied 11:28, N5/N6 passed 11:30.",
