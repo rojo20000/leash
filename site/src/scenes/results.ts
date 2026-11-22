@@ -12,7 +12,7 @@ const STEPS = 7;
 
 function steps(): StepCopy[] {
   const rates = table('results', 'gateway-rates');
-  const escalate = rates.rows[0][rates.columns.indexOf('escalate')];
+  const escalate = rates.rows[0][rates.columns.indexOf('held for a human')];
   return [
     {
       headline: '17 allowed, 3 blocked',
@@ -21,6 +21,24 @@ function steps(): StepCopy[] {
         { text: fact('results', 'Allowed'), kind: 'figure', verdict: 'allow' },
         { text: fact('results', 'Blocked'), kind: 'figure', verdict: 'block' },
         { text: fact('results', 'Escalated'), kind: 'figure' },
+      ],
+    },
+    {
+      headline: 'A wider workload did hold calls',
+      sentence: 'Unlike the scripted run, this larger workload includes calls that were held for a person.',
+      callouts: [
+        { text: `${fact('results', 'Gateway calls')} calls`, kind: 'figure' },
+        { text: `${fact('results', 'Gateway sessions')} sessions`, kind: 'figure' },
+        { text: `escalate ${escalate}`, kind: 'figure', verdict: 'hold' },
+      ],
+    },
+    {
+      headline: 'Injection detector',
+      sentence: 'Held-out scores for the TF-IDF classifier.',
+      callouts: [
+        { text: `precision ${fact('injection', 'Precision')}`, kind: 'figure' },
+        { text: `recall ${fact('injection', 'Recall')}`, kind: 'figure' },
+        { text: `F1 ${fact('injection', 'F1')}`, kind: 'figure' },
       ],
     },
     {
@@ -41,29 +59,11 @@ function steps(): StepCopy[] {
       ],
     },
     {
-      headline: 'Injection detector',
-      sentence: 'Held-out scores for the TF-IDF classifier.',
-      callouts: [
-        { text: `precision ${fact('injection', 'Precision')}`, kind: 'figure' },
-        { text: `recall ${fact('injection', 'Recall')}`, kind: 'figure' },
-        { text: `F1 ${fact('injection', 'F1')}`, kind: 'figure' },
-      ],
-    },
-    {
       headline: 'Anomaly and minimization',
       sentence: 'The minimization evaluation is probably easy, because it uses templated notes.',
       callouts: [
         { text: `anomaly recall ${fact('anomaly', 'Recall')}`, kind: 'figure' },
         { text: `minimization recall ${fact('minimization', 'Recall')}`, kind: 'figure' },
-      ],
-    },
-    {
-      headline: 'A wider workload did hold calls',
-      sentence: 'Unlike the scripted run, this larger workload includes calls that were held for a person.',
-      callouts: [
-        { text: `${fact('results', 'Gateway calls')} calls`, kind: 'figure' },
-        { text: `${fact('results', 'Gateway sessions')} sessions`, kind: 'figure' },
-        { text: `escalate ${escalate}`, kind: 'figure', verdict: 'hold' },
       ],
     },
     {
@@ -149,10 +149,29 @@ function mount(ctx: SceneContext): SceneHandle {
   const add = (l: HTMLElement) => { stack.appendChild(l); layers.push(l); };
   const newLayer = () => el('div', 'results-layer');
 
+  // Layers are added in step order: counts, rates, injection, latency, model latency, anomaly, PASS.
   // 1 protected counts
   const pc = table('results', 'protected-counts');
   let l = newLayer();
   l.append(caption(pc.title), renderTable(pc).table);
+  add(l);
+
+  // 6 gateway rates
+  const gr = table('results', 'gateway-rates');
+  const grb = renderTable(gr);
+  const ratesRow = grb.rows[0]; // the whole row, so all three shares stay in view
+  l = newLayer();
+  l.append(caption('245 test calls'), el('p', 'machine results-note', fact('results', 'Workload')), caption(gr.title), grb.table);
+  add(l);
+
+  // 4 injection
+  const det = table('results', 'detectors');
+  const rowsOf = (name: string) => det.rows.filter((r) => r[0] === name);
+  const injRows = rowsOf('injection');
+  const injb = renderTable(det, { rows: injRows, skipCol: 'detector' });
+  const injRecall = injb.rows[injRows.findIndex((r) => r[1] === 'Hidden instructions caught')];
+  l = newLayer();
+  l.append(caption('Hidden-instruction detector, on notes it had never seen'), injb.table);
   add(l);
 
   // 2 gateway latency, all rows
@@ -171,16 +190,6 @@ function mount(ctx: SceneContext): SceneHandle {
   l.append(caption(ml.title), mlb.table);
   add(l);
 
-  // 4 injection
-  const det = table('results', 'detectors');
-  const rowsOf = (name: string) => det.rows.filter((r) => r[0] === name);
-  const injRows = rowsOf('injection');
-  const injb = renderTable(det, { rows: injRows, skipCol: 'detector' });
-  const injRecall = injb.rows[injRows.findIndex((r) => r[1] === 'Hidden instructions caught')];
-  l = newLayer();
-  l.append(caption('Hidden-instruction detector, on notes it had never seen'), injb.table);
-  add(l);
-
   // 5 anomaly and minimization, side by side
   const anoRows = rowsOf('anomaly');
   const anob = renderTable(det, { rows: anoRows, skipCol: 'detector' });
@@ -193,14 +202,6 @@ function mount(ctx: SceneContext): SceneHandle {
   const g2 = el('div', 'results-group');
   g2.append(caption(`${det.title}: minimization`), minb.table);
   l.append(g1, g2);
-  add(l);
-
-  // 6 gateway rates
-  const gr = table('results', 'gateway-rates');
-  const grb = renderTable(gr);
-  const ratesRow = grb.rows[0]; // the whole row, so all three shares stay in view
-  l = newLayer();
-  l.append(caption('245 test calls'), el('p', 'machine results-note', fact('results', 'Workload')), caption(gr.title), grb.table);
   add(l);
 
   // 7 PASS lines
@@ -225,14 +226,14 @@ function mount(ctx: SceneContext): SceneHandle {
 
   const cues: InspectCue[] = [
     { step: 0, target: film, scale: 1.15, scan: true },
-    { step: 1, target: latencyRow, scale: 1.7, scan: true },
-    { step: 2, target: lightningRow, scale: 1.5 },
-    { step: 3, target: injRecall, scale: 1.6 },
-    { step: 4, target: anoRecall, scale: 1.5 },
     {
-      step: 5, target: ratesRow, scale: 1.7,
+      step: 1, target: ratesRow, scale: 1.7,
       stamp: { text: fact('pipeline', 'Outcome hold'), form: 'hold', anchor: 'tr' },
     },
+    { step: 2, target: injRecall, scale: 1.6 },
+    { step: 3, target: latencyRow, scale: 1.7, scan: true },
+    { step: 4, target: lightningRow, scale: 1.5 },
+    { step: 5, target: anoRecall, scale: 1.5 },
     {
       step: 6, target: passLines[1], scale: 1.5, scan: true,
       stamp: { text: quote('results', 'PASS 2').trim().split(/\s+/)[0], form: 'allow', anchor: 'tr' },

@@ -90,19 +90,19 @@ export const TALK: Part[] = [
     id: 'results', from: 'results', title: 'Results',
     beats: [
       {
-        step: 5,
+        step: 1,
         headline: '245 test calls',
         sentence: 'Leash approved 71 percent on its own, held 16 percent for a human, and blocked 12 percent.',
         callouts: [c('71% approved', 'figure', 'allow'), c('16% held', 'figure', 'hold'), c('12% blocked', 'figure', 'block')],
       },
       {
-        step: 3,
+        step: 2,
         headline: '85 percent of hidden instructions caught',
         sentence: 'That is on test notes the detector had never seen, with zero false alarms.',
         callouts: [c('85% caught', 'figure'), c('0 false alarms', 'figure'), c('300 test notes', 'figure')],
       },
       {
-        step: 1,
+        step: 3,
         headline: '7 to 8 milliseconds per call',
         sentence: 'That is what Leash adds with the NVIDIA model checks switched off and simple local stand-ins in their place.',
         callouts: [c('7 to 8 ms added', 'figure'), c('Each live NVIDIA call adds about 0.7 s', 'figure')],
@@ -165,6 +165,7 @@ export function pick(mod: SceneModule, part: Part): SceneModule {
   return {
     id: part.id,
     base: mod.id as SceneId,
+    spans: part.beats.map((b, i) => (i === 0 ? 1 : Math.abs(b.step - part.beats[i - 1].step))),
     title: part.title,
     steps: () => part.beats.map(({ headline, sentence, callouts }) => ({ headline, sentence, callouts })),
     mount(ctx) {
