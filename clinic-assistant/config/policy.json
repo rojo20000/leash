@@ -215,12 +215,29 @@
   },
   "assistant_actions": {
     "_comment": "2.12. The assistant turns chat commands into proposals; nothing changes until a person whose role has the listed permission approves (app/actions.py). Clinical drafts can only be proposed by clinical roles. Changing a pin_field or adding to the chart needs the confidential PIN.",
-    "permissions": {"reschedule": "book", "book": "book", "cancel": "book", "fill_slot": "book",
-                    "update_contact": "register_patient", "remind": "send_reminder",
-                    "handover": "edit_chart", "referral": "draft_message"},
-    "clinical": ["handover", "referral"],
-    "propose_permissions": ["chat", "frontdesk_chat"],
-    "pin_fields": ["phone", "address", "member_id"]
+    "permissions": {
+      "reschedule": "book",
+      "book": "book",
+      "cancel": "book",
+      "fill_slot": "book",
+      "update_contact": "register_patient",
+      "remind": "send_reminder",
+      "handover": "edit_chart",
+      "referral": "draft_message"
+    },
+    "clinical": [
+      "handover",
+      "referral"
+    ],
+    "propose_permissions": [
+      "chat",
+      "frontdesk_chat"
+    ],
+    "pin_fields": [
+      "phone",
+      "address",
+      "member_id"
+    ]
   },
   "confidential": {
     "_comment": "DEMO ONLY. These fields stay hidden on every screen until the PIN is typed, every time, and each reveal is logged. 1234 is a demo PIN; a real clinic would use each person's own PIN or badge tap.",
@@ -283,9 +300,25 @@
     "enabled": true,
     "model": "nemotron-mini",
     "host": "",
-    "timeout_s": 20,
+    "timeout_s": 60,
     "fail_mode": "hold",
     "when_model_missing": "skip",
-    "_demo": "For demos, a clinical lead or admin can switch the reviewer off and on at runtime (Ask a question > Demo scenarios, or POST /api/reviewer). That switch is stored in data/clinic.db and audited; this file is never changed by it."
+    "_demo": "For demos, a clinical lead or admin can switch the reviewer off and on at runtime (Ask a question > Demo scenarios, or POST /api/reviewer). That switch is stored in data/clinic.db and audited; this file is never changed by it.",
+    "stages": [
+      "pre",
+      "post"
+    ],
+    "num_ctx": 1536,
+    "num_predict": 80,
+    "context_chars": 600,
+    "answer_chars": 600,
+    "_speed": "2.14: the reviewer reads only the masked question plus a 600-character context excerpt (before) or a 600-character answer excerpt (after), with a 1536-token window and an 80-token verdict, and is preloaded at start. stages: ['pre','post'] (default) or ['pre'] to halve reviewer time; env REVIEWER_STAGES=pre does the same without editing this file."
+  },
+  "demo_fast": {
+    "_comment": "Fast preset for a CPU-only demo laptop: shorter answers (chat_num_predict), a smaller model window (chat_num_ctx) and at most max_context_appts appointments in the general-question context. Set enabled to false for full-length answers and the full 25-appointment context.",
+    "enabled": true,
+    "chat_num_predict": 200,
+    "chat_num_ctx": 2048,
+    "max_context_appts": 12
   }
 }
