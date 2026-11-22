@@ -4,8 +4,10 @@
 # [SLIDE: ...] marks a slide change. [DEMO: ...] marks a demo action.
 #
 # Before going on stage:
-#   - Check that the dashboard approval queue shows the blocked calls from
+#   - Check that the dashboard approval queue shows the two alerts from
 #     `make demo`.
+#   - Slides are the site in site/ (`npm run dev`), one arrow press per step:
+#     Zarek 5 steps, Rowan 4, Sal none (live demo), Nico 7.
 #   - Say "patient zero-zero-four-two", not "patient forty-two".
 #
 # -----------------------------------------------------------------------------
@@ -14,7 +16,7 @@
 # [SLIDE: Title, "Leash"]
 #
 # A hospital gives an AI agent one simple job: schedule a patient from a
-# referral. The referral is a PDF. Buried inside it is one hidden sentence
+# referral. The referral is a PDF. Buried inside it is a hidden instruction
 # telling the agent to send the patient's records somewhere else.
 #
 # [SLIDE: Unprotected run, the email going out]
@@ -27,10 +29,10 @@
 # systems. But an agent with access to patient data can leak it, or take
 # actions nobody signed off on. And the cause can be as small as one sentence.
 #
-# So how do you let an agent work without letting it loose? Sal.
+# So how do you let an agent work without letting it loose? Rowan.
 #
 # -----------------------------------------------------------------------------
-# SAL, 1:00: Solution and who it's for
+# ROWAN, 1:00: Solution and who it's for
 # -----------------------------------------------------------------------------
 # [SLIDE: "Leash: a runtime security gateway for clinical AI agents"]
 #
@@ -50,12 +52,12 @@
 # win. When the worst case is limited and every decision is logged, you can
 # trust an agent with more work on its own.
 #
-# Rowan's going to run that same attack again, this time through Leash.
+# Sal's going to run that same attack again, this time through Leash.
 #
 # -----------------------------------------------------------------------------
-# ROWAN, 2:05: How it works, plus the demo
+# SAL, 2:05: How it works, plus the live demo
 # -----------------------------------------------------------------------------
-# [SLIDE: Pipeline diagram]
+# [NO SLIDES: Sal runs the system live until Nico's section]
 #
 # Leash runs every call through seven steps:
 #   - a policy check written in Rust
@@ -77,9 +79,10 @@
 #
 # [DEMO: switch to the dashboard's approval queue]
 #
-# Each block lands in the approval queue, with Nemotron's explanation so a
-# reviewer knows why. And the 17 legitimate calls went straight through. The
-# scheduling still gets done.
+# The two attack attempts, the poisoned document and the outside email, land
+# in the approval queue as alerts, with Nemotron's explanation so a reviewer
+# knows why. And the 17 legitimate calls went straight through. The scheduling
+# still gets done.
 #
 # [DEMO: tamper test]
 #
@@ -90,12 +93,12 @@
 # -----------------------------------------------------------------------------
 # NICO, 3:15: Impact, what's next, close
 # -----------------------------------------------------------------------------
-# [SLIDE: Results]
+# [SLIDE: Results, three steps: 245 calls, 85 percent, milliseconds]
 #
 # Across 245 test calls, Leash auto-approved 71 percent, held 16 percent for
 # a human, and blocked 12 percent. On held-out tests, our injection detector
 # caught 85 percent of injection attempts, with zero false alarms. With the
-# model checks on local fallback, Leash adds about 7 milliseconds per call.
+# model checks on local fallback, Leash adds 7 to 8 milliseconds per call.
 #
 # [SLIDE: "AI judgment where it helps humans decide. Hard rules where safety
 #          requires them."]
@@ -108,7 +111,11 @@
 #
 # This is a prototype: synthetic data, one role, one policy. Next, we want
 # policies for more roles, and a behavior model for human-facing tools like
-# Sal's Clinic Assistant, which can already route requests through Leash.
+# Sal's Clinic Assistant, which can already send its patient lookups through
+# Leash.
+#
+# [SLIDE: Clinic Assistant recording. It plays by itself, 14 seconds; move on
+#          when ready.]
 #
 # [SLIDE: Leash]
 #
@@ -122,12 +129,12 @@
 # -----------------------------------------------------------------------------
 #   Speaker   Words (approx.)   Time
 #   Zarek     ~125              ~1:00
-#   Sal       ~145              ~1:05
-#   Rowan     ~140              ~1:10 including demo pauses
+#   Rowan     ~145              ~1:05
+#   Sal       ~140              ~1:10 including demo pauses
 #   Nico      ~150              ~1:10
 #   TOTAL     ~560              ~4:25
 #
-# To cut time, drop Sal's "Runtime means..." sentence and Nico's latency line.
+# To cut time, drop Rowan's "Runtime means..." sentence and Nico's latency line.
 #
 # -----------------------------------------------------------------------------
 # LIKELY JUDGE QUESTIONS
