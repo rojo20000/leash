@@ -1,0 +1,186 @@
+.scene-results .results-world {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-6) var(--space-8);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+/* The 20-call strip, printed like a perforated tape */
+.scene-results .results-tape {
+  display: grid;
+  gap: var(--space-2);
+  width: 100%;
+}
+.scene-results .results-film {
+  display: grid;
+  grid-template-columns: repeat(20, minmax(0, 1fr));
+  align-items: start;
+  padding: var(--space-1) 0;
+  font-size: 1.5rem;
+}
+.scene-results .results-mark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+.scene-results .results-mark.is-allow { color: var(--allow-ink); }
+.scene-results .results-mark.is-block { color: var(--block-ink); }
+.scene-results .results-callno {
+  min-height: 1em;
+  font-family: var(--font-machine);
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.scene-results .results-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+/* Table layers share one box */
+.scene-results .results-layers {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: start;
+  padding-top: var(--space-2);
+}
+.scene-results .results-layer {
+  grid-area: 1 / 1;
+  position: relative;
+  min-width: 0;
+}
+.scene-results .results-caption {
+  margin: 0 0 var(--space-2);
+  color: var(--ink-3);
+}
+.scene-results .results-note {
+  margin: 0 0 var(--space-3);
+  color: var(--ink);
+}
+
+.scene-results .results-table {
+  width: max-content;
+  max-width: 100%;
+  border-collapse: collapse;
+  line-height: 1.35;
+  color: var(--ink);
+}
+.scene-results .results-table th,
+.scene-results .results-table td {
+  padding: 4px var(--space-3);
+  text-align: right;
+  border-bottom: 1px solid var(--rule);
+}
+.scene-results .results-table th:first-child,
+.scene-results .results-table td:first-child { text-align: left; padding-left: var(--space-2); }
+.scene-results .results-table th {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-stretch: 100%;
+  color: var(--ink-3);
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.scene-results .results-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+.scene-results .results-two .results-group { min-width: 0; }
+.scene-results .results-two .results-table { width: 100%; table-layout: fixed; }
+.scene-results .results-two .results-table th:first-child { width: 66%; }
+
+.scene-results .results-pass {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.scene-results .results-passline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--text-machine);
+  color: var(--allow-ink);
+}
+.scene-results .results-passtext { color: var(--ink); min-width: 0; }
+
+.scene-results .results-reg {
+  position: absolute;
+  bottom: var(--space-2);
+  opacity: 0.6;
+}
+.scene-results .results-reg--bl { left: var(--space-2); }
+.scene-results .results-reg--br { right: var(--space-2); }
+
+@media (min-width: 768px) and (max-width: 1180px), (min-width: 768px) and (max-height: 680px) {
+  .scene-results .results-world { padding: var(--space-3) var(--space-4) var(--space-4); gap: var(--space-2); }
+  .scene-results .results-film { font-size: 1.25rem; padding: 0; }
+  .scene-results .results-tape { gap: 3px; }
+  .scene-results .results-layers { padding-top: var(--space-1); }
+  .scene-results .results-table { line-height: 1.2; }
+  .scene-results .results-table th,
+  .scene-results .results-table td { padding: 2px var(--space-2); }
+  .scene-results .results-caption { margin-bottom: var(--space-1); }
+  .scene-results .results-note { margin-bottom: var(--space-2); }
+  .scene-results .results-pass { gap: var(--space-2); }
+  .scene-results .results-reg { display: none; }
+}
+
+@media (max-width: 767px) {
+  .scene-results .results-world { padding: var(--space-3) var(--space-3) var(--space-4); gap: var(--space-2); }
+  .scene-results .results-film { font-size: 1rem; padding: 0; }
+  .scene-results .results-tape { gap: 3px; }
+  .scene-results .results-table { line-height: 1.2; }
+  .scene-results .results-table th,
+  .scene-results .results-table td { padding: 2px var(--space-2); }
+  .scene-results .results-caption { margin-bottom: var(--space-1); }
+  .scene-results .results-note { margin-bottom: var(--space-2); }
+  .scene-results .results-pass { gap: var(--space-2); }
+  .scene-results .results-reg { display: none; }
+  .scene-results .results-two { gap: var(--space-2); }
+  .scene-results .results-two .results-table th,
+  .scene-results .results-two .results-table td { padding: 2px var(--space-1); }
+
+  .scene-results .results-stack { width: 100%; }
+  .scene-results .results-stack,
+  .scene-results .results-stack tbody,
+  .scene-results .results-stack tr,
+  .scene-results .results-stack td { display: block; }
+  .scene-results .results-stack thead { display: none; }
+  .scene-results .results-stack tr { padding: var(--space-1) 0; border-bottom: 1px solid var(--rule); }
+  .scene-results .results-stack td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    border-bottom: 0;
+    text-align: right;
+    padding: 0 var(--space-1);
+  }
+  .scene-results .results-stack td::before {
+    content: attr(data-label);
+    flex: none;
+    font-family: var(--font-body);
+    font-stretch: 100%;
+    color: var(--ink-3);
+  }
+  .scene-results .results-stack td:first-child { display: block; text-align: left; font-weight: 700; }
+  .scene-results .results-stack td:first-child::before { content: none; }
+}
+
+/* Reduced motion: strip, every table and every PASS line in normal flow */
+.scene-results.is-reduced .results-layers { display: block; }
+.scene-results.is-reduced .results-layer {
+  opacity: 1 !important;
+  visibility: visible !important;
+  margin-top: var(--space-6);
+}
+.scene-results.is-reduced .results-mark { opacity: 1 !important; transform: none !important; }
