@@ -304,9 +304,9 @@
     "fail_mode": "hold",
     "when_model_missing": "skip",
     "_demo": "For demos, a clinical lead or admin can switch the reviewer off and on at runtime (Ask a question > Demo scenarios, or POST /api/reviewer). That switch is stored in data/clinic.db and audited; this file is never changed by it.",
+    "_stages": "Measured on the 8 GB Intel demo Mac (warm): pre+post 79-90 s, pre only 45-66 s. Pre only is the default; add \"post\" to also review each answer.",
     "stages": [
-      "pre",
-      "post"
+      "pre"
     ],
     "num_ctx": 1536,
     "num_predict": 80,
