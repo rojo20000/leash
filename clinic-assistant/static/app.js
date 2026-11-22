@@ -398,7 +398,9 @@ function addTrace(trace, log = $("chat-log")) {
   const d = el("details", `checks ${state}`);
   const sum = el("summary");
   sum.append(icon(state),
-    el("span", null, bad ? `Stopped at: ${bad.step}` : warn ? `Flagged at: ${warn.step}` : `${trace.length} safety checks passed`));
+    el("span", null, bad ? `Stopped at: ${bad.step}` : warn ? `Flagged at: ${warn.step}`
+      // a step the server skipped (for example the after-model review, off by default) did not pass anything
+      : `${trace.filter((t) => !/^skipped/.test(t.detail || "")).length} safety checks passed`));
   const ol = el("ol", "trace");
   trace.forEach((t) => {
     const li = el("li", `step ${t.status}`);
@@ -459,7 +461,9 @@ function reviewerReadout(trace, log) {
       const [tier, ...rest] = t.detail.split(": ");
       const why = rest.join(": ").replace(/ \(\d+ ms, [^)]*\)$/, "");
       const line = el("div", "line");
-      if (t.status === "ok") line.append(icon("ok"), el("span", null, `Reviewer (${when}): no concerns`));
+      // "skipped (reviewer.stages)": this review did not run, so it must not read as "no concerns"
+      if (/^skipped/.test(t.detail || "")) line.append(icon("warn"), el("span", null, `Reviewer (${when}): not run (turned off in settings)`));
+      else if (t.status === "ok") line.append(icon("ok"), el("span", null, `Reviewer (${when}): no concerns`));
       else if (tier === "off") line.append(icon("warn"), el("span", null, `Not checked (${when}): ${why}`));
       else { caught = true; line.append(icon(t.status), el("span", null, `Caught by reviewer (${when}, ${tier}): ${why}`)); }
       box.append(line);
