@@ -204,5 +204,29 @@ class Round2(unittest.TestCase):
         self.assertEqual(set(calls[0]["details"]), {"from", "to", "what", "model", "ms", "ok"})  # no content
 
 
+    def test_network_view_shows_the_gateway_integrated_mode_uses(self):
+        """network.leash_url is empty by default; with integrated mode on, the view must still show the gateway."""
+        import socket
+        net = self.login("net_ops")
+        leash = lambda: next(x for x in net.call("/api/network")[1]["nodes"] if x["id"] == "leash")
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0)); listener.listen(1)
+        port = listener.getsockname()[1]
+        saved = dict(self.app.policy["leash"])
+        try:
+            self.app.policy["leash"].update(enabled=True, gateway_url=f"http://127.0.0.1:{port}")
+            self.assertEqual((leash()["status"], leash()["address"]), ("up", f"127.0.0.1:{port}"))
+            listener.close()
+            self.assertEqual(leash()["status"], "down")
+            self.app.policy["leash"]["gateway_url"] = "http://203.0.113.9:8000"  # not loopback: never probed
+            n = leash()
+            self.assertEqual(n["status"], "down"); self.assertIn("loopback", n["detail"])
+            self.app.policy["leash"]["enabled"] = False
+            self.assertEqual(leash()["status"], "disabled")
+        finally:
+            listener.close()
+            self.app.policy["leash"].clear(); self.app.policy["leash"].update(saved)
+
+
 if __name__ == "__main__":
     unittest.main()

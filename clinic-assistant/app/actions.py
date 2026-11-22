@@ -802,7 +802,7 @@ class Actions:
             return 200, self.help(sess)
         if path == "/api/actions":
             if not self.can_propose(sess) and not any(self.app.can(sess, p) for p in set(self.cfg["permissions"].values())):
-                return 403, {"error": "Your role has no assistant actions."}
+                return 200, []  # the page asks at sign-in for every role: nothing to show is not a refusal
             return 200, self.listing(sess)
         return 404, {"error": "Not found."}
 

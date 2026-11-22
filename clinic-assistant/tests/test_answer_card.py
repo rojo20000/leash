@@ -69,5 +69,19 @@ class AnswerCard(unittest.TestCase):
         self.assertIn("5 safety checks passed", summary)
 
 
+@unittest.skipUnless(shutil.which("node"), "Node is not installed")
+class SignOut(unittest.TestCase):
+    def test_sign_out_clears_the_signed_in_user(self):
+        """The page's refresh timers all start with `if (!me ...) return`, so sign-out must clear `me`."""
+        src = APP_JS.read_text(encoding="utf-8")
+        show_login = re.search(r"^function showLogin\(\).*$", src, re.M).group(0)
+        js = "\n".join(["let me = {user: 'x'}; const $ = () => ({hidden: false});", show_login,
+                        "showLogin(); console.log(JSON.stringify(me));"])
+        run = subprocess.run(["node", "-e", js], capture_output=True, text=True, timeout=60)
+        self.assertEqual((run.returncode, run.stdout.strip()), (0, "null"), run.stderr)
+        logout = src[src.index('api("/api/logout"'):]
+        self.assertIn("showLogin()", logout[:200])  # the sign-out handler goes through showLogin
+
+
 if __name__ == "__main__":
     unittest.main()

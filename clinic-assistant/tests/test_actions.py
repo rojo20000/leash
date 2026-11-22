@@ -251,5 +251,11 @@ class Actions(unittest.TestCase):
         self.assertNotIn("New Road", log)
 
 
+    def test_roles_without_actions_get_an_empty_list(self):
+        """The page asks for the list at sign-in for every role; a role with no actions gets nothing, not a refusal."""
+        for user in ("auditor_ray", "net_ops"):
+            self.assertEqual(self.login(user).call("/api/actions"), (200, []), user)
+
+
 if __name__ == "__main__":
     unittest.main()

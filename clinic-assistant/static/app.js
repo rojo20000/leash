@@ -65,7 +65,7 @@ function reasonList(reasons) {
 }
 
 // ---- sign in / out -------------------------------------------------------
-function showLogin() { $("app-view").hidden = true; $("login-view").hidden = false; }
+function showLogin() { me = null; $("app-view").hidden = true; $("login-view").hidden = false; }  // me = null stops the refresh timers
 fetch("/api/version").then((r) => r.json()).then((v) => {
   document.querySelectorAll(".app-version").forEach((n) => { n.textContent = `v${v.version}`; });
 }).catch(() => {});

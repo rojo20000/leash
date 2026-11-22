@@ -13,7 +13,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
-from . import VERSION, llm
+from . import VERSION, leash_client, llm
 
 _probe_cache: dict = {}
 
@@ -113,8 +113,11 @@ def status(app) -> dict:
                     + ("installed." if have else "NOT installed."))
     if os.environ.get("MOCK_LLM") == "1":
         o_detail += " The app is using the stand-in model (MOCK_LLM=1)."
-    leash = net.get("leash_url", "")
-    leash_up = _tcp(urlparse(leash).netloc) if leash else None
+    leash, leash_local = net.get("leash_url", ""), True
+    if not leash and leash_client.enabled(pol):  # integrated mode is on: show the gateway the app really calls
+        leash = pol["leash"]["gateway_url"]
+        leash_local = urlparse(leash).hostname in llm.LOCAL_HOSTS  # never probe an address off this machine
+    leash_up = _tcp(urlparse(leash).netloc) if leash and leash_local else None
     sessions = sum(1 for v in list(app.sessions.values()) if v["expires"] > time.time())
     db_ok, db_n, db_bad = app.db.verify_chain()
     conv_ok = app.db.verify_conversations()[0]
@@ -137,7 +140,8 @@ def status(app) -> dict:
         {"id": "leash", "label": "Leash gateway", "kind": "gateway", "address": urlparse(leash).netloc if leash else "",
          "status": "disabled" if not leash else ("up" if leash_up else "down"),
          "detail": "Not configured (network.leash_url in config/policy.json)." if not leash
-         else ("Reachable." if leash_up else "Not reachable (1 second timeout).")},
+         else ("Reachable." if leash_up else "Not a loopback address; the app refuses to call it." if not leash_local
+               else "Not reachable (1 second timeout).")},
     ]
 
     nodes.insert(2, app.reviewer.network_node())  # drawn next to the chat model it checks
