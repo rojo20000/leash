@@ -4,6 +4,9 @@ What judges should take away: the fixed safety filters miss cleverly worded requ
 model (NVIDIA Nemotron) reviews every question and answer and catches them, on this computer, and every
 switch and verdict is on the record.
 
+
+> **2.14.1:** the reviewer now runs **before the model only** by default (`reviewer.stages: ["pre"]` in `config/policy.json`). Measured on the 8 GB Intel demo Mac with warm models: before+after 79–90 s, before only 45–66 s, no reviewer 27–32 s; poisoned referral stopped in 0 s. Add `"post"` to the list (or start with `REVIEWER_STAGES=pre,post`) to also review every answer.
+
 ## Setup (once, before the judges arrive)
 
 ```bash

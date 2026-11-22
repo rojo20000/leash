@@ -38,13 +38,16 @@ class Fast(unittest.TestCase):
         self.app.policy["reviewer"] = self.cfg
         self.app.reviewer.__dict__.pop("_ask", None)
         os.environ.pop("REVIEWER_STAGES", None)
+        self.app.reviewer.cfg["stages"] = ["pre", "post"]  # exercise both stages; shipped default is pre only
 
     def sess(self, user="dr_lee", role="clinician"):
         return {"user": user, "role": role, "history": []}
 
     def test_shipped_settings(self):
-        r, fast = self.app.policy["reviewer"], self.app.policy["demo_fast"]
-        self.assertEqual((r["timeout_s"], r["stages"], r["num_predict"]), (60, ["pre", "post"], 80))
+        import json, pathlib
+        shipped = json.loads((pathlib.Path(__file__).parent.parent / "config" / "policy.json").read_text())
+        r, fast = shipped["reviewer"], self.app.policy["demo_fast"]
+        self.assertEqual((r["timeout_s"], r["stages"], r["num_predict"]), (60, ["pre"], 80))
         self.assertTrue(fast["enabled"])
         self.assertEqual(llm.chat_options(self.app.policy)["num_predict"], 200)
         self.assertEqual(llm.chat_options(self.app.policy)["num_ctx"], 2048)

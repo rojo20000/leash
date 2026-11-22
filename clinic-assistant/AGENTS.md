@@ -5,7 +5,7 @@ People can read the same files; nothing here is agent-only.
 
 ## What this is
 
-Clinic Assistant (V3, app version in `app/__init__.py`, currently 2.14) is the human-facing front end
+Clinic Assistant (V3, app version in `app/__init__.py`, currently 2.14.1) is the human-facing front end
 for Leash. Staff sign in, see synthetic patients and today's schedule, and ask a **local** model
 questions. Every request goes through a gatekeeper: role check, identifier masking, guardrails,
 a second local reviewer model (NVIDIA Nemotron via Ollama), green / amber / red tiers, and

@@ -43,6 +43,7 @@ class ReviewerFlow(unittest.TestCase):
         shutil.rmtree(cls.tmp, ignore_errors=True)
 
     def setUp(self):
+        self.app.reviewer.cfg["stages"] = ["pre", "post"]  # exercise both stages; shipped default is pre only
         self.cfg = dict(self.app.policy["reviewer"])
         self.rv = self.app.reviewer
         self.rv.__dict__.pop("_ask", None)

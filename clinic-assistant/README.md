@@ -9,6 +9,9 @@ answered on this computer only, checked again, and written to a tamper-evident l
 **Prototype. Use synthetic (made-up) patient data only.** It is not a medical device
 and has not been validated for clinical use.
 
+
+> **2.14.1:** the reviewer now runs **before the model only** by default (`reviewer.stages: ["pre"]` in `config/policy.json`). Measured on the 8 GB Intel demo Mac with warm models: before+after 79–90 s, before only 45–66 s, no reviewer 27–32 s; poisoned referral stopped in 0 s. Add `"post"` to the list (or start with `REVIEWER_STAGES=pre,post`) to also review every answer.
+
 ## New in 2.14: fast enough for a CPU laptop
 
 - **Reviewer reads less, so it answers faster.** Before the chat model it sees only the masked question plus a 600-character excerpt of the context (not the whole schedule); after, a 600-character excerpt of the answer. Window 1536 tokens, verdict at most 80 tokens, temperature 0, kept loaded, and preloaded at start right after the chat model (one after the other, same window size as real calls so Ollama never reloads). Timeout raised to 60 s (`reviewer.timeout_s`).
