@@ -1,14 +1,14 @@
 import gsap from 'gsap';
 import { fact, quote } from '../shell/content-access';
-import { createInspection, verdictBadge, verdictMark } from '../shell/emphasis';
+import { createInspection, verdictBadge } from '../shell/emphasis';
 import type { SceneContext, SceneFrame, SceneHandle, SceneModule, StepCopy } from '../shell/types';
 import './audit.css';
 
 const STEPS = 4;
-const ROWS = 20;
-const EDITED = 8; // zero-indexed: line 8 is the ninth row
+const ROWS = 28;
+const EDITED = 12; // zero-indexed: line 12 is the thirteenth row
 const W_ROW = 3;
-const W_EDITED = 16;
+const W_EDITED = 20;
 const W_LINK = 2;
 const BAR = 0.04; // tracer bar height as a fraction of the chain
 
@@ -35,7 +35,7 @@ function steps(): StepCopy[] {
     },
     {
       headline: 'Someone edits one line',
-      sentence: 'Line numbers count from zero, so line 8 is call 9, the blocked injection read.',
+      sentence: 'Line numbers count from zero, so line 12 is the blocked injection read at call 9.',
       callouts: [
         { text: fact('audit', 'Edited line'), kind: 'code' },
         { text: fact('audit', 'Edit made'), kind: 'code' },
@@ -44,7 +44,7 @@ function steps(): StepCopy[] {
     },
     {
       headline: 'Verification fails',
-      sentence: 'The edited entry no longer matches its hash, so verification fails at line 8.',
+      sentence: 'The edited entry no longer matches its hash, so verification fails at line 12.',
       callouts: [
         { text: fact('audit', 'Failure reason'), kind: 'code', verdict: 'block' },
         { text: firstBad, kind: 'code' },
@@ -74,7 +74,8 @@ function mount(ctx: SceneContext): SceneHandle {
   const beforeWord = before[1];
   const afterWord = after[1];
 
-  const world = el(plate, 'div', 'audit-world');
+  const view = el(plate, 'div', 'audit-view');
+  const world = el(view, 'div', 'audit-world');
   const wrap = el(world, 'div', 'audit-wrap');
   const chain = el(wrap, 'div', 'audit-chain');
   const rows: HTMLElement[] = [];
@@ -131,18 +132,18 @@ function mount(ctx: SceneContext): SceneHandle {
     }
   }
 
+  // Stamp slot over the blank rows well below line 12.
+  const slot = el(chain, 'div', 'audit-slot');
   const tracer = el(chain, 'div', 'audit-tracer');
   el(tracer, 'div', 'audit-tracer-bar');
 
   const side = el(wrap, 'div', 'audit-side');
-  el(side, 'p', 'audit-caption', 'Schematic of the 20-entry log');
-  const slot = el(side, 'div', 'audit-slot');
-  const mismatch = el(side, 'p', 'audit-mismatch');
-  mismatch.append(verdictMark('alert'));
-  el(mismatch, 'span', 'audit-mismatch-text machine', fact('audit', 'Failure reason'));
+  el(side, 'p', 'audit-caption', 'Schematic of the 28-entry log');
   const quotes = el(side, 'div', 'audit-quotes');
   const cleanQ = el(quotes, 'p', 'audit-quote machine', quote('audit', 'clean log'));
-  const failQ = el(quotes, 'p', 'audit-quote machine', quote('audit', 'after editing line 8'));
+  // Fixed strip outside the camera, so the zoom and stamp never push it out of the plate.
+  const strip = el(plate, 'div', 'audit-strip');
+  const failQ = el(strip, 'p', 'audit-fail machine', quote('audit', 'after editing line 12'));
 
   // Fractions along the chain, from fixed flex weights (no measurement).
   const total = weights.reduce((a, b) => a + b, 0);
@@ -153,7 +154,6 @@ function mount(ctx: SceneContext): SceneHandle {
   const linkCentre = (j: number) => centres[j * 2 + 1];
   const yPct = (f: number) => ((f - BAR / 2) / (1 - BAR)) * 100;
   const clamp = (v: number) => Math.min(1, Math.max(0, v));
-  mismatch.style.top = `${linkCentre(EDITED - 1) * 100}%`;
 
   const tl = gsap.timeline({ paused: true, defaults: { ease: 'none' } });
   tl.to({}, { duration: STEPS }, 0);
@@ -161,6 +161,7 @@ function mount(ctx: SceneContext): SceneHandle {
   const kit = createInspection({
     ctx,
     world,
+    viewport: view,
     steps: STEPS,
     cues: [
       { step: 0, target: null },
@@ -203,7 +204,7 @@ function mount(ctx: SceneContext): SceneHandle {
   tl.fromTo(afterLayer, { opacity: 0 }, { opacity: 1, duration: at(2, 'settle') - at(2, 'lock') }, at(2, 'lock'));
   tl.to(beforeLayer, { opacity: 0, duration: at(2, 'settle') - at(2, 'lock') }, at(2, 'lock'));
 
-  // Step 4 (lead: the failure). Tracer descends again and stops at line 8; the link splits at the stamp.
+  // Step 4 (lead: the failure). Tracer descends again and stops at line 12; the link splits at the stamp.
   tl.to(cleanQ, { opacity: 0, duration: 0.06 }, at(3, 'diveStart'));
   tl.to(litLayers, { opacity: 0, duration: 0.05 }, at(3, 'diveStart'));
   tl.set(tracer, { yPercent: 0, opacity: 1 }, at(3, 'diveStart'));
@@ -220,7 +221,6 @@ function mount(ctx: SceneContext): SceneHandle {
   tl.to(halves[1], { xPercent: 300, yPercent: 30, rotation: 34, transformOrigin: '50% 0%', duration: 0.06 }, land);
   tl.to(badLayers, { opacity: 1, duration: 0.06 }, land);
   tl.fromTo(scanGlow, { opacity: 0 }, { opacity: 1, duration: 0.06 }, land);
-  tl.fromTo(mismatch, { opacity: 0 }, { opacity: 1, duration: 0.06 }, land);
   tl.fromTo(failQ, { opacity: 0 }, { opacity: 1, duration: 0.06 }, at(3, 'diveStart'));
   gsap.set(badLayers, { opacity: 0 });
 

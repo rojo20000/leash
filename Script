@@ -1,0 +1,155 @@
+# =============================================================================
+# LEASH: PRESENTATION SCRIPT (about 4 minutes, 4 speakers)
+# =============================================================================
+# [SLIDE: ...] marks a slide change. [DEMO: ...] marks a demo action.
+#
+# Before going on stage:
+#   - Check that the dashboard approval queue shows the blocked calls from
+#     `make demo`.
+#   - Say "patient zero-zero-four-two", not "patient forty-two".
+#
+# -----------------------------------------------------------------------------
+# ZAREK, 0:00: Hook and problem
+# -----------------------------------------------------------------------------
+# [SLIDE: Title, "Leash"]
+#
+# A hospital gives an AI agent one simple job: schedule a patient from a
+# referral. The referral is a PDF. Buried inside it is one hidden sentence
+# telling the agent to send the patient's records somewhere else.
+#
+# [SLIDE: Unprotected run, the email going out]
+#
+# In our demo, that's exactly what happens. The agent emails the full record
+# for patient 0042 to an outside clinic address nobody approved. No one broke
+# in. The agent just followed instructions. The wrong ones.
+#
+# That's the problem. Hospitals want AI agents working inside their records
+# systems. But an agent with access to patient data can leak it, or take
+# actions nobody signed off on. And the cause can be as small as one sentence.
+#
+# So how do you let an agent work without letting it loose? Sal.
+#
+# -----------------------------------------------------------------------------
+# SAL, 1:00: Solution and who it's for
+# -----------------------------------------------------------------------------
+# [SLIDE: "Leash: a runtime security gateway for clinical AI agents"]
+#
+# That's Leash: a runtime security gateway for clinical AI agents. Runtime
+# means it works while the agent is acting, not after the damage is done.
+#
+# Every tool call the agent makes goes through Leash first. That covers every
+# record it reads and every email it sends. Leash checks the call against a
+# role policy, strips patient data down to what the task needs, scores it with
+# machine learning, and logs it. Then it decides: allow, block, or hold for
+# a human.
+#
+# [SLIDE: Who it's for]
+#
+# It's built for hospitals that want AI agents in their records systems, and
+# for the people who review what those agents do. And there's an efficiency
+# win. When the worst case is limited and every decision is logged, you can
+# trust an agent with more work on its own.
+#
+# Rowan's going to run that same attack again, this time through Leash.
+#
+# -----------------------------------------------------------------------------
+# ROWAN, 2:05: How it works, plus the demo
+# -----------------------------------------------------------------------------
+# [SLIDE: Pipeline diagram]
+#
+# Leash runs every call through seven steps:
+#   - a policy check written in Rust
+#   - injection detection
+#   - data minimization
+#   - a content check
+#   - an anomaly score
+#   - a plain-language explanation from NVIDIA Nemotron
+#   - an audit log that's hash-chained, meaning each entry is sealed to the
+#     one before it, so any edit breaks the chain
+#
+# [DEMO: run `make demo`, protected run]
+#
+# Same referral, same agent.
+#
+# First, the poisoned document. Blocked: injection detected. Next, the agent
+# asks for more of the chart than scheduling needs. Blocked: resource not
+# allowed. Then the email to the outside clinic. Blocked.
+#
+# [DEMO: switch to the dashboard's approval queue]
+#
+# Each block lands in the approval queue, with Nemotron's explanation so a
+# reviewer knows why. And the 17 legitimate calls went straight through. The
+# scheduling still gets done.
+#
+# [DEMO: tamper test]
+#
+# Last test. I edit one line of the audit log. Verify fails: hash mismatch.
+#
+# So it works. Nico, does it hold up?
+#
+# -----------------------------------------------------------------------------
+# NICO, 3:15: Impact, what's next, close
+# -----------------------------------------------------------------------------
+# [SLIDE: Results]
+#
+# Across 245 test calls, Leash auto-approved 71 percent, held 16 percent for
+# a human, and blocked 12 percent. On held-out tests, our injection detector
+# caught 85 percent of injection attempts, with zero false alarms. With the
+# model checks on local fallback, Leash adds about 7 milliseconds per call.
+#
+# [SLIDE: "AI judgment where it helps humans decide. Hard rules where safety
+#          requires them."]
+#
+# Here's the one thing we want you to remember. AI judgment where it helps
+# humans decide. Hard rules where safety requires them. Nemotron can add
+# caution. It can never remove it. Nothing a model says can unblock a call.
+#
+# [SLIDE: What's next]
+#
+# This is a prototype: synthetic data, one role, one policy. Next, we want
+# policies for more roles, and a behavior model for human-facing tools like
+# Sal's Clinic Assistant, which can already route requests through Leash.
+#
+# [SLIDE: Leash]
+#
+# Hospitals don't have to keep AI agents out. They just have to keep them on
+# a Leash.
+#
+# We're Zarek, Sal, Rowan, and Nico. Thank you.
+#
+# -----------------------------------------------------------------------------
+# TIMING
+# -----------------------------------------------------------------------------
+#   Speaker   Words (approx.)   Time
+#   Zarek     ~125              ~1:00
+#   Sal       ~145              ~1:05
+#   Rowan     ~140              ~1:10 including demo pauses
+#   Nico      ~150              ~1:10
+#   TOTAL     ~560              ~4:25
+#
+# To cut time, drop Sal's "Runtime means..." sentence and Nico's latency line.
+#
+# -----------------------------------------------------------------------------
+# LIKELY JUDGE QUESTIONS
+# -----------------------------------------------------------------------------
+# 1. What does Nemotron actually do here, and what happens if it's slow or
+#    down?
+#    Nemotron explains every block in plain language for the reviewer, and its
+#    checks can escalate a call to a human. A live call adds about 0.7 seconds
+#    at the median, and if the API rate-limits us, Leash falls back to local
+#    detectors. Since Nemotron can only add caution, a failure never unblocks
+#    anything.
+#
+# 2. What does Leash miss?
+#    Our Nemotron evaluation is small, just 40 labelled cases, and in the final
+#    holdout run two of the three injected documents got past every detector.
+#    The live agent also isn't deterministic: it followed the hidden
+#    instruction in only 1 of 3 unprotected runs. That's why the scripted
+#    replay is our demo of record, and a bigger labelled set is the first thing
+#    we'd add.
+#
+# 3. Is this HIPAA compliant? Could a hospital use it tomorrow?
+#    No. It's a prototype on synthetic data with one role and one policy. We
+#    mapped our controls to HIPAA rules in docs/HIPAA_MAPPING.md as a design
+#    document, not a compliance claim, and the next step is per-role policies.
+# =============================================================================
