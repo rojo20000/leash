@@ -84,3 +84,5 @@ Checks on the branch after merging `main`: `make check` exit 0 on the Rust core 
 Not pushed. After merging, run `make rust` once the dashboard servers are stopped.
 
 2026-11-21 18:08: Added the `site/` demo: 12 arrow-navigated scenes in the Bedside scan design. `npm install`, typecheck and build pass. The final browser re-test was stopped early, so only the audit scene was re-verified after the last fixes. It matches the latest run (entries=28, line 12).
+
+2026-11-21 18:40: Talk cut of `site/` (branch `site/talk-cut`, worktree `leash-site-talk`, not committed, not pushed). The site now follows the speeches in `Script`: 16 arrow steps for Zarek, Rowan and Nico; no slides for Sal's live demo. Order, kept steps and on-screen wording are all in `site/src/shell/talk.ts`. Added the Clinic Assistant recording from `deck/public/demo.mp4` as a `demo` scene. Arrow moves slowed from about 0.8 s to 1.6 s with an even ease (`STEP_SECONDS` in `site/src/shell/runtime.ts`). Results tables reworded in plain language. Typecheck and build pass; every step walked in the browser with no console errors. `site/SITE_CONTRACT.md` still describes the 12-scene version.

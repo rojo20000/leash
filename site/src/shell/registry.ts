@@ -1,13 +1,15 @@
 import type { SceneId } from '../content';
+import { TALK, pick } from './talk';
 import type { SceneModule } from './types';
 
-export const SCENE_ORDER: SceneId[] = ['hero','problem','pipeline','policy','injection','minimization','anomaly','reasoner','queue','audit','results','closing'];
+/** Every scene file that exists. What is shown, and in what order, is set by TALK in ./talk.ts. */
+export const SCENE_ORDER: SceneId[] = ['hero','problem','pipeline','policy','injection','minimization','anomaly','reasoner','queue','audit','demo','results','closing'];
 
 const modules = import.meta.glob<{ default: SceneModule }>('../scenes/*.ts', { eager: true });
 
-/** Registered scene modules in SCENE_ORDER. Missing scenes are skipped. */
+/** The talk's parts in speaking order, each cut from its scene. Parts whose scene is missing are skipped. */
 export function registeredScenes(): SceneModule[] {
-  const byId = new Map<SceneId, SceneModule>();
+  const byId = new Map<string, SceneModule>();
   for (const [path, mod] of Object.entries(modules)) {
     const file = path.split('/').pop()!.replace(/\.ts$/, '');
     const scene = mod?.default;
@@ -21,5 +23,8 @@ export function registeredScenes(): SceneModule[] {
     }
     byId.set(scene.id, scene);
   }
-  return SCENE_ORDER.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
+  return TALK.flatMap((part) => {
+    const scene = byId.get(part.from);
+    return scene ? [pick(scene, part)] : [];
+  });
 }

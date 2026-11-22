@@ -218,3 +218,6 @@
   .scene-hero .hero-reg--bl { bottom: 40px; }
   .scene-hero .hero-end { top: 46%; }
 }
+
+/* The talk reuses this picture for several slides; the key hint belongs on the opening one only. */
+.scene-hero:not(#title) .hero-hint { display: none; }
