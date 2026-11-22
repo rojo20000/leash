@@ -75,13 +75,16 @@ def chat(policy: dict, messages: list[dict], system: str | None = None) -> str:
                 pass
         return f"(stand-in model) I received {len(last)} characters. Summary would appear here."
     m = policy["model"]
-    out = _post(f"{m['ollama_url']}/api/chat", {
+    body = {
         "model": m["chat_model"],
         "messages": [{"role": "system", "content": system or policy["scope"]["system_prompt"]}] + messages,
         "stream": False,
         "keep_alive": m.get("keep_alive", "30m"),
         "options": chat_options(policy),
-    }, m.get("timeout_seconds", 180))
+    }
+    if isinstance(m.get("think"), bool):  # only sent when policy sets it; see model._think
+        body["think"] = m["think"]
+    out = _post(f"{m['ollama_url']}/api/chat", body, m.get("timeout_seconds", 180))
     return out["message"]["content"]
 
 

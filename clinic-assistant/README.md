@@ -43,6 +43,12 @@ Expected time per question on an 8 GB Intel Mac (CPU), both models warm: reviewe
   - Text that is valid JSON but not valid UTF-8 is stored with `?` in place of the bad character; a JSON body that is not an object gets 400 on every route, including sign-in.
   - The patient sees clinician display names ("Dr Lee"), never staff usernames; the front desk still gets the id it books with.
   - A refused portal action (`portal_refused`: route and status only) and a patient's `/api/me` (`portal_me_viewed`) are in the audit log.
+- **Checked with real local models and at phone width** (2026-11-21, `qwen3.5:9b` and `medgemma1.5` as the chat model, `nemotron-mini` as the reviewer; tests in `PortalReviewFixes`):
+  - Real drafts come back with placeholders such as `[NAME]`, `[PHONE NUMBER]` and `[Clinic Name]`. Any short bracketed phrase now counts as an unfilled placeholder, so approval is refused until a person fills them in.
+  - The staff-facing footer "AI draft for clinician review..." is removed from text approved for a patient. A draft that is only that footer counts as empty.
+  - A model that returns no text makes no draft ("The model returned no text"). That is what a thinking model such as `qwen3.5:9b` does through this app unless `model.think` is set to `false` in `config/policy.json` (new, unset by default, only sent to Ollama when set).
+  - The Nemotron reviewer checks assistant turns, not message drafts. `reviewer.review_drafts: true` (new, `false` by default) sends drafts past it too: red means no draft and a second person is told, amber shows the reasons to the approver. With the real models on a GPU it added about 1 s per draft, passed five ordinary patient messages and stopped an unsafe instruction before the chat model ran. It is off by default because each reviewer call takes 45 s or more on the 8 GB demo Mac.
+  - On a phone the three portal sections sit on their own row under the clinic name (they were squeezed out of sight), the results table fits the screen, and message subjects are no longer in capitals.
 - **Demo account**: `pt_lena`, linked to the synthetic patient `syn-002` (Lena Delacroix). `python3 setup_demo.py` creates it with the same password as the other demo accounts. Run `python3 scripts/seed_portal_demo.py` once to give her a welcome message and, if she has none, an upcoming appointment.
 - **Left out on purpose**:
   - Patient self-booking into open slots: it bypasses the front desk and needs slot locking for a second actor. Requests cover it.

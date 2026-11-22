@@ -15,6 +15,7 @@
     "max_answer_tokens": 450,
     "context_tokens": 4096,
     "keep_alive": "30m",
+    "_think": "Leave unset for ordinary models. For a thinking model (for example qwen3.5:9b) add \"think\": false here: without it the answer arrives in a separate thinking field and the assistant shows an empty reply. Only sent to Ollama when set to true or false.",
     "_speed": "Answers are capped at max_answer_tokens and the model is kept loaded for keep_alive, so only the first answer after start pays the load time. The app warms the model when it starts."
   },
   "scope": {
@@ -303,6 +304,8 @@
     "timeout_s": 60,
     "fail_mode": "hold",
     "when_model_missing": "skip",
+    "review_drafts": false,
+    "_review_drafts": "false = the reviewer checks assistant turns only; message drafts (Messages tab, including patient-portal drafts) get the fixed guardrails and a clinician's approval, as before. true = drafts also go past the reviewer at the configured stages, which can only raise the tier (red = no draft, sent to a second person; amber = reasons shown to the approver). Costs one reviewer call per stage per draft: about 0.5 s each on a GPU, 45 s or more on the 8 GB demo Mac.",
     "_demo": "For demos, a clinical lead or admin can switch the reviewer off and on at runtime (Ask a question > Demo scenarios, or POST /api/reviewer). That switch is stored in data/clinic.db and audited; this file is never changed by it.",
     "_stages": "Measured on the 8 GB Intel demo Mac (warm): pre+post 79-90 s, pre only 45-66 s. Pre only is the default; add \"post\" to also review each answer.",
     "stages": [

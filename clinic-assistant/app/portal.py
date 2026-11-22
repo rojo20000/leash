@@ -18,6 +18,7 @@ import time
 import uuid
 
 from . import VERSION
+from .guardrails import REVIEW_NOTE
 
 PATIENT_REQ = ("id", "kind", "appointment_id", "visit_type", "clinician", "preferred", "note", "status",
                "created_at", "handled_at", "staff_note")
@@ -59,7 +60,15 @@ def _text(value, limit: int) -> str:
     return str(value or "").encode("utf-8", "replace").decode().strip()[:limit]
 
 
-TAG = re.compile(r"\[[A-Z][A-Z0-9_ ]*\]")  # a masking placeholder such as [NAME] or [DATE]
+# A placeholder left for a person to fill in. Masking writes [NAME]; real models also write
+# [Clinic Name], [PHONE NUMBER] or [Patient's name], so any short bracketed phrase counts.
+TAG = re.compile(r"\[[A-Za-z][A-Za-z0-9_ '/.-]{0,40}\]")
+STAFF_NOTE = REVIEW_NOTE.strip()  # "--- AI draft for clinician review...": for the approver, not the patient
+
+
+def patient_text(text: str) -> str:
+    """Approved text as the patient will get it: without the staff-facing review note."""
+    return text.replace(STAFF_NOTE, "").strip()
 
 
 def draft_problem(policy: dict, text: str) -> str | None:
@@ -71,7 +80,7 @@ def draft_problem(policy: dict, text: str) -> str | None:
         return f"Too long for the patient portal: {len(text)} characters, and the limit is {limit}."
     found = TAG.search(text)
     if found:
-        return f"Fill in {found.group(0)} and any other [TAGS] first: the patient gets the text exactly as approved."
+        return f"Fill in {found.group(0)} and any other [TAGS] first: the patient gets the text as approved."
     return None
 
 

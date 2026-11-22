@@ -741,7 +741,9 @@ class App:
                               + ("" if ctx["clinical"] else ", schedule only")
                               + (f"; {ctx['withheld']} note withheld" if ctx["withheld"] else "")})
         pre = post = None
-        if kind == "chat":  # the reviewer model sees what the chat model would see, before it does
+        # chat turns always; message drafts too when reviewer.review_drafts is on (text that may reach a patient)
+        reviewed = kind == "chat" or (kind == "draft" and bool(self.policy.get("reviewer", {}).get("review_drafts")))
+        if reviewed:  # the reviewer model sees what the chat model would see, before it does
             # question first, so a long context can never push it past the reviewer's length cap
             pre = self.reviewer.review("pre", masked, sess["user"], context=model_input if model_input != masked else None)
             trace.append(pre["step"])
@@ -773,7 +775,7 @@ class App:
         if invented:
             out["reasons"].append("Mentions a patient not in today's list (" + ", ".join(invented[:3]) + ").")
             out["flags"].append("unknown_patient")
-        if kind == "chat":  # the reviewer checks the answer too; it can only raise the tier
+        if reviewed:  # the reviewer checks the answer too; it can only raise the tier
             post = self.reviewer.review("post", raw, sess["user"])
             trace.append(post["step"])
         rv = [v["tier"] for v in (pre, post) if v and not v.get("skipped")]
@@ -1227,6 +1229,11 @@ def make_handler(app: App):
                 result = app.strip_internal(app.ask_model(s, prompt, "draft"))
                 if result["tier"] in ("red", "error"):
                     return self.send(200, result)
+                if not result["reply"].replace(REVIEW_NOTE, "").strip():
+                    app.audit.write("draft_empty", s["user"], recipient_group=group,
+                                    model=app.policy["model"]["chat_model"])
+                    return self.send(200, {**result, "tier": "error", "reply": None, "reasons": [
+                        "The model returned no text, so there is no draft. Try again, or check the model setting."]})
                 tier, reasons = result["tier"], list(result["reasons"])
                 if group in app.policy["tiers"].get("always_amber_recipient_groups", []):
                     tier = "amber"
@@ -1257,6 +1264,8 @@ def make_handler(app: App):
                         return "A different clinician must approve this."
                     if decision == "approve":
                         text = portal._text(final or item["draft"], MAX_BODY)
+                        if item["recipient_group"] == portal.PORTAL_GROUP:
+                            text = portal.patient_text(text)  # the "AI draft for clinician review" note stays with staff
                         # text for a patient is checked here, while the approver can still edit it
                         problem = (portal.draft_problem(app.policy, text)
                                    if item["recipient_group"] == portal.PORTAL_GROUP

@@ -15,8 +15,10 @@ import uuid
 from datetime import timedelta
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
 
 os.environ["MOCK_LLM"] = "1"
+from app import llm  # noqa: E402
 from app.server import App, make_handler  # noqa: E402
 
 PW = "correct horse battery"
@@ -894,6 +896,81 @@ class PortalReviewFixes(unittest.TestCase):
         self.assertEqual(self.login("pt_a").call("/api/portal/messages", {"subject": "s", "body": "hello"})[0], 200)
         recent = self.login("dr_lee").call("/api/chart/recent")[1]
         self.assertFalse([r for r in recent if r["event"].startswith("portal_")])
+
+    # ---- found by running the draft flow against real local models (qwen3.5:9b, medgemma1.5, nemotron-mini) ----
+    def test_mixed_case_placeholders_are_refused(self):
+        doc = self.login("dr_lee")
+        did = self.draft_for(doc, A)
+        for bad in ("Hello, please call [Clinic Name] today.", "Ring us on [PHONE NUMBER] to book.",
+                    "Dear [Patient's name], your results are back."):  # as real models write them
+            with self.subTest(final_text=bad):
+                st, r = doc.call("/api/outbox/decide", {"id": did, "decision": "approve", "final_text": bad})
+                self.assertEqual(st, 400, r)
+        ok = "Hello Lena, please call the clinic on 555-0100 to book (weekdays 8 to 5)."
+        self.assertEqual(doc.call("/api/outbox/decide", {"id": did, "decision": "approve", "final_text": ok})[0], 200)
+
+    def test_staff_review_note_never_reaches_the_patient(self):
+        doc, pat = self.login("dr_lee"), self.login("pt_b")
+        note = "AI draft for clinician review"
+        did = self.draft_for(doc, B)
+        draft = next(i for i in doc.call("/api/outbox")[1] if i["id"] == did)["draft"]
+        self.assertIn(note, draft)                                    # the approver does see it
+        st, r = doc.call("/api/outbox/decide", {"id": did, "decision": "approve"})   # approved unedited
+        self.assertEqual(st, 200, r)
+        self.assertNotIn(note, r["item"]["final_text"])
+        self.assertTrue(r["item"]["final_text"].strip())
+        self.assertEqual(doc.call("/api/outbox/send", {"id": did})[0], 200)
+        self.assertNotIn(note, json.dumps(pat.call("/api/portal/messages")[1]))
+        # a text that is only that note is empty as far as the patient is concerned
+        did2 = self.draft_for(doc, B)
+        only_note = "---\nAI draft for clinician review. Not a diagnosis or a treatment decision."
+        st, r = doc.call("/api/outbox/decide", {"id": did2, "decision": "approve", "final_text": only_note})
+        self.assertEqual(st, 400, r)
+
+    def test_empty_model_answer_makes_no_draft(self):
+        doc = self.login("dr_lee")
+        before = len(doc.call("/api/outbox")[1])
+        with mock.patch("app.llm.chat", return_value=""):   # what a thinking model returns without think:false
+            st, r = doc.call("/api/outbox/draft", {"recipient_group": "patient-portal", "patient_id": A,
+                                                   "instructions": "Results are normal."})
+        self.assertEqual((st, r["tier"]), (200, "error"), r)
+        self.assertNotIn("item", r)
+        self.assertIn("no text", " ".join(r["reasons"]))
+        self.assertEqual(len(doc.call("/api/outbox")[1]), before)
+        self.assertTrue(self.audit("draft_empty"))
+
+    def test_reviewer_checks_drafts_only_when_policy_says_so(self):
+        doc, cfg = self.login("dr_lee"), self.app.policy["reviewer"]
+        body = {"recipient_group": "patient-portal", "patient_id": A, "instructions": "Results are normal."}
+        steps = lambda r: [s["step"] for s in r["trace"] if s["step"].startswith("Reviewer")]
+        self.assertFalse(cfg.get("review_drafts"))                    # shipped setting: off
+        n = len(self.audit("reviewer_pre"))
+        self.assertEqual(steps(doc.call("/api/outbox/draft", body)[1]), [])
+        self.assertEqual(len(self.audit("reviewer_pre")), n)
+        cfg["review_drafts"] = True
+        try:
+            st, r = doc.call("/api/outbox/draft", body)
+            self.assertEqual(st, 200, r)
+            self.assertIn("Reviewer (before model)", steps(r))
+            self.assertEqual(len(self.audit("reviewer_pre")), n + 1)
+            self.assertIn("item", r)                                  # a harmless draft still gets through
+        finally:
+            cfg["review_drafts"] = False
+
+    def test_think_option_is_sent_to_ollama_only_when_policy_sets_it(self):
+        sent = []
+
+        def fake_post(url, body, *args, **kwargs):
+            sent.append(body)
+            return {"message": {"content": "ok"}}
+
+        policy = json.loads(json.dumps(self.app.policy))
+        with mock.patch.dict(os.environ, {"MOCK_LLM": "0"}), mock.patch("app.llm._post", fake_post):
+            self.assertEqual(llm.chat(policy, [{"role": "user", "content": "hi"}]), "ok")
+            policy["model"]["think"] = False
+            llm.chat(policy, [{"role": "user", "content": "hi"}])
+        self.assertNotIn("think", sent[0])            # unset: the request is exactly what it was before
+        self.assertIs(sent[1]["think"], False)
 
     def test_zz_chains_verify_after_the_review_tests(self):
         self.assertTrue(self.app.audit.verify()["ok"])
