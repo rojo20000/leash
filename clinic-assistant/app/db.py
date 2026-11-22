@@ -22,6 +22,10 @@ from pathlib import Path
 
 GENESIS = "0" * 64
 HASHED = ("at", "by_user", "role", "entity", "entity_id", "action", "summary", "before_json", "after_json")
+MSG_COLS = ("id", "patient_id", "at", "direction", "sender", "sender_role", "subject", "body", "source",
+            "draft_id", "approved_by", "in_reply_to")
+REQ_COLS = ("id", "patient_id", "created_at", "kind", "appointment_id", "visit_type", "clinician", "preferred",
+            "note", "status", "handled_by", "handled_at", "staff_note")
 CONV_HASHED = ("id", "at", "user", "role", "kind", "patient_id", "question", "answer", "tier", "reasons",
                "review_id", "model", "duration_ms", "context_summary", "audit_ref", "change_seq")
 # Added in 2.11 by ALTER TABLE. Rows written since then have hash_v = 2 and their hash covers these too;
@@ -79,6 +83,34 @@ CREATE TRIGGER IF NOT EXISTS conversations_no_update BEFORE UPDATE ON conversati
 BEGIN SELECT RAISE(ABORT, 'conversations is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS conversations_no_delete BEFORE DELETE ON conversations
 BEGIN SELECT RAISE(ABORT, 'conversations is append-only'); END;
+
+-- Patient portal. Messages between one patient and the care team. Append-only like change_log;
+-- every insert also writes a change_log row (entity 'patient'), so the hash chain covers it.
+CREATE TABLE IF NOT EXISTS portal_messages (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT NOT NULL UNIQUE, patient_id TEXT NOT NULL, at TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK (direction IN ('from_patient', 'to_patient')),
+    sender TEXT NOT NULL,          -- username of the patient or staff member who sent it
+    sender_role TEXT,
+    subject TEXT, body TEXT NOT NULL,
+    source TEXT NOT NULL CHECK (source IN ('patient', 'staff', 'approved_draft')),
+    draft_id TEXT, approved_by TEXT, in_reply_to TEXT
+);
+CREATE INDEX IF NOT EXISTS portal_messages_patient ON portal_messages(patient_id);
+CREATE TRIGGER IF NOT EXISTS portal_messages_no_update BEFORE UPDATE ON portal_messages
+BEGIN SELECT RAISE(ABORT, 'portal_messages is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS portal_messages_no_delete BEFORE DELETE ON portal_messages
+BEGIN SELECT RAISE(ABORT, 'portal_messages is append-only'); END;
+
+-- Appointment requests a patient sends to the front desk. The portal never writes to appointments.
+CREATE TABLE IF NOT EXISTS portal_requests (
+    id TEXT PRIMARY KEY, patient_id TEXT NOT NULL, created_at TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('book', 'cancel')),
+    appointment_id TEXT, visit_type TEXT, clinician TEXT, preferred TEXT, note TEXT,
+    status TEXT NOT NULL CHECK (status IN ('open', 'done', 'declined')),
+    handled_by TEXT, handled_at TEXT, staff_note TEXT
+);
+CREATE INDEX IF NOT EXISTS portal_requests_patient ON portal_requests(patient_id);
 
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS seeded_days (date TEXT PRIMARY KEY);
@@ -161,14 +193,115 @@ class ClinicDB:
                 " visit_type = excluded.visit_type, status = excluded.status, doc = excluded.doc",
                 (doc["id"], doc["date"], doc["time"], doc["clinician"], doc["patient_id"], doc.get("visit_type"),
                  doc["status"], after))
+        self._log(entity, doc["id"], action, by, role, summary, before, after, at)
+
+    def _log(self, entity, entity_id, action, by, role, summary, before, after, at=None) -> None:
+        """Append one change_log row. before/after are JSON text (or None). Call inside a transaction."""
         last = self.conn.execute("SELECT hash FROM change_log ORDER BY seq DESC LIMIT 1").fetchone()
-        entry = {"at": at, "by_user": by, "role": role, "entity": entity, "entity_id": doc["id"],
+        entry = {"at": at or _stamp(), "by_user": by, "role": role, "entity": entity, "entity_id": entity_id,
                  "action": action, "summary": summary, "before_json": before, "after_json": after}
         prev = last[0] if last else GENESIS
         self.conn.execute(
             "INSERT INTO change_log (at, by_user, role, entity, entity_id, action, summary, before_json,"
             " after_json, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (*(entry[k] for k in HASHED), prev, _digest(prev, entry)))
+
+    # ---- patient portal ---------------------------------------------------
+    # Each write and its change_log row (entity 'patient', entity_id = the patient id) are one transaction.
+    # The patients table itself is never touched here.
+    def _portal_insert(self, table: str, cols: tuple, row: dict, action: str, by, role, summary: str) -> dict:
+        with self.lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                self.conn.execute(f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})",
+                                  tuple(row[k] for k in cols))
+                self._log("patient", row["patient_id"], action, by, role, summary, None, _dump(row),
+                          row.get("at") or row["created_at"])
+                self.conn.execute("COMMIT")
+            except BaseException:
+                self.conn.execute("ROLLBACK")
+                raise
+            self.version += 1
+        return row
+
+    def add_portal_message(self, row: dict, by: str, role: str) -> dict:
+        """Append one portal message. Sets `at`. The summary never carries the message text."""
+        full = {k: row.get(k) for k in MSG_COLS}
+        full["at"] = _stamp()
+        summary = "Portal message from patient" if full["direction"] == "from_patient" else "Portal message to patient"
+        return self._portal_insert("portal_messages", MSG_COLS, full, "portal_message", by, role, summary)
+
+    def portal_messages(self, patient_id: str | None = None, limit: int = 200) -> list[dict]:
+        """Newest first. patient_id None = every patient (staff inbox)."""
+        rows = self._q(f"SELECT {', '.join(MSG_COLS)} FROM portal_messages WHERE (? IS NULL OR patient_id = ?)"
+                       " ORDER BY seq DESC LIMIT ?", (patient_id, patient_id, limit))
+        return [dict(zip(MSG_COLS, r)) for r in rows]
+
+    def portal_inbox(self, per_patient: int) -> list[dict]:
+        """Staff inbox: the newest `per_patient` messages of EVERY patient, newest first.
+
+        A global LIMIT would let one busy patient push everyone else's messages out of view.
+        """
+        rows = self._q(f"SELECT {', '.join(MSG_COLS)} FROM (SELECT *, ROW_NUMBER() OVER"
+                       " (PARTITION BY patient_id ORDER BY seq DESC) AS rn FROM portal_messages)"
+                       " WHERE rn <= ? ORDER BY seq DESC", (per_patient,))
+        return [dict(zip(MSG_COLS, r)) for r in rows]
+
+    def count_patient_messages(self, patient_id: str, since: str) -> int:
+        """How many messages this patient has sent at or after `since` (a _stamp()-style UTC string)."""
+        return self._q("SELECT COUNT(*) FROM portal_messages WHERE patient_id = ? AND direction = 'from_patient'"
+                       " AND at >= ?", (patient_id, since))[0][0]
+
+    def portal_message(self, msg_id: str) -> dict | None:
+        rows = self._q(f"SELECT {', '.join(MSG_COLS)} FROM portal_messages WHERE id = ?", (msg_id,))
+        return dict(zip(MSG_COLS, rows[0])) if rows else None
+
+    def add_portal_request(self, row: dict, by: str, role: str) -> dict:
+        """Save one appointment request for the front desk. Sets created_at and status 'open'."""
+        full = {k: row.get(k) for k in REQ_COLS}
+        full.update(created_at=_stamp(), status="open", handled_by=None, handled_at=None, staff_note=None)
+        return self._portal_insert("portal_requests", REQ_COLS, full, "portal_request", by, role,
+                                   f"Portal request ({full['kind']})")
+
+    def decide_portal_request(self, req_id: str, status: str, by: str, role: str, staff_note: str) -> dict:
+        """Mark an open request done or declined. ValueError if it is missing or already decided."""
+        if status not in ("done", "declined"):
+            raise ValueError("status must be done or declined")
+        with self.lock:
+            self.conn.execute("BEGIN IMMEDIATE")
+            try:
+                before = self.portal_request(req_id)
+                if not before or before["status"] != "open":
+                    raise ValueError("No open portal request with that id.")
+                after = dict(before, status=status, handled_by=by, handled_at=_stamp(), staff_note=staff_note)
+                self.conn.execute("UPDATE portal_requests SET status = ?, handled_by = ?, handled_at = ?,"
+                                  " staff_note = ? WHERE id = ?",
+                                  (status, by, after["handled_at"], staff_note, req_id))
+                self._log("patient", after["patient_id"], f"portal_request_{status}", by, role,
+                          f"Portal request {status}", _dump(before), _dump(after), after["handled_at"])
+                self.conn.execute("COMMIT")
+            except BaseException:
+                self.conn.execute("ROLLBACK")
+                raise
+            self.version += 1
+        return after
+
+    def portal_requests(self, patient_id: str | None = None, status: str | None = None,
+                        limit: int = 200) -> list[dict]:
+        """Newest first."""
+        rows = self._q(f"SELECT {', '.join(REQ_COLS)} FROM portal_requests WHERE (? IS NULL OR patient_id = ?)"
+                       " AND (? IS NULL OR status = ?) ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                       (patient_id, patient_id, status, status, limit))
+        return [dict(zip(REQ_COLS, r)) for r in rows]
+
+    def portal_request(self, req_id: str) -> dict | None:
+        rows = self._q(f"SELECT {', '.join(REQ_COLS)} FROM portal_requests WHERE id = ?", (req_id,))
+        return dict(zip(REQ_COLS, rows[0])) if rows else None
+
+    def appointments_for_patient(self, patient_id: str) -> list[dict]:
+        """All of one patient's appointments, sorted by date, time."""
+        return [json.loads(r[0]) for r in self._q("SELECT doc FROM appointments WHERE patient_id = ?"
+                                                  " ORDER BY date, time", (patient_id,))]
 
     # ---- reads -----------------------------------------------------------
     def _q(self, sql: str, args=()) -> list[tuple]:
@@ -195,7 +328,8 @@ class ClinicDB:
         return [json.loads(r[0]) for r in self._q(sql + " ORDER BY date, time, clinician", args)]
 
     def count(self, table: str) -> int:
-        assert table in ("patients", "appointments", "change_log", "conversations")
+        assert table in ("patients", "appointments", "change_log", "conversations", "portal_messages",
+                         "portal_requests")
         return self._q(f"SELECT COUNT(*) FROM {table}")[0][0]
 
     def history(self, pid: str | None = None, limit: int = 500, include_system: bool = True) -> list[dict]:

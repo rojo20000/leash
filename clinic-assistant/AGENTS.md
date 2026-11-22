@@ -5,7 +5,7 @@ People can read the same files; nothing here is agent-only.
 
 ## What this is
 
-Clinic Assistant (V3, app version in `app/__init__.py`, currently 2.13) is the human-facing front end
+Clinic Assistant (V3, app version in `app/__init__.py`, currently 2.14.1) is the human-facing front end
 for Leash. Staff sign in, see synthetic patients and today's schedule, and ask a **local** model
 questions. Every request goes through a gatekeeper: role check, identifier masking, guardrails,
 a second local reviewer model (NVIDIA Nemotron via Ollama), green / amber / red tiers, and
@@ -24,6 +24,8 @@ hash-chained logs. Python standard library only. Listens on `127.0.0.1:8642`.
    rewrite rows in `change_log`, `conversations` or `vectors`. A correction is a new row.
 5. **Every data change goes through `ClinicDB.write` / `write_many`** (`app/db.py`), so it lands in
    `change_log` in the same transaction. Do not write to `patients` or `appointments` directly.
+   Portal messages and requests go through `ClinicDB.add_portal_message` / `add_portal_request` /
+   `decide_portal_request`, which do the same (row and `change_log` entry in one transaction).
 6. **The reviewer can only raise a tier, never lower it.** Guardrails in `app/guardrails.py` stay in charge.
 7. **Leash integration is off by default** (`leash.enabled: false`). Keep it that way in commits.
 8. Rules live in `config/policy.json`. Change behaviour there, with a `_comment` / `_<key>` note, not in code.
@@ -38,7 +40,7 @@ Run from `clinic-assistant/`. On Windows use `python` instead of `python3`.
 | One-command setup (accounts, data, checks) | `CLINIC_DEMO_PASSWORD='<12+ chars>' python3 scripts/bootstrap.py` |
 | Start with a stand-in model (no Ollama) | `MOCK_LLM=1 python3 run.py` |
 | Start with real local models | `python3 run.py` (needs Ollama, see SETUP.md) |
-| All tests (stand-in model and reviewer) | `MOCK_LLM=1 python3 -m unittest` (98 tests, 1 skipped) or `make clinic-check` from the repo root |
+| All tests (stand-in model and reviewer) | `MOCK_LLM=1 python3 -m unittest` (181 tests with the patient portal and 2.14; up to 4 skipped: Presidio not installed, no running Leash gateway, not a standalone git checkout) or `make clinic-check` from the repo root |
 | Reset data to the shared synthetic state | `python3 scripts/reset_demo_data.py` (backs up first, keeps accounts) |
 | Verify every chain | `python3 scripts/reset_demo_data.py --check`, `python3 scripts/verify_db.py`, `python3 scripts/verify_stores.py` |
 | Real-model smoke test on a temp copy | `python3 live_check.py` |
@@ -55,6 +57,7 @@ and answers `GET /api/version`.
 | `app/server.py` | HTTP server, sessions, roles, every `/api/*` route, the request pipeline |
 | `app/db.py` | `data/clinic.db`: patients, appointments, `change_log`, `conversations` (hash-chained, append-only) |
 | `app/vectorstore.py` | `data/vectors.sqlite`: similar cases + reworded-injection detection (hash-chained, append-only) |
+| `app/portal.py` | Patient portal and the staff side of it: `/api/portal/*` (patient id from the session only), `/api/inbox*`, `/api/outbox/send`. Contract: `handoff/PATIENT_PORTAL_PLAN.md` |
 | `app/actions.py` | Assistant actions: chat command -> proposal card -> role/PIN-gated human approval (2.13) |
 | `app/reviewer.py` | Nemotron reviewer, before and after the chat model; fail closed; runtime demo switch stored in `clinic.db`. Design: `docs/REVIEWER.md`, demo: `docs/DEMO.md` |
 | `app/guardrails.py`, `app/privacy.py` | Input/output checks; identifier masking |

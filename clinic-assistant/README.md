@@ -9,6 +9,50 @@ answered on this computer only, checked again, and written to a tamper-evident l
 **Prototype. Use synthetic (made-up) patient data only.** It is not a medical device
 and has not been validated for clinical use.
 
+
+> **2.14.1:** the reviewer now runs **before the model only** by default (`reviewer.stages: ["pre"]` in `config/policy.json`). Measured on the 8 GB Intel demo Mac with warm models: before+after 79–90 s, before only 45–66 s, no reviewer 27–32 s; poisoned referral stopped in 0 s. Add `"post"` to the list (or start with `REVIEWER_STAGES=pre,post`) to also review every answer.
+
+## New in 2.14: fast enough for a CPU laptop
+
+- **Reviewer reads less, so it answers faster.** Before the chat model it sees only the masked question plus a 600-character excerpt of the context (not the whole schedule); after, a 600-character excerpt of the answer. Window 1536 tokens, verdict at most 80 tokens, temperature 0, kept loaded, and preloaded at start right after the chat model (one after the other, same window size as real calls so Ollama never reloads). Timeout raised to 60 s (`reviewer.timeout_s`).
+- **No more false alarms on placeholders.** The reviewer is told that `[PATIENT]`, `[P1]`, `[NAME]`, `[DATE]`, `[PHONE]` and labels like `Patient A (syn-004)` are already masked. And a fixed post-filter drops "contains identifiers" complaints when the masking finds nothing left to mask (complaints that a question *asks for* identifiers are kept). Dropped alarms are counted in the audit log.
+- **The poisoned referral is red again.** A record with a note that tries to instruct the AI is stopped before any model is called, while its document review is open for a clinical lead; afterwards the note stays withheld and answers are amber. The document is queued once.
+- **`demo_fast` preset** (on in this build): answers up to 200 tokens, a 2048-token chat window, and at most 12 appointments in the general-question context. Trade-offs: shorter answers, and general questions only see the first 12 of today's appointments. Turn it off in `config/policy.json` for full answers. If the reviewer is still too slow, run it before the model only: `"reviewer": {"stages": ["pre"]}` or `REVIEWER_STAGES=pre python3 run.py` (the answer is then checked by the fixed filters only).
+- **Install without touching live data:** `bash scripts/make_install_tarball.sh` builds `dist/clinic-assistant-<version>-install.tgz` from the committed HEAD with **no `data/` folder**, so unpacking it over an existing install never replaces `clinic.db`, `vectors.sqlite`, accounts or the audit log.
+
+Expected time per question on an 8 GB Intel Mac (CPU), both models warm: reviewer before ~5 to 10 s (about 500 tokens in, 80 out), chat model ~10 to 20 s (200 tokens out), reviewer after ~5 to 10 s: roughly 20 to 40 s, against 50 to 80 s in 2.13. With `stages: ["pre"]`, roughly 15 to 30 s. These are estimates, not measured on the Mac.
+
+## New: patient portal
+
+> Not numbered yet. It was built on a branch cut from 2.7 and merged on top of 2.13; `VERSION` is still main's 2.13 and the team picks the portal's number. Older portal notes (the plan in `handoff/`, DECISIONS.md, PROGRESS.md) call it "2.8", which is not the 2.8 already released on main.
+
+- **A patient can sign in and see their own record, and nothing else.** A patient who signs in at the usual address lands on `/portal` (`static/portal.html`, `portal.js`, `portal.css`). They see their upcoming and past appointments with clinician, visit type and status (`GET /api/portal/appointments`), a health summary (`GET /api/portal/chart`), and their messages with the care team (`GET` and `POST /api/portal/messages`).
+- **Accounts are created by an admin and linked to one patient.** `python3 manage_users.py add <user> patient <patient_id>` checks that the id exists in `data/clinic.db` before it asks for a password, and `list` shows the link. There is no self sign-up. A patient account with a missing link, or a link to a patient who doesn't exist, cannot sign in.
+- **Confinement.** A patient session can call only `/api/me`, `/api/logout` and `/api/portal/*`. Every other `/api/*` route answers 403 and the attempt is written to the audit log (`portal_staff_route_refused`). Portal routes take no patient id from the URL or the request body: the server uses the id it stored in the session at sign-in, so there is nothing in the browser to change.
+- **Released fields only.** The health summary is built from the allow-list `portal.released_fields` in `config/policy.json`: name, age, sex, birth date, conditions, medications, allergies, results, preferred contact and language. Notes, "things to check", the record number, insurance and the scenario never reach the patient.
+- **Appointment requests go through the front desk.** A patient can ask for a new appointment (visit type, optional clinician, preferred times, a note) or ask to cancel one of their own upcoming booked appointments (`POST /api/portal/appointments/request` and `/cancel`). The portal never writes to the schedule. Requests appear under **Portal requests** on the front desk's Schedule tab (`GET /api/inbox/requests`); reception books or cancels with the tools it already has, then marks the request done or declined with a note (`POST /api/inbox/requests/decide`). The front desk sees the patient through its usual allow-list and never sees message bodies. The patient sees the status of each request and can have at most 5 open (`portal.max_open_requests`).
+- **Messages.** The patient writes to the care team; clinicians, nurses and clinical leads read and answer in the new **Patient messages** tab (`GET /api/inbox`, `POST /api/inbox/reply`). Messages are stored in `clinic.db` (`portal_messages`, append-only). The patient sees "You" and "Care team", never staff usernames. The portal always says that messages are not for emergencies, and a message with urgent words gets a notice to call the clinic or emergency services now.
+- **AI text reaches a patient only as an approved draft that a staff member sends.** A `patient-portal` draft on the Messages tab now names the patient it is for (the id is stored with the draft and never put in the model prompt). The patient cannot see it while it is drafted, approved or rejected. Once it is approved, a staff member with `send_portal` presses **Send to patient portal** (`POST /api/outbox/send`), which copies the approved text into the patient's messages, once. No portal route ever calls the model.
+- **Everything is logged.** Every portal read writes an audit entry (`portal_chart_viewed`, `portal_appointments_viewed`, `portal_messages_viewed`), and so does every staff inbox read. Every portal write saves its row and a `change_log` entry in one transaction (actions `portal_message`, `portal_request`, `portal_request_done`, `portal_request_declined`, filed under the patient) and writes an audit entry too. The entries are on the same hash chain as every other change, so `python3 scripts/verify_db.py` covers them.
+- **New permissions** in `config/policy.json`: `portal_inbox` and `send_portal` for clinician, nurse and clinical lead; `portal_requests` for receptionist. The new `patient` role has only `portal_chart`, `portal_appointments` and `portal_messages`.
+- **Hardened after a security review of the portal diff** (8 findings, none high; each has a test in `tests/test_portal.py`, class `PortalReviewFixes`):
+  - A session ends at its next request if the account was disabled, re-linked to another patient or given another role (all roles, not only patients).
+  - A patient can send at most `portal.max_messages_per_day` messages (20) in 24 hours, and the staff inbox shows each patient's newest `portal.inbox_messages_per_patient` (30), so one patient cannot push the others out of view.
+  - Approved text for a patient must be text, not blank, within `portal.max_body_chars`, and free of unfilled `[TAGS]`; it is refused at approval (while it can still be edited) and checked again at send.
+  - Patient GETs count against the rate limit, and a refused path is logged with letters, digits, `/`, `_` and `-` only.
+  - Text that is valid JSON but not valid UTF-8 is stored with `?` in place of the bad character; a JSON body that is not an object gets 400 on every route, including sign-in.
+  - The patient sees clinician display names ("Dr Lee"), never staff usernames; the front desk still gets the id it books with.
+  - A refused portal action (`portal_refused`: route and status only) and a patient's `/api/me` (`portal_me_viewed`) are in the audit log.
+- **Demo account**: `pt_lena`, linked to the synthetic patient `syn-002` (Lena Delacroix). `python3 setup_demo.py` creates it with the same password as the other demo accounts. Run `python3 scripts/seed_portal_demo.py` once to give her a welcome message and, if she has none, an upcoming appointment.
+- **Left out on purpose**:
+  - Patient self-booking into open slots: it bypasses the front desk and needs slot locking for a second actor. Requests cover it.
+  - Patient-facing AI chat: model text would reach a patient without clinician approval.
+  - Self sign-up and password reset by email: accounts are admin-created, and email leaves the machine.
+  - Clinical notes and lab trends: notes can carry injected text (the poisoned referral) and are not released; results are shown as plain rows only.
+  - Proxy access for a parent or carer: it needs a many-to-many link and a consent model.
+  - Attachments: file uploads are a large new attack surface.
+  - Read receipts: messages are append-only, and an update path is not worth it.
+
 ## New in 2.12: a before-and-after demo of the reviewer
 
 - **Demo switch**: a clinical lead or admin can switch the Nemotron reviewer off and on at runtime (Ask a question > Demo scenarios, or `GET`/`POST /api/reviewer`). It's stored in `data/clinic.db`, never in `config/policy.json`, and every flip is in the audit log (`reviewer_toggled`, who, from, to). While it's off, every screen shows an amber bar "Reviewer is OFF (demo)", and every answer's checks say "Reviewer: switched off for demo by <name>".
@@ -25,7 +69,7 @@ and has not been validated for clinical use.
 
 - **What it does.** Every doctor-assistant and front-desk-assistant turn now goes past a separate local reviewer model twice: **before** the chat model (the masked question plus the minimized record or schedule) and **after** it (the answer). It looks for prompt injection, unsafe clinical advice, identifiers, invented patients and out-of-scope requests, and answers `green`, `amber` or `red`.
 - **It can only make things stricter.** The reviewer can raise a tier, never lower one; the fixed guardrails stay in charge. A red before the model means the chat model is never called (the request goes to a second person). Amber or red after the model holds the answer, exactly like today.
-- **Fails closed.** If the reviewer is on but unreachable, too slow (`timeout_s`, 20 s) or gives unusable output, the answer is held for a person: "Reviewer unavailable; held for a person."
+- **Fails closed.** If the reviewer is on but unreachable, too slow (`timeout_s`, 60 s since 2.14) or gives unusable output, the answer is held for a person: "Reviewer unavailable; held for a person."
 - **Turn it on on the Mac:** `ollama pull nemotron-mini` (about 2.7 GB, one time). That's all: `reviewer.enabled` is already `true` in `config/policy.json`, and the app starts using the model as soon as it's installed (checked every 30 seconds, no restart needed).
 - **Until the model is installed** (`reviewer.when_model_missing: "skip"`, the shipped setting), answers are not held; instead the reviewer is reported as off: a yellow "Reviewer (before model): off: Model not installed: run ollama pull nemotron-mini" line in every answer's safety checks, a **down** Reviewer box on the Network page (so Home shows a service down for network roles), `reviewer.state = "missing"` in `/api/me`, and a line when the app starts. Set it to `"hold"` to hold every answer until the model is there. Set `enabled` to `false` to switch the reviewer off (the trace then says "Reviewer: off").
 - **Logged, without content.** Audit events `reviewer_pre` / `reviewer_post` (tier, reasons, ms, ok, model) and a `model_call` per reviewer call; conversation-log rows gain `reviewer_pre_tier`, `reviewer_post_tier`, `reviewer_reasons`, `reviewer_ok` (new columns added safely; old rows still verify). Details and a flow chart: `docs/REVIEWER.md`.
@@ -61,11 +105,12 @@ See `docs/DEMO.md` for the 3-minute reviewer demo for judges, and `docs/DEMO-SCR
 | Model must be on this machine; any non-local model address is refused, and there is no cloud fallback | `app/llm.py` |
 | The web app only listens on `127.0.0.1` (not reachable from the network) | `config/policy.json`, `app/server.py` |
 | Accounts are created by an admin on the command line; no self sign-up | `manage_users.py` |
-| Roles: clinician, nurse, clinical lead, auditor, admin, receptionist, network engineer, each with a fixed permission list | `config/policy.json` → `roles` |
+| Roles: clinician, nurse, clinical lead, auditor, admin, receptionist, network engineer, patient, each with a fixed permission list | `config/policy.json` → `roles` |
 | Names, dates, phone numbers, MRNs, emails, addresses masked before the model or the log sees them | `app/privacy.py` |
 | Prompt-injection and off-topic requests blocked; urgent words add an emergency notice | `app/guardrails.py` + `scope` in policy |
 | Every answer is marked as a draft for clinician review; overconfident wording is flagged | `app/guardrails.py` |
 | **The AI never contacts anyone.** It drafts messages for allow-listed recipient groups only, a clinician approves or rejects, and a person sends the approved text | `communication` in policy, Messages tab |
+| **A patient account sees one patient only.** It is confined to `/api/me`, `/api/logout` and `/api/portal/*`, the browser never supplies a patient id, only released fields are shown, and AI text arrives only as an approved draft that a staff member sends | `portal` in policy, `app/portal.py`, `app/server.py` |
 | Hash-chained audit log; any edited or deleted line is detected | `app/audit.py`, Audit tab |
 | Local vector store: append-only (SQLite triggers refuse edits and deletes) and hash-chained, holding masked text only | `app/vectorstore.py`, Audit tab |
 | Sessions expire after 30 minutes; 20 requests per minute per user; strict browser security headers | `app/server.py` |

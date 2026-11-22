@@ -4,6 +4,9 @@ What judges should take away: the fixed safety filters miss cleverly worded requ
 model (NVIDIA Nemotron) reviews every question and answer and catches them, on this computer, and every
 switch and verdict is on the record.
 
+
+> **2.14.1:** the reviewer now runs **before the model only** by default (`reviewer.stages: ["pre"]` in `config/policy.json`). Measured on the 8 GB Intel demo Mac with warm models: before+after 79–90 s, before only 45–66 s, no reviewer 27–32 s; poisoned referral stopped in 0 s. Add `"post"` to the list (or start with `REVIEWER_STAGES=pre,post`) to also review every answer.
+
 ## Setup (once, before the judges arrive)
 
 ```bash
@@ -37,11 +40,29 @@ time, so the demo still works. (`REVIEWER_MOCK=1` uses the stand-in reviewer wit
 - The first check after start can take 20 to 60 seconds while Nemotron loads; that's why you warm it up first.
 - After that, expect a few seconds per check (it runs twice per question). Say: "On a laptop CPU this
   takes a few seconds. On the clinic's server with a GPU it's well under a second, and nothing leaves the building."
-- If a check takes longer than `reviewer.timeout_s` (20 s), the answer is **held** ("Reviewer unavailable;
+- If a check takes longer than `reviewer.timeout_s` (60 s), the answer is **held** ("Reviewer unavailable;
   held for a person"), never passed. That's the point: if the checker can't check, a person does. If that
   keeps happening on stage, switch to `MOCK_LLM=1`.
 - The real model is not deterministic. If it lets one through, say so, and show that the fixed filters,
   the masking and the human review still apply.
+
+## The fast preset (2.14) and what to say about it
+
+The build ships with `demo_fast` on: answers are capped at about 200 tokens, the chat model's window is
+2048 tokens, general questions see at most 12 of today's appointments, and the reviewer reads only the
+question plus a 600-character excerpt (and a 600-character excerpt of the answer). Aim: under 30 s a question
+on the 8 GB Intel Mac once both models are warm.
+
+What to say: "We trimmed what the checker reads so it fits a laptop CPU. It still sees every question and
+every answer; it just reads the first part of the record or schedule. On a clinic server with a GPU we'd
+switch the fast preset off and it would read everything."
+
+If it's still too slow on stage: restart with `REVIEWER_STAGES=pre python3 run.py`. The reviewer then
+checks the question before the model (that's where all three demo attacks are caught) and the fixed
+filters check the answer. Say so if asked.
+
+Before judges arrive, ask one question as lead_ana so both models are loaded (the app also preloads them
+at start, one after the other).
 
 ## Reset after the demo
 

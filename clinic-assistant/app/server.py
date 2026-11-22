@@ -22,7 +22,7 @@ from http import cookies
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from . import VERSION, llm, network, privacy
+from . import VERSION, llm, network, portal, privacy
 from . import leash_client
 from .audit import AuditLog
 from .db import ClinicDB
@@ -36,7 +36,8 @@ from .vectorstore import Embedder, VectorStore, index_all, reindex
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = {"/": ("index.html", "text/html"), "/app.js": ("app.js", "text/javascript"),
-          "/app.css": ("app.css", "text/css"),
+          "/app.css": ("app.css", "text/css"), "/portal": ("portal.html", "text/html"),
+          "/portal.js": ("portal.js", "text/javascript"), "/portal.css": ("portal.css", "text/css"),
           # ---- assistant actions (2.12) ----
           "/actions.js": ("actions.js", "text/javascript"), "/actions.css": ("actions.css", "text/css")}
 SECURITY_HEADERS = {
@@ -305,7 +306,7 @@ class App:
         """The latest changes people made to patient records (not imports), for the home screen."""
         out = []
         for r in self.db.history(None, 200, include_system=False):
-            if r["entity"] != "patient":
+            if r["entity"] != "patient" or r["action"].startswith("portal_"):  # chart changes, not portal traffic
                 continue
             p = self.ehr.patients.get(r["entity_id"])
             out.append({"ts": r["at"], "user": r["by"], "event": r["action"], "patient_id": r["entity_id"],
@@ -405,7 +406,7 @@ class App:
             base["_audit"] = self.audit.write("request_blocked", sess["user"], reasons=inp["reasons"], text=masked)
             return {**base, "tier": "red", "reasons": inp["reasons"], "review_id": item["id"]}
         prompt = f"Schedule:\n{context}\n\nQuestion: {masked}"
-        pre = self.reviewer.review("pre", f"Question: {masked}\n\nWhat the chat model will be given:\n{prompt}", sess["user"])
+        pre = self.reviewer.review("pre", masked, sess["user"], context=context)
         trace.append(pre["step"])
         base["_reviewer"] = _reviewer_meta(pre, None)
         if pre["tier"] == "red":
@@ -451,10 +452,9 @@ class App:
 
     # ---- grounding the general assistant in today's schedule ------------------
     def withhold_note(self, sess: dict, pid: str, note: dict, found: list[str]) -> None:
-        """Queue a note that looks like it carries instructions for a second person (once per open item)."""
+        """Queue a note that looks like it carries instructions for a second person (once: a lead decides it once)."""
         label = f"{note['type']} in record {pid}"
-        already = any(r["kind"] == "document" and r["status"] == "open" and r["reasons"][0] == label
-                      for r in self.reviews.all())
+        already = any(r["kind"] == "document" and r["reasons"][0] == label for r in self.reviews.all())
         if not already:
             self.queue("document", "red", sess, privacy.mask(note["text"])[0], [label] + found, None)
 
@@ -477,7 +477,7 @@ class App:
         labels: dict[str, str] = {}
         withheld, words, shown = 0, 0, 0
         lines = []
-        for a in appts[:MAX_CONTEXT_APPTS]:
+        for a in appts[:llm.demo_fast(self.policy).get("max_context_appts", MAX_CONTEXT_APPTS)]:
             pid = a["patient_id"]
             labels.setdefault(pid, _label(len(labels)))
             block = [f"- {a['time']} {labels[pid]} ({pid}): {a['visit_type']}, {a['status'].replace('_', ' ')}"
@@ -711,6 +711,23 @@ class App:
             if sess.get("history_pid") != patient["id"]:
                 sess["history"], sess["history_pid"] = [], patient["id"]
             context_summary = f"record {patient['id']}"
+            # A note that tries to instruct the AI makes the whole record suspect: stop here (red, before any model
+            # is called) until a clinical lead has looked at the queued document. After that, the note stays
+            # withheld and answers are amber.
+            label = f"in record {patient['id']}"
+            if doc_reasons and any(r["kind"] == "document" and r["status"] == "open" and label in r["reasons"][0]
+                                   for r in self.reviews.all()):
+                reasons = doc_reasons + inp["reasons"] + [
+                    "Questions about this record are stopped until a clinical lead reviews the flagged document."]
+                item = self.queue(kind, "red", sess, masked, reasons, None)
+                entry = self.audit.write("request_blocked", sess["user"], reasons=reasons,
+                                         flags=inp["flags"] + ["document_injection"], masked_tags=tags, text=log_text)
+                self.audit.write("patient_context_used", sess["user"], patient_id=patient["id"],
+                                 documents_withheld=len(doc_reasons))
+                trace.append({"step": "Routed", "status": "blocked",
+                              "detail": "red: record has a flagged document; nothing sent to any model"})
+                return {**base, "tier": "red", "reasons": reasons, "review_id": item["id"], "_audit": entry,
+                        "_context": context_summary}
         elif kind == "chat":
             if sess.get("history_pid"):
                 sess["history"], sess["history_pid"] = [], None
@@ -726,8 +743,7 @@ class App:
         pre = post = None
         if kind == "chat":  # the reviewer model sees what the chat model would see, before it does
             # question first, so a long context can never push it past the reviewer's length cap
-            pre = self.reviewer.review("pre", f"Question: {masked}\n\nWhat the chat model will be given:\n{model_input}",
-                                       sess["user"])
+            pre = self.reviewer.review("pre", masked, sess["user"], context=model_input if model_input != masked else None)
             trace.append(pre["step"])
             if pre["tier"] == "red":
                 reasons = doc_reasons + inp["reasons"] + _reviewer_reasons(pre)
@@ -825,6 +841,11 @@ def make_handler(app: App):
             if not s or s["expires"] < time.time():
                 app.sessions.pop(tok or "", None)
                 return None
+            u = app.users.account(s["user"])
+            if not u or not u["active"] or u["role"] != s["role"] or u["patient_id"] != s.get("patient_id"):
+                app.sessions.pop(tok, None)  # disabled, re-linked or re-roled since sign-in
+                app.audit.write("session_ended_account_changed", s["user"])
+                return None
             s["expires"] = time.time() + 60 * app.policy["server"]["session_minutes"]
             return s
 
@@ -832,6 +853,16 @@ def make_handler(app: App):
             # Cheap CSRF defence: state-changing calls must come from this page.
             origin = self.headers.get("Origin")
             return origin is None or origin == f"http://{self.headers.get('Host')}"
+
+        def confined(self, s: dict, path: str) -> bool:
+            """A patient session may call /api/me, /api/logout and /api/portal/* only. True = refused (403 sent)."""
+            if not (s.get("patient_id") or s["role"] == app.policy.get("portal", {}).get("patient_role")):
+                return False
+            if path in ("/api/me", "/api/logout") or path.startswith("/api/portal/"):
+                return False
+            app.audit.write("portal_staff_route_refused", s["user"], path=re.sub(r"[^A-Za-z0-9/_-]", "", path)[:60])
+            self.send(403, {"error": "Patient accounts can use the patient portal only."})
+            return True
 
         # ---- routes ----------------------------------------------------
         def do_GET(self):
@@ -844,7 +875,14 @@ def make_handler(app: App):
             s = self.session()
             if not s:
                 return self.send(401, {"error": "Not signed in."})
+            if s.get("patient_id") and not app.rate_ok(s["user"]):
+                app.audit.write("rate_limited", s["user"])
+                return self.send(429, {"error": "Too many requests. Wait a minute."})
+            if self.confined(s, path):
+                return
             if path == "/api/me":
+                if s.get("patient_id"):
+                    return self.send(200, portal.me(app, s))
                 return self.send(200, {"user": s["user"], "role": s["role"],
                                        "permissions": app.policy["roles"][s["role"]],
                                        "recipient_groups": app.policy["communication"]["allowed_recipient_groups"],
@@ -853,6 +891,9 @@ def make_handler(app: App):
                                        "clinic": app.policy["clinic"]["name"],
                                        "mock": llm_is_mock(), "reviewer": app.reviewer.state(),
                                        "leash": app.leash_status()})
+            found = portal.handle_get(app, s, path, urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query))
+            if found:
+                return self.send(*found)
             if path == "/api/reviews":
                 return self.send(200, app.visible_reviews(s))
             if path == "/api/reviewer":
@@ -974,6 +1015,8 @@ def make_handler(app: App):
                 data = self.body()
             except Exception as e:
                 return self.send(400, {"error": str(e)})
+            if not isinstance(data, dict):
+                return self.send(400, {"error": "Send a JSON object."})
 
             if path == "/api/login":
                 user, pw = str(data.get("username", "")), str(data.get("password", ""))
@@ -983,8 +1026,15 @@ def make_handler(app: App):
                 if not role:
                     app.audit.write("login_failed", user)
                     return self.send(401, {"error": "Wrong username or password."})
+                link = {}
+                if role == app.policy.get("portal", {}).get("patient_role"):
+                    pid = app.users.patient_id(user)
+                    if not pid or app.ehr.get(pid) is None:  # a patient account must point at one real record
+                        app.audit.write("login_refused_unlinked", user)
+                        return self.send(401, {"error": "Wrong username or password."})
+                    link = {"patient_id": pid}
                 tok = secrets.token_urlsafe(32)
-                app.sessions[tok] = {"user": user, "role": role, "history": [],
+                app.sessions[tok] = {"user": user, "role": role, "history": [], **link,
                                      "expires": time.time() + 60 * app.policy["server"]["session_minutes"]}
                 app.audit.write("login", user, role=role)
                 return self.send(200, {"ok": True}, extra={
@@ -993,6 +1043,8 @@ def make_handler(app: App):
             s = self.session()
             if not s:
                 return self.send(401, {"error": "Not signed in."})
+            if self.confined(s, path):
+                return
             if not app.rate_ok(s["user"]):
                 app.audit.write("rate_limited", s["user"])
                 return self.send(429, {"error": "Too many requests. Wait a minute."})
@@ -1001,6 +1053,10 @@ def make_handler(app: App):
                 app.sessions = {k: v for k, v in app.sessions.items() if v is not s}
                 app.audit.write("logout", s["user"])
                 return self.send(200, {"ok": True}, extra={"Set-Cookie": "sid=; Max-Age=0; Path=/"})
+
+            found = portal.handle_post(app, s, path, data)  # patient portal, staff inbox, /api/outbox/send
+            if found:
+                return self.send(*found)
 
             if path == "/api/chat":
                 if not app.can(s, "chat"):
@@ -1160,6 +1216,11 @@ def make_handler(app: App):
                 instructions = str(data.get("instructions", "")).strip()
                 if not instructions:
                     return self.send(400, {"error": "Say what the message should cover."})
+                link = {}  # a patient-portal draft names its patient; the id is stored, never sent to the model
+                if group == portal.PORTAL_GROUP:
+                    link = {"patient_id": str(data.get("patient_id") or "")}
+                    if not app.ehr.patients.get(link["patient_id"]):
+                        return self.send(400, {"error": "Pick the patient this message is for."})
                 prompt = (f"{comm['draft_instructions']}\n\nRecipient group: {group} "
                           f"({comm['allowed_recipient_groups'][group]})\n\nWhat the message should say:\n"
                           f"{instructions}")
@@ -1173,7 +1234,7 @@ def make_handler(app: App):
                 item = app.outbox.add({"id": uuid.uuid4().hex[:10], "recipient_group": group,
                                        "draft": result["reply"], "tier": tier, "reasons": reasons,
                                        "status": "awaiting_approval", "drafted_by": s["user"],
-                                       "created": now(), "decided_by": None, "final_text": None})
+                                       "created": now(), "decided_by": None, "final_text": None, **link})
                 app.audit.write("draft_created", s["user"], draft_id=item["id"], recipient_group=group, tier=tier)
                 return self.send(200, {**result, "item": item})
 
@@ -1184,6 +1245,9 @@ def make_handler(app: App):
                 if decision not in ("approve", "reject"):
                     return self.send(400, {"error": "Decision must be approve or reject."})
                 final = data.get("final_text")
+                if final is not None and not isinstance(final, str):
+                    return self.send(400, {"error": "final_text must be text."})
+                unfit = []  # set when the approved text itself is the problem (400, not 403)
 
                 def decide_draft(item):
                     if item["status"] != "awaiting_approval":
@@ -1191,17 +1255,25 @@ def make_handler(app: App):
                     if (app.policy["communication"]["approver_must_differ_from_drafter"]
                             and item["drafted_by"] == s["user"]):
                         return "A different clinician must approve this."
+                    if decision == "approve":
+                        text = portal._text(final or item["draft"], MAX_BODY)
+                        # text for a patient is checked here, while the approver can still edit it
+                        problem = (portal.draft_problem(app.policy, text)
+                                   if item["recipient_group"] == portal.PORTAL_GROUP
+                                   else None if text else "The approved text is empty.")
+                        if problem:
+                            unfit.append(problem)
+                            return problem
+                        item["final_text"] = text
                     item["status"] = "approved" if decision == "approve" else "rejected"
                     item["decided_by"] = s["user"]
-                    if decision == "approve":
-                        item["final_text"] = str(final or item["draft"])[:MAX_BODY]
                     return None
 
                 item = app.outbox.update(str(data.get("id", "")), decide_draft)
                 if item is None:
                     return self.send(404, {"error": "No such draft."})
                 if "error" in item:
-                    return self.send(403, item)
+                    return self.send(400 if unfit else 403, item)
                 app.audit.write("draft_" + item["status"], s["user"], draft_id=item["id"],
                                 edited=bool(final) and final != item["draft"])
                 return self.send(200, {"item": item})
@@ -1232,12 +1304,18 @@ def run(app: App | None = None):
             print(f"Ollama doesn't have the model '{want}'. Installed: {', '.join(models) or 'none'}.")
             print("Set model.chat_model in config/policy.json to one of those, or run:  ollama pull " + want)
         else:
-            def _warm():
+            def _warm():  # one after the other, so the two models never load at the same time
                 try:
                     took = llm.warm(app.policy)
                     print(f"Model {want} loaded and ready ({took:.0f}s).")
                 except Exception as e:
                     print("Couldn't preload the model:", e)
+                if app.reviewer.state()["state"] == "on":
+                    try:
+                        took = app.reviewer.warm()
+                        print(f"Reviewer {app.reviewer.model} loaded and ready ({took:.0f}s).")
+                    except Exception as e:
+                        print("Couldn't preload the reviewer:", e)
             print(f"Loading {want} in the background so the first answer is quicker...")
             threading.Thread(target=_warm, daemon=True).start()
     print("Reviewer:", app.reviewer.state()["message"])

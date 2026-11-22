@@ -131,7 +131,8 @@ class Smoke(unittest.TestCase):
     def test_message_needs_clinician_approval(self):
         nurse, doc = self.login("nurse_kim"), self.login("dr_lee")
         self.assertEqual(nurse.call("/api/outbox/draft", {"recipient_group": "the-internet", "instructions": "x"})[0], 400)
-        _, r = nurse.call("/api/outbox/draft", {"recipient_group": "patient-portal", "instructions": "Results normal."})
+        _, r = nurse.call("/api/outbox/draft", {"recipient_group": "patient-portal", "instructions": "Results normal.",
+                                                "patient_id": "syn-001"})
         item = r["item"]
         self.assertEqual(item["status"], "awaiting_approval"); self.assertEqual(item["tier"], "amber")
         self.assertEqual(nurse.call("/api/outbox/decide", {"id": item["id"], "decision": "approve"})[0], 403)
@@ -187,9 +188,10 @@ class Smoke(unittest.TestCase):
             _, r2 = doc.call("/api/chat", {"message": "Any interactions?", "patient_id": "syn-003"})
         finally:
             llm.chat = real
-        self.assertEqual(r1["tier"], "amber")
+        # 2.14: red, as the live v2.11 run showed: stopped before any model while the document review is open
+        self.assertEqual((r1["tier"], r2["tier"]), ("red", "red"))
         self.assertTrue(any("withheld" in x for x in r1["reasons"]))
-        self.assertNotIn("records-export", seen[0]); self.assertNotIn("ignore previous", seen[0].lower())
+        self.assertEqual(seen, [])  # neither model saw anything from this record
         docs = [i for i in lead.call("/api/reviews")[1] if i["kind"] == "document" and i["can_act"]
                 and "syn-003" in i["reasons"][0]]
         self.assertEqual(len(docs), 1)  # escalated once, not on every question

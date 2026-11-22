@@ -374,3 +374,21 @@ def test_malformed_args_are_audited_blocks(gw):  # A20: the four cases that were
         d = call(gw, tool, args)
         assert d["decision"] == "block" and codes(d) == [code], (tool, args)
     assert gw.get("/v1/audit/verify").json()["entries"] == 4
+
+
+def test_reset_keeps_the_old_audit_log(gw):  # A2: a token holder can clear the gateway state, never the evidence
+    from gateway.core_loader import load_core
+    call(gw, "search_patients", {"name": "x"})
+    call(gw, "delete_record", {})
+    old = (gw.rt / "audit.jsonl").read_bytes()
+    assert gw.post("/v1/admin/reset", headers=HDR).json() == {"status": "reset"}
+    live = _audit(gw)
+    assert [r["kind"] for r in live] == ["reset"]  # the new chain starts by recording the reset
+    kept = gw.rt / live[0]["archived"]
+    assert kept.read_bytes() == old  # moved, not deleted
+    assert load_core().verify_log(str(kept))[0] is True  # its head file moved with it, so it still verifies
+    v = gw.get("/v1/audit/verify").json()
+    assert v["ok"] is True and v["entries"] == 1
+    assert gw.get("/v1/decisions").json()["decisions"] == [] and gw.get("/v1/queue").json()["items"] == []
+    assert gw.post("/v1/admin/reset", headers=HDR).status_code == 200  # a second reset archives again
+    assert len(list(gw.rt.glob("audit-*.jsonl"))) == 2

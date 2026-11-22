@@ -42,6 +42,7 @@ Open http://127.0.0.1:8642. Windows: `set MOCK_LLM=1` (cmd) or `$env:MOCK_LLM=1`
 | `auditor_ray` | auditor | Audit log, QA sample, conversation history |
 | `net_ops` | network_engineer | Network view only |
 | `admin_kai` | admin | Audit, red queue, conversations, Network, reviewer demo switch |
+| `pt_lena` | patient | Patient portal only (`/portal`), linked to the synthetic patient `syn-002` |
 
 **Demo PIN: `1234`** (`config/policy.json` → `confidential.pin`). Needed to show MRN, birth date, phone,
 address and member id, and to save a new patient or chart entry. Each reveal is logged. Demo only.
@@ -124,4 +125,4 @@ results: "Human front end: Clinic Assistant" in the repo's top-level `README.md`
 MOCK_LLM=1 python3 -m unittest        # or, from the repo root: make clinic-check
 ```
 
-98 tests (1 skipped), about 30 seconds, no network, no Ollama.
+110 tests (4 skipped without Presidio), about 30 seconds, no network, no Ollama.

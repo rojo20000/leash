@@ -441,11 +441,20 @@ def create_app(ehr_client=None, runtime_dir=None, policy_path=None, clock=time.t
     @app.post("/v1/admin/reset", dependencies=[Depends(reviewer_only)])
     def reset():
         with lock:
-            for p in (p_audit, p_audit + ".head", p_dec, p_queue):
+            # A reset never deletes audit evidence: the old log (with its head file) is kept under a new name,
+            # and the new chain starts with a record of the reset.
+            archived = None
+            if os.path.exists(p_audit):
+                archived = f"audit-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}.jsonl"
+                os.replace(p_audit, str(rt / archived))
+                if os.path.exists(p_audit + ".head"):
+                    os.replace(p_audit + ".head", str(rt / archived) + ".head")
+            for p in (p_dec, p_queue):
                 if os.path.exists(p):
                     os.remove(p)
             S.update(audit=None, decisions=[], queue=[], history={})
             policy.reset()
+            get_audit().append(json.dumps({"kind": "reset", "ts": _now_iso(), "archived": archived}))
             return {"status": "reset"}
 
     return app

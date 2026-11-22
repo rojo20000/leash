@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from setup_demo import DEMO, USERS, has_accounts  # noqa: E402
+from setup_demo import DEMO, LINKS, USERS, has_accounts  # noqa: E402
 from app.users import UserStore  # noqa: E402
 
 
@@ -38,7 +38,7 @@ def accounts() -> None:
     policy = json.loads((ROOT / "config" / "policy.json").read_text())
     store = UserStore(USERS, policy["roles"])
     for name, role in DEMO:
-        store.add(name, pw, role)
+        store.add(name, pw, role, patient_id=LINKS.get(name))  # patient accounts carry their one patient id
     print("Accounts created (password from CLINIC_DEMO_PASSWORD): " + ", ".join(f"{n} ({r})" for n, r in DEMO))
 
 

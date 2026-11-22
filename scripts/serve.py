@@ -3,7 +3,7 @@ run the Streamlit dashboard (:8501) in the foreground. The session is seeded in 
 BEFORE the gateway starts (the gateway uses its own clock and ignores client timestamps); the gateway then loads the
 seeded audit log, decisions and queue from the runtime dir. Ctrl+C (or closing Streamlit) stops all three; the servers are
 child processes terminated in `finally`, so nothing is left running. Uses LEASH_NEMOTRON=replay unless set; Streamlit usage stats are off (no telemetry).
-Resets the gateway's runtime state (runtime/ audit log, decisions, queue) before seeding.
+Resets the gateway's runtime state (runtime/ decisions, queue) before seeding; the old audit log is kept as runtime/audit-<time>.jsonl.
 """
 import os
 import secrets

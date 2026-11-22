@@ -869,3 +869,9 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .rv-readout.clear { background: var(--ok-tint); border-color: color-mix(in srgb, var(--ok) 30%, var(--rule)); }
 .conv-result { display: flex; flex-direction: column; gap: 1px; }
 .conv-rv { font-size: 11.5px; color: var(--ink-3); white-space: nowrap; }
+
+/* Patient portal, staff side  */
+.thread-name { margin: 0; }
+.review .quote.msg-out { background: var(--accent-tint); }
+.inbox-reply { margin-top: 12px; }
+.status.sent { color: var(--ok); }

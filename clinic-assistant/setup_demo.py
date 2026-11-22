@@ -15,7 +15,8 @@ ROOT = Path(__file__).resolve().parent
 USERS = ROOT / "data" / "users.json"
 DEMO = [("dr_lee", "clinician"), ("desk_sam", "receptionist"), ("nurse_kim", "nurse"), ("lead_ana", "clinical_lead"),
         ("auditor_ray", "auditor"), ("net_ops", "network_engineer"),
-        ("admin_kai", "admin")]
+        ("admin_kai", "admin"), ("pt_lena", "patient")]
+LINKS = {"pt_lena": "syn-002"}  # patient portal accounts: username -> the one patient record it may see
 
 
 def has_accounts(path: Path) -> bool:
@@ -36,6 +37,8 @@ def fill_missing() -> None:
     for name, role in DEMO:
         if name not in users and base:
             users[name] = {"role": role, "salt": base["salt"], "hash": base["hash"], "active": True}
+            if name in LINKS:
+                users[name]["patient_id"] = LINKS[name]
             added.append(f"{name} ({role.replace('_', ' ')})")
     if added:
         USERS.write_text(json.dumps(users, indent=2))
@@ -73,10 +76,10 @@ def main() -> None:
             continue
         break
     for name, role in DEMO:
-        store.add(name, pw, role)
+        store.add(name, pw, role, patient_id=LINKS.get(name))
     print("\nSign in with any of these (same password):")
     for name, role in DEMO:
-        print(f"  {name:12} {role.replace('_', ' ')}")
+        print(f"  {name:12} {role.replace('_', ' ')}" + (f" (portal for {LINKS[name]})" if name in LINKS else ""))
     print()
 
 
