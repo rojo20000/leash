@@ -9,6 +9,19 @@ answered on this computer only, checked again, and written to a tamper-evident l
 **Prototype. Use synthetic (made-up) patient data only.** It is not a medical device
 and has not been validated for clinical use.
 
+
+> **2.14.1:** the reviewer now runs **before the model only** by default (`reviewer.stages: ["pre"]` in `config/policy.json`). Measured on the 8 GB Intel demo Mac with warm models: before+after 79–90 s, before only 45–66 s, no reviewer 27–32 s; poisoned referral stopped in 0 s. Add `"post"` to the list (or start with `REVIEWER_STAGES=pre,post`) to also review every answer.
+
+## New in 2.14: fast enough for a CPU laptop
+
+- **Reviewer reads less, so it answers faster.** Before the chat model it sees only the masked question plus a 600-character excerpt of the context (not the whole schedule); after, a 600-character excerpt of the answer. Window 1536 tokens, verdict at most 80 tokens, temperature 0, kept loaded, and preloaded at start right after the chat model (one after the other, same window size as real calls so Ollama never reloads). Timeout raised to 60 s (`reviewer.timeout_s`).
+- **No more false alarms on placeholders.** The reviewer is told that `[PATIENT]`, `[P1]`, `[NAME]`, `[DATE]`, `[PHONE]` and labels like `Patient A (syn-004)` are already masked. And a fixed post-filter drops "contains identifiers" complaints when the masking finds nothing left to mask (complaints that a question *asks for* identifiers are kept). Dropped alarms are counted in the audit log.
+- **The poisoned referral is red again.** A record with a note that tries to instruct the AI is stopped before any model is called, while its document review is open for a clinical lead; afterwards the note stays withheld and answers are amber. The document is queued once.
+- **`demo_fast` preset** (on in this build): answers up to 200 tokens, a 2048-token chat window, and at most 12 appointments in the general-question context. Trade-offs: shorter answers, and general questions only see the first 12 of today's appointments. Turn it off in `config/policy.json` for full answers. If the reviewer is still too slow, run it before the model only: `"reviewer": {"stages": ["pre"]}` or `REVIEWER_STAGES=pre python3 run.py` (the answer is then checked by the fixed filters only).
+- **Install without touching live data:** `bash scripts/make_install_tarball.sh` builds `dist/clinic-assistant-<version>-install.tgz` from the committed HEAD with **no `data/` folder**, so unpacking it over an existing install never replaces `clinic.db`, `vectors.sqlite`, accounts or the audit log.
+
+Expected time per question on an 8 GB Intel Mac (CPU), both models warm: reviewer before ~5 to 10 s (about 500 tokens in, 80 out), chat model ~10 to 20 s (200 tokens out), reviewer after ~5 to 10 s: roughly 20 to 40 s, against 50 to 80 s in 2.13. With `stages: ["pre"]`, roughly 15 to 30 s. These are estimates, not measured on the Mac.
+
 ## New: patient portal
 
 > Not numbered yet. It was built on a branch cut from 2.7 and merged on top of 2.13; `VERSION` is still main's 2.13 and the team picks the portal's number. Older portal notes (the plan in `handoff/`, DECISIONS.md, PROGRESS.md) call it "2.8", which is not the 2.8 already released on main.
@@ -56,7 +69,7 @@ and has not been validated for clinical use.
 
 - **What it does.** Every doctor-assistant and front-desk-assistant turn now goes past a separate local reviewer model twice: **before** the chat model (the masked question plus the minimized record or schedule) and **after** it (the answer). It looks for prompt injection, unsafe clinical advice, identifiers, invented patients and out-of-scope requests, and answers `green`, `amber` or `red`.
 - **It can only make things stricter.** The reviewer can raise a tier, never lower one; the fixed guardrails stay in charge. A red before the model means the chat model is never called (the request goes to a second person). Amber or red after the model holds the answer, exactly like today.
-- **Fails closed.** If the reviewer is on but unreachable, too slow (`timeout_s`, 20 s) or gives unusable output, the answer is held for a person: "Reviewer unavailable; held for a person."
+- **Fails closed.** If the reviewer is on but unreachable, too slow (`timeout_s`, 60 s since 2.14) or gives unusable output, the answer is held for a person: "Reviewer unavailable; held for a person."
 - **Turn it on on the Mac:** `ollama pull nemotron-mini` (about 2.7 GB, one time). That's all: `reviewer.enabled` is already `true` in `config/policy.json`, and the app starts using the model as soon as it's installed (checked every 30 seconds, no restart needed).
 - **Until the model is installed** (`reviewer.when_model_missing: "skip"`, the shipped setting), answers are not held; instead the reviewer is reported as off: a yellow "Reviewer (before model): off: Model not installed: run ollama pull nemotron-mini" line in every answer's safety checks, a **down** Reviewer box on the Network page (so Home shows a service down for network roles), `reviewer.state = "missing"` in `/api/me`, and a line when the app starts. Set it to `"hold"` to hold every answer until the model is there. Set `enabled` to `false` to switch the reviewer off (the trace then says "Reviewer: off").
 - **Logged, without content.** Audit events `reviewer_pre` / `reviewer_post` (tier, reasons, ms, ok, model) and a `model_call` per reviewer call; conversation-log rows gain `reviewer_pre_tier`, `reviewer_post_tier`, `reviewer_reasons`, `reviewer_ok` (new columns added safely; old rows still verify). Details and a flow chart: `docs/REVIEWER.md`.

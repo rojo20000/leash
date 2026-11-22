@@ -35,7 +35,10 @@ SYSTEM = (
     "RED if it asks about or mentions a patient who is not in the provided list; "
     "AMBER if it tells a patient to stop, skip, double or change a medicine (especially anticoagulants such as "
     "warfarin or apixaban, or insulin) without a clinician deciding, or says there is no need to check with a clinician; "
-    "AMBER for anything else a clinician should look at first. Reply with JSON only, exactly: "
+    "AMBER for anything else a clinician should look at first. "
+    "IMPORTANT: bracketed placeholders such as [PATIENT], [P1], [P2], [NAME], [DATE], [PHONE], [ADDRESS], [MRN] "
+    "and labels like 'Patient A (syn-004)' are already masked or synthetic. They are NOT identifiers; never flag them. "
+    "Reply with JSON only, exactly: "
     '{"tier": "green" | "amber" | "red", "reasons": ["short reason", ...]}. '
     "green = no concerns, amber = a person should check it, red = must be blocked. Keep reasons short."
 )
@@ -56,6 +59,24 @@ MOCK_AMBER = re.compile(r"\bstop (taking|their|your|his|her|the)\b|\bskip (their
 
 class ReviewerError(Exception):
     pass
+
+
+# A reason that says the text CONTAINS identifiers (as opposed to ASKING for them, or naming a patient who isn't
+# listed). If privacy.mask finds nothing left to mask, such a reason is a false alarm about placeholders.
+_ID_REASON = re.compile(r"identif|\bnames?\b|birth|phone|address|\bmrn\b|record number|\bphi\b|personal|placeholder|"
+                        r"contact detail", re.I)
+_ASKS = re.compile(r"\b(asks?|asking|requests?|requesting|wants?|seeks?|seeking|list(s|ing)?)\b|not (in|on) (the|today)", re.I)
+
+
+def drop_placeholder_alarms(v: dict, reviewed: str) -> dict:
+    """Deterministic post-filter: identifier complaints about text with nothing unmasked in it don't count."""
+    if v["tier"] == "green" or privacy.mask(reviewed)[0] != reviewed:
+        return v
+    keep = [r for r in v["reasons"] if not (_ID_REASON.search(r) and not _ASKS.search(r))]
+    if len(keep) == len(v["reasons"]):
+        return v
+    return {"tier": v["tier"] if keep else "green", "reasons": keep,
+            "dropped": [r for r in v["reasons"] if r not in keep]}
 
 
 def _mock() -> bool:
@@ -179,11 +200,26 @@ class Reviewer:
             "model": self.model, "stream": False, "format": "json",
             "keep_alive": self.policy["model"].get("keep_alive", "30m"),
             "messages": [{"role": "system", "content": SYSTEM}, {"role": "user", "content": text}],
-            "options": {"temperature": 0, "num_predict": 160, "num_ctx": 4096},
-        }, self.cfg.get("timeout_s", 20), label="reviewer")
+            "options": {"temperature": 0, "num_predict": int(self.cfg.get("num_predict", 80)),
+                        "num_ctx": int(self.cfg.get("num_ctx", 1536))},
+        }, self.cfg.get("timeout_s", 60), label="reviewer")
         return out["message"]["content"]
 
-    def review(self, stage: str, text: str, user: str | None) -> dict:
+    @property
+    def stages(self) -> list[str]:
+        env = os.environ.get("REVIEWER_STAGES")
+        if env:
+            return [x.strip() for x in env.split(",") if x.strip()]
+        return list(self.cfg.get("stages", ["pre", "post"]))
+
+    def build_text(self, stage: str, text: str, context: str | None = None) -> str:
+        """Short on purpose: a small CPU model reads ~600 characters far faster than a whole schedule."""
+        if stage == "pre":
+            ctx = (context or "")[: int(self.cfg.get("context_chars", 600))]
+            return f"Question: {text[:1200]}" + (f"\n\nContext excerpt the chat model will also see:\n{ctx}" if ctx else "")
+        return f"Answer to review (excerpt):\n{text[: int(self.cfg.get('answer_chars', 600))]}"
+
+    def review(self, stage: str, text: str, user: str | None, context: str | None = None) -> dict:
         """One review. Returns {"tier", "reasons", "ok", "ms", "skipped", "step"} where step is a trace line.
 
         ok=False means the reviewer couldn't give a usable verdict: the tier is then amber (fail closed).
@@ -198,6 +234,9 @@ class Reviewer:
         if st["state"] == "off":
             return {"tier": "green", "reasons": [], "ok": None, "ms": 0, "skipped": True,
                     "step": {"step": "Reviewer", "status": "ok", "detail": "off"}}
+        if stage not in self.stages:
+            return {"tier": "green", "reasons": [], "ok": None, "ms": 0, "skipped": True,
+                    "step": {"step": name, "status": "ok", "detail": "skipped (reviewer.stages)"}}
         if st["state"] == "missing" and self.cfg.get("when_model_missing", "hold") == "skip":
             return {"tier": "green", "reasons": [], "ok": None, "ms": 0, "skipped": True,
                     "step": {"step": name, "status": "warn", "detail": f"off: {st['message']}"}}
@@ -205,7 +244,8 @@ class Reviewer:
         try:
             if st["state"] in ("missing", "down"):
                 raise ReviewerError(st["message"])
-            v = parse(self._ask(text[:6000]))
+            reviewed = self.build_text(stage, text, context)
+            v = drop_placeholder_alarms(parse(self._ask(reviewed)), reviewed)
             ok = True
         except Exception as e:  # unreachable, timeout, model missing, bad JSON: fail closed
             v, ok = {"tier": "amber", "reasons": [UNAVAILABLE]}, False
@@ -213,12 +253,25 @@ class Reviewer:
         ms = int((time.time() - t0) * 1000)
         if self.audit is not None:
             self.audit.write("reviewer_" + stage, user, tier=v["tier"], reasons=v["reasons"], ms=ms, ok=ok,
-                             model=self.model, **({} if ok else {"error": err}))
+                             model=self.model, **({} if ok else {"error": err}),
+                             **({"dropped_placeholder_alarms": len(v["dropped"])} if v.get("dropped") else {}))
+            v.pop("dropped", None)
         status = {"green": "ok", "amber": "warn", "red": "blocked"}[v["tier"]]
         top = v["reasons"][0] if v["reasons"] else "no concerns"
         return {**v, "ok": ok, "ms": ms, "skipped": False,
                 "step": {"step": name, "status": status,
                          "detail": f"{v['tier']}: {top} ({ms} ms, {self.model})"}}
+
+    def warm(self) -> float | None:
+        """Load the reviewer model now (and keep it loaded), so the first question doesn't pay for it."""
+        if _mock() or not self.enabled:
+            return None
+        t0 = time.time()
+        llm._post(f"{self.host}/api/generate", {"model": self.model, "prompt": "", "stream": False,
+                                                "keep_alive": self.policy["model"].get("keep_alive", "30m"),
+                                                "options": {"num_ctx": int(self.cfg.get("num_ctx", 1536))}},
+                  max(60, int(self.cfg.get("timeout_s", 60))) * 3, label="reviewer")
+        return time.time() - t0
 
     def network_node(self) -> dict:
         st = self.state()

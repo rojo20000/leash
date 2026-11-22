@@ -83,8 +83,6 @@ git status --short in the worktree after the run:  M metrics/results.json (times
 Checks on the branch after merging `main`: `make check` exit 0 on the Rust core (private build of the extension) and with `LEASH_CORE=py`: `cargo test` 12 passed, `pytest` 174 passed and 3 skipped, demo assertions PASS 1 to 6, `17 allow, 3 block, 0 escalate`, reasoner served from replay. Clinic Assistant suite OK with `python -S` and with the project interpreter (Presidio installed). `scripts/serve.py` run end to end on test ports 18000/18001/18501.
 Not pushed. After merging, run `make rust` once the dashboard servers are stopped.
 
-2026-11-21 18:08: Added the `site/` demo: 12 arrow-navigated scenes in the Bedside scan design. `npm install`, typecheck and build pass. The final browser re-test was stopped early, and the audit scene still quotes the earlier run (entries=20, line 8) while `demo/output/scripted_run.txt` now shows entries=28, line 12.
-
 ## Clinic Assistant 2.8: patient portal (branch `Rowan/patient-portal-ebc223`, 2026-11-21 17:50)
 
 Shipped: admin-linked patient accounts, confinement to `/api/portal/*`, own chart from an allow-list, own appointments, book and cancel requests through the front desk, messages with the care team, approved `patient-portal` drafts sent by staff, urgent-words notice, audit and `change_log` on everything, staff "Patient messages" tab and front desk "Portal requests" panel. See DECISIONS.md (17:50).
@@ -99,4 +97,4 @@ Not pushed. Not checked: a real Ollama model (all runs used the stand-in); phone
 Checks on the merged tree, from `clinic-assistant/`: `MOCK_LLM=1 python -m unittest` 175 tests OK (3 skipped: live Leash gateway, 2 Presidio); `python scripts/reset_demo_data.py --check` every chain OK; `python scripts/verify_db.py` exit 0; `python scripts/verify_stores.py` ALL CHECKS PASSED.
 Seen in a browser on the merged tree (port 8652, temp data, stand-in model): portal as `pt_lena` (appointments, message send), staff sidebar "Patient messages" with a hand-typed reply, a `patient-portal` draft with the patient picker, approve, send. Not re-clicked after the merge: the front desk "Portal requests" panel (covered by tests). `docs/ui-portal.png` retaken.
 
-2026-11-21 18:20: Portal branch re-merged with `main` (`2b75c9f`, the `site/` demo). One conflict, in this file, both entries kept. Clinic Assistant suite 175 tests OK (3 skipped); `verify_db.py`, `verify_stores.py` and `reset_demo_data.py --check` pass.
+2026-11-21 18:08: Added the `site/` demo: 12 arrow-navigated scenes in the Bedside scan design. `npm install`, typecheck and build pass. The final browser re-test was stopped early, so only the audit scene was re-verified after the last fixes. It matches the latest run (entries=28, line 12).
