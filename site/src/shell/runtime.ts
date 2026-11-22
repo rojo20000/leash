@@ -204,7 +204,9 @@ function snap() {
 export function goToStop(index: number, immediate = false) {
   if (!stops.length) return;
   const i = Math.min(stops.length - 1, Math.max(0, index));
-  const y = stops[i].y;
+  const target = stops[i];
+  const y = target.y;
+  const source = stops[nearestStop()];
   curStop = i;
   remember();
   if (reducedMotion || immediate || !lenis) {
@@ -213,17 +215,42 @@ export function goToStop(index: number, immediate = false) {
     return;
   }
   pending = i;
-  const dist = Math.abs(y - window.scrollY);
-  const duration = STEP_SECONDS + Math.min(LONG_JUMP_SECONDS, dist / (window.innerHeight * 12));
-  lenis.scrollTo(y, { duration, easing: stepEase, force: true, onComplete: () => { if (pending === i) pending = null; } });
+  const from = window.scrollY;
+  const dist = Math.abs(y - from);
+  if (dist < 1) { pending = null; return; }
+  const forward = y > from;
+
+  // A step's whole animation sits in the half-step of runway just before its stop (emphasis.ts BEATS end
+  // at 0.48 of a step, stops sit at 0.5). Everything else on the way is dead travel. So the move crosses the
+  // travel quickly, then plays the animation at an even pace for ANIM_SECONDS. Going back, the step being
+  // left rewinds first, then the travel.
+  const anim = forward ? target : source;
+  const half = halfStepPx(anim);
+  const animPx = Math.min(dist, half);
+  const travelPx = dist - animPx;
+  const neighbours = source.scene === target.scene && Math.abs(source.step - target.step) === 1;
+  // A talk part can show two beats on one picture; then only the words change and there is nothing to play.
+  const still = neighbours && rendered[anim.scene].mod.spans?.[Math.max(source.step, target.step)] === 0;
+  const animS = ANIM_SECONDS * (animPx / half) * (still ? 0.15 : 1) * (forward ? 1 : REWIND);
+  const travelS = travelPx > 0 ? Math.min(1.4, 0.35 + 0.4 * (travelPx / window.innerHeight)) : 0;
+  const tA = travelS / (travelS + animS); // share of the time spent on travel
+  const f = travelPx / dist;              // share of the distance that is travel
+  const smooth = (x: number) => x * x * (3 - 2 * x);
+  const ahead = (t: number) => (t < tA ? f * smooth(t / tA) : f + (1 - f) * ((t - tA) / (1 - tA)));
+  const easing = forward ? ahead : (t: number) => 1 - ahead(1 - t);
+  lenis.scrollTo(y, { duration: travelS + animS, easing, force: true, onComplete: () => { if (pending === i) pending = null; } });
 }
 
-/** Seconds one arrow press takes to reach the next step. Raise it to slow the presentation down. */
-const STEP_SECONDS = 1.6;
-/** Extra seconds for long jumps (rail links, Home, End). */
-const LONG_JUMP_SECONDS = 0.6;
-// Even in-out pace. Lenis's default ease covers most of the distance in the first third, which read as too fast.
-const stepEase = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2);
+/** Seconds each slide's own animation takes to play. Raise it to slow the slides down. */
+const ANIM_SECONDS = 2.2;
+/** Going back rewinds the animation; it runs in this share of the forward time. */
+const REWIND = 0.5;
+
+function halfStepPx(stop: Stop): number {
+  const r = rendered[stop.scene];
+  const n = reducedMotion ? 1 : r.steps.length;
+  return Math.max(1, (r.trigger.end - r.trigger.start) / n / 2);
+}
 
 /** Go to the first stop of a scene (rail and menu links). */
 export function goTo(sceneIndex: number, immediate = false) {
