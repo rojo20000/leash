@@ -1,0 +1,127 @@
+.scene-problem .problem-world { color: var(--ink); }
+
+.scene-problem .problem-tag {
+  position: absolute;
+  left: 6%;
+  top: 3.5%;
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: max(0.75rem, var(--text-plate));
+  line-height: 1.2;
+  color: var(--ink-2);
+}
+
+.scene-problem .problem-reg { position: absolute; }
+.scene-problem .problem-reg--tl { left: var(--space-3); top: var(--space-3); }
+.scene-problem .problem-reg--tr { right: var(--space-3); top: var(--space-3); }
+.scene-problem .problem-reg--bl { left: var(--space-3); bottom: var(--space-3); }
+.scene-problem .problem-reg--br { right: var(--space-3); bottom: var(--space-3); }
+
+/* white referral label: blank bars only, no text */
+.scene-problem .problem-sheet {
+  position: absolute;
+  left: 6%;
+  top: 11%;
+  width: 46%;
+  height: 54%;
+  box-sizing: border-box;
+  padding: 6% 5% 4%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: var(--white);
+  border-radius: var(--radius-label);
+  box-shadow: var(--shadow-rest);
+}
+.scene-problem .problem-row { position: relative; height: 11px; }
+.scene-problem .problem-row--head { height: 18px; }
+.scene-problem .problem-bar,
+.scene-problem .problem-outline,
+.scene-problem .problem-bright {
+  position: absolute;
+  inset: 0;
+}
+.scene-problem .problem-bar { background: var(--black); opacity: 0.88; }
+.scene-problem .problem-outline {
+  opacity: 0;
+  box-sizing: border-box;
+  border: 1.5px dashed var(--rule-strong);
+}
+.scene-problem .problem-bright {
+  opacity: 0;
+  z-index: 3;
+  background: var(--red);
+  box-shadow: var(--shadow-stamp);
+  will-change: transform;
+}
+.scene-problem .problem-perf { margin-top: var(--space-2); flex: none; }
+
+/* envelope: a track from its resting place to the plate edge; the shape slides along it */
+.scene-problem .problem-env {
+  position: absolute;
+  left: 58%;
+  right: var(--space-3);
+  top: 24%;
+}
+.scene-problem .problem-env-shape {
+  position: relative;
+  width: 68%;
+  aspect-ratio: 120 / 84;
+  z-index: 2;
+  will-change: transform;
+  filter: none;
+}
+.scene-problem .problem-env-base,
+.scene-problem .problem-env-hot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  stroke-linejoin: round;
+}
+.scene-problem .problem-env-base {
+  fill: var(--white);
+  stroke: var(--black);
+  stroke-width: 2px;
+}
+.scene-problem .problem-env-hot {
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 4px;
+  opacity: 0;
+}
+.scene-problem .problem-env-base rect,
+.scene-problem .problem-env-base polyline,
+.scene-problem .problem-env-hot rect,
+.scene-problem .problem-env-hot polyline { vector-effect: non-scaling-stroke; }
+
+/* the leak line: verbatim source text */
+.scene-problem .problem-leak {
+  position: absolute;
+  left: 6%;
+  right: 6%;
+  bottom: 5%;
+  opacity: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.scene-problem .problem-leak-text {
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.scene-problem.is-reduced .problem-world { height: 70svh; }
+
+@media (min-width: 768px) and (max-width: 1180px), (min-width: 768px) and (max-height: 680px) {
+  .scene-problem .problem-sheet { height: 52%; }
+  .scene-problem .problem-row { height: 10px; }
+}
+
+@media (max-width: 767px) {
+  .scene-problem .problem-sheet { width: 50%; height: 50%; }
+  .scene-problem .problem-env { left: 60%; }
+  .scene-problem .problem-env-shape { width: 72%; }
+  .scene-problem.is-reduced .problem-world { height: 50svh; }
+}
