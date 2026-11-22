@@ -12,6 +12,7 @@ export const SCENE_GROUND: Record<SceneId, 'white' | 'black'> = {
   reasoner: 'black',
   queue: 'white',
   audit: 'black',
+  demo: 'white',
   results: 'white',
   closing: 'white',
 };
