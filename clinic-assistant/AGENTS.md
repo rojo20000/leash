@@ -40,7 +40,7 @@ Run from `clinic-assistant/`. On Windows use `python` instead of `python3`.
 | One-command setup (accounts, data, checks) | `CLINIC_DEMO_PASSWORD='<12+ chars>' python3 scripts/bootstrap.py` |
 | Start with a stand-in model (no Ollama) | `MOCK_LLM=1 python3 run.py` |
 | Start with real local models | `python3 run.py` (needs Ollama, see SETUP.md) |
-| All tests (stand-in model and reviewer) | `MOCK_LLM=1 python3 -m unittest` (181 tests with the patient portal and 2.14; up to 4 skipped: Presidio not installed, no running Leash gateway, not a standalone git checkout) or `make clinic-check` from the repo root |
+| All tests (stand-in model and reviewer) | `MOCK_LLM=1 python3 -m unittest` (188 tests with the patient portal and 2.14; up to 5 skipped: Node not installed, Presidio not installed, no running Leash gateway, not a standalone git checkout) or `make clinic-check` from the repo root |
 | Reset data to the shared synthetic state | `python3 scripts/reset_demo_data.py` (backs up first, keeps accounts) |
 | Verify every chain | `python3 scripts/reset_demo_data.py --check`, `python3 scripts/verify_db.py`, `python3 scripts/verify_stores.py` |
 | Real-model smoke test on a temp copy | `python3 live_check.py` |

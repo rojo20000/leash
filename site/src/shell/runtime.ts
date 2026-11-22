@@ -2,6 +2,7 @@ import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import Lenis from 'lenis';
 import { frameAt } from './frame';
+import type { SceneId } from '../content';
 import { SCENE_GROUND } from './grounds';
 import type { SceneFrame, SceneHandle, SceneModule } from './types';
 
@@ -34,9 +35,10 @@ function buildSection(mod: SceneModule, first: boolean) {
   if (!steps.length) throw new Error('no steps');
   const el = document.createElement('section');
   el.id = mod.id;
-  el.className = `scene scene-${mod.id}${reducedMotion ? ' is-reduced' : ''}`;
+  const base = mod.base ?? (mod.id as SceneId);
+  el.className = `scene scene-${base}${reducedMotion ? ' is-reduced' : ''}`;
   el.dataset.scene = mod.id;
-  el.dataset.ground = SCENE_GROUND[mod.id];
+  el.dataset.ground = SCENE_GROUND[base];
   el.tabIndex = -1;
   el.setAttribute('aria-labelledby', `${mod.id}-title`);
   el.style.setProperty('--scene-steps', String(steps.length));
@@ -212,9 +214,16 @@ export function goToStop(index: number, immediate = false) {
   }
   pending = i;
   const dist = Math.abs(y - window.scrollY);
-  const duration = 0.7 + Math.min(0.5, dist / (window.innerHeight * 12));
-  lenis.scrollTo(y, { duration, force: true, onComplete: () => { if (pending === i) pending = null; } });
+  const duration = STEP_SECONDS + Math.min(LONG_JUMP_SECONDS, dist / (window.innerHeight * 12));
+  lenis.scrollTo(y, { duration, easing: stepEase, force: true, onComplete: () => { if (pending === i) pending = null; } });
 }
+
+/** Seconds one arrow press takes to reach the next step. Raise it to slow the presentation down. */
+const STEP_SECONDS = 1.6;
+/** Extra seconds for long jumps (rail links, Home, End). */
+const LONG_JUMP_SECONDS = 0.6;
+// Even in-out pace. Lenis's default ease covers most of the distance in the first third, which read as too fast.
+const stepEase = (t: number) => (t < 0.5 ? 2 * t * t : 1 - (2 - 2 * t) ** 2 / 2);
 
 /** Go to the first stop of a scene (rail and menu links). */
 export function goTo(sceneIndex: number, immediate = false) {

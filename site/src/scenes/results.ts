@@ -158,7 +158,7 @@ function mount(ctx: SceneContext): SceneHandle {
   // 2 gateway latency, all rows
   const gl = table('results', 'gateway-latency');
   const glb = renderTable(gl);
-  const latencyRow = glb.rows[gl.rows.findIndex((r) => r[0] === 'latency_ms')];
+  const latencyRow = glb.rows[gl.rows.findIndex((r) => r[0] === 'Total added')];
   l = newLayer();
   l.append(caption(gl.title), glb.table);
   add(l);
@@ -176,9 +176,9 @@ function mount(ctx: SceneContext): SceneHandle {
   const rowsOf = (name: string) => det.rows.filter((r) => r[0] === name);
   const injRows = rowsOf('injection');
   const injb = renderTable(det, { rows: injRows, skipCol: 'detector' });
-  const injRecall = injb.rows[injRows.findIndex((r) => r[1] === 'recall')];
+  const injRecall = injb.rows[injRows.findIndex((r) => r[1] === 'Hidden instructions caught')];
   l = newLayer();
-  l.append(caption(`${det.title}: injection`), injb.table);
+  l.append(caption('Hidden-instruction detector, on notes it had never seen'), injb.table);
   add(l);
 
   // 5 anomaly and minimization, side by side
@@ -198,9 +198,9 @@ function mount(ctx: SceneContext): SceneHandle {
   // 6 gateway rates
   const gr = table('results', 'gateway-rates');
   const grb = renderTable(gr);
-  const escalateCell = grb.rows[0].children[gr.columns.indexOf('escalate')] as HTMLElement;
+  const ratesRow = grb.rows[0]; // the whole row, so all three shares stay in view
   l = newLayer();
-  l.append(caption('Separate 245-call workload'), el('p', 'machine results-note', fact('results', 'Workload')), caption(gr.title), grb.table);
+  l.append(caption('245 test calls'), el('p', 'machine results-note', fact('results', 'Workload')), caption(gr.title), grb.table);
   add(l);
 
   // 7 PASS lines
@@ -230,7 +230,7 @@ function mount(ctx: SceneContext): SceneHandle {
     { step: 3, target: injRecall, scale: 1.6 },
     { step: 4, target: anoRecall, scale: 1.5 },
     {
-      step: 5, target: escalateCell, scale: 2.2,
+      step: 5, target: ratesRow, scale: 1.7,
       stamp: { text: fact('pipeline', 'Outcome hold'), form: 'hold', anchor: 'tr' },
     },
     {
