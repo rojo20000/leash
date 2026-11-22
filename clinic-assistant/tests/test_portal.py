@@ -736,7 +736,7 @@ class PortalContract(unittest.TestCase):
 
 
 class PortalReviewFixes(unittest.TestCase):
-    """One test per finding of the 2.8 security review. Own app, so caps can be lowered without side effects."""
+    """One test per finding of the portal security review. Own app, so caps can be lowered without side effects."""
 
     @classmethod
     def setUpClass(cls):

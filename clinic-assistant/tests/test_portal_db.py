@@ -1,4 +1,4 @@
-"""Patient portal data layer (2.8): portal tables in the clinic database, and patient-linked accounts."""
+"""Patient portal data layer: portal tables in the clinic database, and patient-linked accounts."""
 import json
 import shutil
 import sqlite3

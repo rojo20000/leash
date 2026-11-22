@@ -84,7 +84,7 @@ BEGIN SELECT RAISE(ABORT, 'conversations is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS conversations_no_delete BEFORE DELETE ON conversations
 BEGIN SELECT RAISE(ABORT, 'conversations is append-only'); END;
 
--- Patient portal (2.8). Messages between one patient and the care team. Append-only like change_log;
+-- Patient portal. Messages between one patient and the care team. Append-only like change_log;
 -- every insert also writes a change_log row (entity 'patient'), so the hash chain covers it.
 CREATE TABLE IF NOT EXISTS portal_messages (
     seq INTEGER PRIMARY KEY AUTOINCREMENT,

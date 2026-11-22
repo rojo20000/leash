@@ -137,7 +137,7 @@
     ]
   },
   "portal": {
-    "_comment": "Patient portal (2.8). A patient account is linked to one patient id and sees only that record, through the fields listed here.",
+    "_comment": "Patient portal. A patient account is linked to one patient id and sees only that record, through the fields listed here.",
     "patient_role": "patient",
     "released_fields": [
       "id",

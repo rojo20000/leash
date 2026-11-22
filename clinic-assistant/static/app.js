@@ -938,7 +938,7 @@ async function loadOutbox() {
       actions.append(ok, no);
       if (it.patient_id) actions.append(el("span", "muted", "Fill in any [TAGS] before you approve: the patient gets the text exactly as approved."));
     }
-    const portal = it.recipient_group === "patient-portal" && it.patient_id;  // drafts from before 2.8 have no patient and keep the copy button
+    const portal = it.recipient_group === "patient-portal" && it.patient_id;  // drafts made before the patient portal have no patient and keep the copy button
     if (it.status === "sent") box.append(el("p", "muted", `Sent to the patient portal by ${it.sent_by}, ${it.sent_at}`));
     if (portal && it.status === "approved") {
       if (can("send_portal")) {

@@ -1,4 +1,4 @@
-"""Patient portal (2.8): what a signed-in patient may see and do, and the staff side of it.
+"""Patient portal: what a signed-in patient may see and do, and the staff side of it.
 
 Rules this file keeps:
   - Patient routes (/api/portal/*) take the patient id from the session and from nowhere else.

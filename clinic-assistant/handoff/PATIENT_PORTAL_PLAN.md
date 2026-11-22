@@ -1,4 +1,6 @@
-# Patient portal (Clinic Assistant 2.8): plan and contract
+# Patient portal (Clinic Assistant): plan and contract
+
+> Naming: this plan calls the portal "2.8" because it was written on a branch cut from 2.7. Main had already released a different 2.8 by the time it merged (on top of 2.13). Read "2.8" below as "the patient portal"; the team picks its real number.
 
 Written 2026-11-21 17:30 America/Chicago. Deadline for working, tested, committed code: 20:30.
 All paths below are relative to `clinic-assistant/`. Standard library only. Synthetic data only.

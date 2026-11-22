@@ -11,7 +11,7 @@ and has not been validated for clinical use.
 
 ## New: patient portal
 
-> Built on a branch cut from 2.7 and called 2.8 there; merged on top of 2.13. The team picks its release number (`VERSION` is still main's).
+> Not numbered yet. It was built on a branch cut from 2.7 and merged on top of 2.13; `VERSION` is still main's 2.13 and the team picks the portal's number. Older portal notes (the plan in `handoff/`, DECISIONS.md, PROGRESS.md) call it "2.8", which is not the 2.8 already released on main.
 
 - **A patient can sign in and see their own record, and nothing else.** A patient who signs in at the usual address lands on `/portal` (`static/portal.html`, `portal.js`, `portal.css`). They see their upcoming and past appointments with clinician, visit type and status (`GET /api/portal/appointments`), a health summary (`GET /api/portal/chart`), and their messages with the care team (`GET` and `POST /api/portal/messages`).
 - **Accounts are created by an admin and linked to one patient.** `python3 manage_users.py add <user> patient <patient_id>` checks that the id exists in `data/clinic.db` before it asks for a password, and `list` shows the link. There is no self sign-up. A patient account with a missing link, or a link to a patient who doesn't exist, cannot sign in.
