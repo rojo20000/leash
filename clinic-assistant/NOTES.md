@@ -21,7 +21,7 @@ Design: https://claude.ai/artifact/Xwta3gMSPoC3bSB2x3gRyw
 ### 2. The reviewer is only tested with the stand-in
 All reviewer tests use the stand-in (`MOCK_LLM=1` / `REVIEWER_MOCK=1`). Before the demo: `ollama pull
 nemotron-mini`, run `python3 live_check.py`, and check that answers are not held by timeouts on the
-demo machine (`reviewer.timeout_s` is 20 s; an Intel Mac CPU may need more).
+demo machine (`reviewer.timeout_s` is 60 s since 2.14; an Intel Mac CPU may need more).
 
 ### 3. Live updates only through the app
 Patients, chart entries and appointments update in real time, each with a `change_log` row, but only

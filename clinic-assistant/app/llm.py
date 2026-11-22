@@ -50,6 +50,20 @@ def _post(url: str, payload: dict, timeout: int, label: str = "ollama") -> dict:
         _record(url, urlparse(url).path, int((time.time() - t0) * 1000), ok, payload.get("model"), label)
 
 
+def demo_fast(policy: dict) -> dict:
+    """The fast-demo preset (policy "demo_fast"), or {} when it is off."""
+    d = policy.get("demo_fast") or {}
+    return d if d.get("enabled") else {}
+
+
+def chat_options(policy: dict) -> dict:
+    """Ollama options for the chat model. The warm-up uses the same num_ctx, or Ollama would reload the model."""
+    m, fast = policy["model"], demo_fast(policy)
+    return {"temperature": m.get("temperature", 0.2),
+            "num_predict": fast.get("chat_num_predict", m.get("max_answer_tokens", 450)),
+            "num_ctx": fast.get("chat_num_ctx", m.get("context_tokens", 4096))}
+
+
 def chat(policy: dict, messages: list[dict], system: str | None = None) -> str:
     if os.environ.get("MOCK_LLM") == "1":
         last = messages[-1]["content"]
@@ -66,8 +80,7 @@ def chat(policy: dict, messages: list[dict], system: str | None = None) -> str:
         "messages": [{"role": "system", "content": system or policy["scope"]["system_prompt"]}] + messages,
         "stream": False,
         "keep_alive": m.get("keep_alive", "30m"),
-        "options": {"temperature": m.get("temperature", 0.2), "num_predict": m.get("max_answer_tokens", 450),
-                    "num_ctx": m.get("context_tokens", 4096)},
+        "options": chat_options(policy),
     }, m.get("timeout_seconds", 180))
     return out["message"]["content"]
 
@@ -94,7 +107,9 @@ def warm(policy: dict) -> float | None:
     import time
     m, t0 = policy["model"], time.time()
     _post(f"{m['ollama_url']}/api/generate", {"model": m["chat_model"], "prompt": "", "stream": False,
-                                               "keep_alive": m.get("keep_alive", "30m")}, m.get("timeout_seconds", 180))
+                                               "keep_alive": m.get("keep_alive", "30m"),
+                                               "options": {"num_ctx": chat_options(policy)["num_ctx"]}},
+          m.get("timeout_seconds", 180))
     return time.time() - t0
 
 
