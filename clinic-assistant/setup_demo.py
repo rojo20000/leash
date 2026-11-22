@@ -14,7 +14,8 @@ from app.users import UserStore
 ROOT = Path(__file__).resolve().parent
 USERS = ROOT / "data" / "users.json"
 DEMO = [("dr_lee", "clinician"), ("desk_sam", "receptionist"), ("nurse_kim", "nurse"), ("lead_ana", "clinical_lead"),
-        ("auditor_ray", "auditor"), ("net_ops", "network_engineer"), ("pt_lena", "patient")]
+        ("auditor_ray", "auditor"), ("net_ops", "network_engineer"),
+        ("admin_kai", "admin"), ("pt_lena", "patient")]
 LINKS = {"pt_lena": "syn-002"}  # patient portal accounts: username -> the one patient record it may see
 
 

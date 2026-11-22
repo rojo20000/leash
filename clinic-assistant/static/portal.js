@@ -246,14 +246,14 @@ const TABS = { appointments: loadAppointments, chart: loadChart, messages: loadM
 function showTab() {
   const h = location.hash.slice(1), name = Object.hasOwn(TABS, h) ? h : "appointments";
   Object.keys(TABS).forEach((t) => { $(`tab-${t}`).hidden = t !== name; });
-  document.querySelectorAll("#tabs button").forEach((b) => {
+  document.querySelectorAll("#portal-tabs button").forEach((b) => {
     const on = b.dataset.tab === name;
     b.classList.toggle("active", on);
     if (on) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current");
   });
   TABS[name]();
 }
-document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => { location.hash = b.dataset.tab; }));
+document.querySelectorAll("#portal-tabs button").forEach((b) => b.addEventListener("click", () => { location.hash = b.dataset.tab; }));
 window.addEventListener("hashchange", showTab);
 
 $("logout").addEventListener("click", async () => {

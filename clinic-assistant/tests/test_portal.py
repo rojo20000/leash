@@ -41,6 +41,7 @@ STAFF_GETS = [
     "/api/schedule", "/api/calendar", "/api/schedule/slots", "/api/schedule/slots?date=2026-11-24&clinician=dr_lee",
     "/api/frontdesk/patients", "/api/frontdesk/patients?q=Lena", "/api/outbox", "/api/conversations",
     "/api/conversations?patient_id=syn-002", "/api/network", "/api/audit", "/api/inbox?patient_id=syn-002",
+    "/api/reviewer", "/api/actions", "/api/actions/nope",  # added on main in 2.12 and 2.13
 ] + NEW_STAFF_GETS
 STAFF_POSTS = {
     "/api/chat": {"message": "What needs attention?", "patient_id": B},
@@ -58,6 +59,9 @@ STAFF_POSTS = {
     "/api/leash/open": {"patient_id": "pt-0001", "view": "full"},
     "/api/outbox/draft": {"recipient_group": "patient-portal", "instructions": "Results normal.", "patient_id": B},
     "/api/outbox/decide": {"id": "nope", "decision": "approve"},
+    "/api/reviewer": {"enabled": False},  # 2.12: the reviewer demo switch
+    "/api/actions/propose": {"text": "Cancel syn-002's appointment tomorrow"},  # 2.13: assistant actions
+    "/api/actions/nope/approve": {"pin": "1234"},
     **NEW_STAFF_POSTS,
 }
 

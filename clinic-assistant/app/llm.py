@@ -18,11 +18,11 @@ LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 SINKS: "weakref.WeakSet" = weakref.WeakSet()
 
 
-def _record(url: str, what: str, ms: int, ok: bool, model: str | None = None) -> None:
+def _record(url: str, what: str, ms: int, ok: bool, model: str | None = None, label: str = "ollama") -> None:
     to = urlparse(url).netloc or url
     for sink in list(SINKS):
         try:
-            sink.write("model_call", None, **{"from": "app", "to": f"ollama {to}", "what": what,
+            sink.write("model_call", None, **{"from": "app", "to": f"{label} {to}", "what": what,
                                               "model": model, "ms": ms, "ok": ok})
         except Exception:
             pass  # recording must never break an answer
@@ -34,7 +34,7 @@ def _assert_local(url: str) -> None:
         raise RuntimeError(f"Refusing non-local model endpoint: {url}")
 
 
-def _post(url: str, payload: dict, timeout: int) -> dict:
+def _post(url: str, payload: dict, timeout: int, label: str = "ollama") -> dict:
     _assert_local(url)
     req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                                  headers={"Content-Type": "application/json"})
@@ -47,7 +47,7 @@ def _post(url: str, payload: dict, timeout: int) -> dict:
         ok = True
         return out
     finally:
-        _record(url, urlparse(url).path, int((time.time() - t0) * 1000), ok, payload.get("model"))
+        _record(url, urlparse(url).path, int((time.time() - t0) * 1000), ok, payload.get("model"), label)
 
 
 def chat(policy: dict, messages: list[dict], system: str | None = None) -> str:

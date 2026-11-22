@@ -39,3 +39,7 @@
   .portal .row-side { align-items: flex-start; }
   .boot-error { padding: 0 16px; }
 }
+
+/* The staff app's top bar reserves a sidebar-wide brand box and styles #tabs as a side rail; the portal has neither. */
+.portal .topbar .brand { width: auto; border-right: 0; }
+.portal .topbar nav { align-self: stretch; }

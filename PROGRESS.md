@@ -90,3 +90,9 @@ Checks, run from `clinic-assistant/`: `MOCK_LLM=1 python -m unittest` 148 tests 
 Seen in a browser (temp data dir, port 8652, stand-in model): sign-in as `pt_lena` lands on the portal; appointments, health summary, message send with the urgent notice, cancel request, appointment request; as `dr_lee` the inbox, a `patient-portal` draft, approve, send; as `desk_sam` the request queue and Done. Chains on that data verified afterwards. Screenshot: `clinic-assistant/docs/ui-portal.png`.
 Demo patient: `pt_lena` (linked to `syn-002`), created by `python setup_demo.py`; `python scripts/seed_portal_demo.py` adds her welcome message.
 Not pushed. Not checked: a real Ollama model (all runs used the stand-in); phone-width layout and screen readers; the reply box in the staff inbox was exercised by tests, not by hand.
+
+## Patient portal merged with `main` 2.13 (branch `Rowan/patient-portal-ebc223`, 2026-11-21 18:10)
+
+`main` (`fe49a37`) merged into the portal branch; 9 conflicted files resolved. See DECISIONS.md (18:10).
+Checks on the merged tree, from `clinic-assistant/`: `MOCK_LLM=1 python -m unittest` 175 tests OK (3 skipped: live Leash gateway, 2 Presidio); `python scripts/reset_demo_data.py --check` every chain OK; `python scripts/verify_db.py` exit 0; `python scripts/verify_stores.py` ALL CHECKS PASSED.
+Seen in a browser on the merged tree (port 8652, temp data, stand-in model): portal as `pt_lena` (appointments, message send), staff sidebar "Patient messages" with a hand-typed reply, a `patient-portal` draft with the patient picker, approve, send. Not re-clicked after the merge: the front desk "Portal requests" panel (covered by tests). `docs/ui-portal.png` retaken.
