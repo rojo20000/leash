@@ -19,8 +19,8 @@ def _hash(password: str, salt: bytes) -> str:
 
 
 class UserStore:
-    def __init__(self, path: Path, roles: dict):
-        self.path, self.roles = path, roles
+    def __init__(self, path: Path, roles: dict, patient_role: str = "patient"):
+        self.path, self.roles, self.patient_role = path, roles, patient_role
         if not path.exists():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("{}")
@@ -28,16 +28,31 @@ class UserStore:
     def _load(self) -> dict:
         return json.loads(self.path.read_text())
 
-    def add(self, username: str, password: str, role: str) -> None:
+    def add(self, username: str, password: str, role: str, patient_id: str | None = None) -> None:
         if role not in self.roles:
             raise ValueError(f"Unknown role {role}. Choose from {sorted(self.roles)}")
+        if role == self.patient_role and not patient_id:
+            raise ValueError("A patient account must be linked to a patient id.")
+        if role != self.patient_role and patient_id:
+            raise ValueError("Only a patient account can be linked to a patient id.")
         if len(password) < 12:
             raise ValueError("Password must be at least 12 characters.")
         users = self._load()
         salt = os.urandom(16)
         users[username] = {"role": role, "salt": salt.hex(), "hash": _hash(password, salt), "active": True}
+        if patient_id:
+            users[username]["patient_id"] = patient_id
         self.path.write_text(json.dumps(users, indent=2))
         os.chmod(self.path, 0o600)
+
+    def patient_id(self, username: str) -> str | None:
+        """The patient id a patient account is linked to, else None."""
+        return (self._load().get(username) or {}).get("patient_id")
+
+    def account(self, username: str) -> dict | None:
+        """Role, active flag and patient link as stored right now (no password material)."""
+        u = self._load().get(username)
+        return {"role": u["role"], "active": bool(u.get("active")), "patient_id": u.get("patient_id")} if u else None
 
     def disable(self, username: str) -> None:
         users = self._load()

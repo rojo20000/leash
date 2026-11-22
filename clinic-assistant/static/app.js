@@ -72,6 +72,7 @@ fetch("/api/version").then((r) => r.json()).then((v) => {
 
 async function start() {
   try { me = await api("/api/me"); } catch { return showLogin(); }
+  if (me.portal) { location.replace("/portal"); return; }  // patient accounts never see the staff app
   $("login-view").hidden = true; $("app-view").hidden = false;
   $("who-name").textContent = me.user;
   $("who-role").textContent = me.role.replace("_", " ");
@@ -83,7 +84,10 @@ async function start() {
   Object.entries(me.recipient_groups).forEach(([k, v]) => {
     const o = el("option", null, `${k}: ${v}`); o.value = k; group.append(o);
   });
+  draftPick(null);
   $("mock-banner").hidden = !me.mock;
+  showReviewer(me.reviewer);
+  if (can("toggle_reviewer")) loadReviewer();
   opts = await api("/api/chart/options").catch(() => null);
   if (opts) regSetup();
   const h = new Date().getHours();
@@ -108,6 +112,8 @@ $("logout").addEventListener("click", async () => {
   $("chat-log").replaceChildren(); $("pt-chat-log").replaceChildren(); showLogin();
 });
 
+$("today-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
 // ---- tabs ----------------------------------------------------------------
 function showTab(name) {
   document.querySelectorAll(".tab").forEach((t) => { t.hidden = t.id !== `tab-${name}`; });
@@ -127,11 +133,97 @@ function showTab(name) {
   if (name === "calendar") loadCalendar();
   if (name === "review") loadReviews();
   if (name === "outbox") loadOutbox();
+  if (name === "inbox") loadInbox();
   if (name === "audit") loadAudit();
   if (name === "conversations") loadConversations();
   if (name === "network") loadNetwork();
 }
 document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+
+// ---- Leash tab (integrated mode): every record comes through the Leash gateway ----
+function leashReasoner(d) {
+  const box = el("div", "leash-box");
+  if (d.reasons && d.reasons.length) {
+    const ul = el("ul", "reasons");
+    d.reasons.forEach((r) => ul.append(el("li", null, `${r.code} (${r.stage}): ${r.detail}`)));
+    box.append(el("h3", null, "Reasons"), ul);
+  }
+  const x = d.reasoner;
+  if (x) {
+    box.append(el("h3", null, "Leash's explanation (advisory: a reviewer makes the final call)"), el("p", null, x.explanation),
+      el("p", "muted", `Risk: ${x.risk_level}`), el("p", "muted", `Recommended: ${x.recommended_action}`),
+      el("p", "muted", `Rules: ${(x.policy_rule_ids || []).join(", ")}`), el("p", "muted", `Source: ${x.served_by}`));
+  }
+  return box;
+}
+
+function leashShow(d) {
+  const out = $("leash-result"); out.replaceChildren();
+  out.append(el("p", "muted", `Request id: ${d.call_id}`));
+  if (d.state === "allow") {
+    out.append(el("span", "tier green", "Allowed by Leash"), el("p", null, d.view === "full" ? "Full chart" : "Scheduling view"));
+    Object.entries((d.result && d.result.resources) || {}).forEach(([type, list]) => {
+      out.append(el("h3", null, `${type} (${list.length})`), el("pre", "leash-pre", JSON.stringify(list, null, 2)));
+    });
+    out.append(el("h3", null, "Removed by Leash"));
+    if (d.redactions && d.redactions.length) {
+      const ul = el("ul", "reasons");
+      d.redactions.forEach((r) => ul.append(el("li", null, `${r.path} (${r.kind}, ${r.source})`)));
+      out.append(ul);
+    } else out.append(el("p", "muted", "Nothing removed"));
+    return;
+  }
+  const wait = d.state === "escalate";
+  const box = leashReasoner(d); box.classList.add(wait ? "wait" : "blocked");
+  out.append(el("span", `tier ${wait ? "amber" : "red"}`, wait ? "Waiting for review in Leash" : "Blocked by Leash"));
+  if (wait) {
+    out.append(el("p", null, `Queue id: ${d.queue_id}`));
+    const p = el("p", null, "Approve or deny it in the Leash dashboard at ");
+    const a = el("a", null, d.dashboard_url); a.href = d.dashboard_url; a.target = "_blank"; a.rel = "noopener";
+    p.append(a); out.append(p);
+  }
+  out.append(box);
+}
+
+async function leashCall(path, body) {
+  $("leash-error").textContent = "";
+  try { return await api(path, body); }
+  catch (err) { $("leash-error").textContent = err.message; $("leash-result").replaceChildren(); return null; }
+}
+
+async function leashOpen(id, view) {
+  $("leash-result").replaceChildren();
+  const d = await leashCall("/api/leash/open", { patient_id: id, view });
+  if (d) leashShow(d);
+}
+
+[["leash-open-sched", "scheduling"], ["leash-open-full", "full"]].forEach(([id, view]) => $(id).addEventListener("click", () => {
+  const pid = $("leash-pid").value.trim();
+  if (!/^pt-\d{4}$/.test(pid)) {
+    $("leash-error").textContent = "Enter a patient id like pt-0042."; $("leash-result").replaceChildren(); return;
+  }
+  leashOpen(pid, view);
+}));
+
+$("leash-search-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const list = $("leash-results"); list.replaceChildren(); $("leash-result").replaceChildren();
+  const d = await leashCall("/api/leash/search", { q: $("leash-q").value });
+  if (!d) return;
+  if (d.state !== "allow") return leashShow(d);
+  const pts = (d.result && d.result.patients) || [];
+  if (!pts.length) list.append(el("li", "muted", "No patients found."));
+  pts.forEach((p) => {
+    const n = (p.name && p.name[0]) || null;
+    const name = n ? `${(n.given || []).join(" ")} ${n.family || ""}`.trim() : p.id;
+    const li = el("li", "row"), t = el("div", "row-text"), btns = el("div", "leash-btns");
+    t.append(el("strong", null, name || p.id), el("span", "muted", p.id));
+    [["Scheduling view", "scheduling"], ["Full chart (Leash will block)", "full"]].forEach(([label, view]) => {
+      const b = el("button", "ghost small-btn", label); b.type = "button"; b.onclick = () => leashOpen(p.id, view); btns.append(b);
+    });
+    li.append(t, btns); list.append(li);
+  });
+});
 
 document.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.go)));
 
@@ -196,6 +288,17 @@ async function loadHome() {
       said.push(`${drafts.length} message${drafts.length > 1 ? "s" : ""} to approve`);
       rows.push(todoRow(`${drafts.length} message draft${drafts.length > 1 ? "s" : ""} to approve`,
         "Nothing is sent until a clinician approves it", "Messages", () => showTab("outbox")));
+    }
+  }
+  if (can("portal_inbox")) {
+    const msgs = (await api("/api/inbox").catch(() => ({}))).messages || [];
+    const latest = new Map();  // newest first, so the first message seen per patient is the thread's latest
+    msgs.forEach((m) => { if (!latest.has(m.patient_id)) latest.set(m.patient_id, m); });
+    const n = [...latest.values()].filter((m) => m.direction === "from_patient").length;
+    if (n) {
+      said.push(`${n} patient message${n > 1 ? "s" : ""} to answer`);
+      rows.push(todoRow(`${n} patient${n > 1 ? "s" : ""} waiting for a reply`, "Messages sent from the patient portal",
+        "Patient messages", () => showTab("inbox")));
     }
   }
   if (can("view_patients")) {
@@ -334,10 +437,77 @@ function showAnswer(r, log = $("chat-log")) {
     body.append(el("p", null, r.reasons.join(" ")));
   }
   const answer = log.lastElementChild;
-  if (r.trace) addTrace(r.trace, log);
+  if (r.trace) { addTrace(r.trace, log); reviewerReadout(r.trace, log); }
   // Show the start of the answer; the log (or the page) scrolls for the rest.
   answer.scrollIntoView({ block: answer.offsetHeight > log.clientHeight ? "start" : "nearest" });
 }
+
+// ---- reviewer: what Nemotron said about this answer, and the demo switch -------
+function reviewerReadout(trace, log) {
+  const steps = trace.filter((t) => t.step.startsWith("Reviewer"));
+  if (!steps.length) return;
+  const box = el("div", "rv-readout");
+  const off = steps.find((t) => t.step === "Reviewer");
+  if (off) {
+    box.classList.add("off");
+    const line = el("div", "line"); line.append(icon("warn"), el("span", null, `Not checked: reviewer ${off.detail}`));
+    box.append(line);
+  } else {
+    let caught = false;
+    steps.forEach((t) => {
+      const when = t.step.includes("before") ? "before model" : "after model";
+      const [tier, ...rest] = t.detail.split(": ");
+      const why = rest.join(": ").replace(/ \(\d+ ms, [^)]*\)$/, "");
+      const line = el("div", "line");
+      if (t.status === "ok") line.append(icon("ok"), el("span", null, `Reviewer (${when}): no concerns`));
+      else if (tier === "off") line.append(icon("warn"), el("span", null, `Not checked (${when}): ${why}`));
+      else { caught = true; line.append(icon(t.status), el("span", null, `Caught by reviewer (${when}, ${tier}): ${why}`)); }
+      box.append(line);
+    });
+    box.classList.add(caught ? "caught" : steps.some((t) => t.status !== "ok") ? "off" : "clear");
+  }
+  log.append(box);
+}
+
+function showReviewer(r) {
+  if (!r) return;
+  const off = r.state === "off" && (r.enabled === false || r.demo_off);
+  $("reviewer-off-banner").hidden = !off;
+  $("reviewer-off-by").textContent = off && r.changed_by ? `Switched off by ${r.changed_by}.` : "";
+  const t = $("reviewer-toggle");
+  if (t && r.enabled !== undefined) {
+    t.textContent = `Reviewer: ${r.enabled ? "on" : "off"} (demo)`;
+    t.setAttribute("aria-pressed", String(!!r.enabled));
+    $("reviewer-status").textContent = `${r.model}: ${r.message || r.state}`
+      + (r.changed_by ? ` Last switched by ${r.changed_by}, ${shortWhen(r.changed_at)} UTC.` : "");
+  }
+}
+
+async function loadReviewer() {
+  let r;
+  try { r = await api("/api/reviewer"); } catch { return; }
+  showReviewer(r);
+  const list = $("demo-scenarios");
+  list.replaceChildren(...(r.scenarios || []).map((sc, i) => {
+    const li = el("li"); const txt = el("div");
+    txt.append(el("strong", null, `${i + 1}. ${sc.title}`), el("span", "muted", sc.tests));
+    const b = el("button", "small-btn", "Run"); b.type = "button";
+    b.onclick = () => {
+      if ($("chat-form").querySelector("button").disabled) return;
+      ask($("chat-log"), $("chat-input"), $("chat-form").querySelector("button"), { message: sc.prompt });
+    };
+    li.append(b, txt); return li;
+  }));
+}
+
+$("reviewer-toggle").addEventListener("click", async () => {
+  const t = $("reviewer-toggle"); t.disabled = true;
+  try {
+    const r = await api("/api/reviewer", { enabled: t.getAttribute("aria-pressed") !== "true" });
+    showReviewer(r);
+  } catch (err) { alert(err.message); }
+  t.disabled = false;
+});
 
 // Enter sends, Shift+Enter adds a line.
 function enterToSend(textarea, form) {
@@ -402,9 +572,17 @@ const listInto = (node, items) => node.replaceChildren(...items.map((t) => el("l
 function renderRecord(p, root, onAsk) {
   if (!root.firstElementChild) root.append($("tpl-record").content.cloneNode(true));
   const f = (k) => root.querySelector(`[data-f="${k}"]`);
-  f("name").textContent = `${p.name.given} ${p.name.family}`;
-  f("meta").textContent = `${p.age} years · ${p.sex}`
-    + (p.insurance ? ` · ${p.insurance.plan} · prefers ${p.preferred_contact.toLowerCase()}${p.language !== "English" ? ` · ${p.language}` : ""}` : "");
+  f("name").textContent = `${String(p.name.family).toUpperCase()}, ${p.name.given}`;  // family name first, in capitals, as on clinical patient banners
+  f("meta").replaceChildren(el("strong", null, `${p.age} years · ${p.sex}`),
+    p.insurance ? ` · ${p.insurance.plan} · prefers ${p.preferred_contact.toLowerCase()}${p.language !== "English" ? ` · ${p.language}` : ""}` : "");
+  const alg = f("alg");
+  if (alg) {
+    const real = (p.allergies || []).filter((x) => !/^(no known|nka|none)/i.test(String(x).trim()));
+    const has = real.length > 0;
+    alg.className = `banner-alg${has ? " has" : ""}`;
+    alg.replaceChildren(el("span", "banner-k", "Allergies"),
+      el("span", "banner-v", has ? real.join(", ") : "No known allergies"));
+  }
   f("ident").replaceChildren(identBlock(p.id, p.locked || []));
   const att = f("attention"); att.replaceChildren();
   if (p.attention.length) {
@@ -419,7 +597,7 @@ function renderRecord(p, root, onAsk) {
   }
   listInto(f("conditions"), p.conditions); listInto(f("meds"), p.medications); listInto(f("allergies"), p.allergies);
   f("obs").replaceChildren(...[...p.observations].sort((a, b) => b.date.localeCompare(a.date)).map((o) => {
-    const tr = el("tr"); tr.append(el("td", null, o.date), el("td", null, o.name), el("td", null, `${o.value} ${o.unit}`.trim()), el("td", "muted", o.ref));
+    const tr = el("tr"); tr.append(el("td", null, o.date), el("td", null, o.name), el("td", "num", `${o.value} ${o.unit}`.trim()), el("td", "muted", o.ref));
     return tr;
   }));
   f("notes").replaceChildren(...p.notes.map((n) => {
@@ -746,6 +924,7 @@ async function loadOutbox() {
     const left = el("div"); left.append(tierChip(it.tier || "green"), el("strong", null, ` To: ${it.recipient_group}`));
     head.append(left, el("span", `status ${it.status}`, it.status.replace("_", " ")));
     box.append(head, el("p", "muted", `Drafted by ${it.drafted_by}, ${it.created}${it.decided_by ? ` · decided by ${it.decided_by}` : ""}`));
+    if (it.patient_id) box.append(el("p", "muted", `For patient: ${it.patient_id}`));
     if (it.reasons && it.reasons.length) box.append(reasonList(it.reasons));
     const text = el("textarea"); text.value = it.final_text || it.draft;
     text.readOnly = !(it.status === "awaiting_approval" && can("approve_message"));
@@ -757,8 +936,20 @@ async function loadOutbox() {
       ok.onclick = () => decide(it.id, "approve", text.value);
       no.onclick = () => decide(it.id, "reject");
       actions.append(ok, no);
+      if (it.patient_id) actions.append(el("span", "muted", "Fill in any [TAGS] before you approve: the patient gets the text exactly as approved."));
     }
-    if (it.status === "approved") {
+    const portal = it.recipient_group === "patient-portal" && it.patient_id;  // drafts made before the patient portal have no patient and keep the copy button
+    if (it.status === "sent") box.append(el("p", "muted", `Sent to the patient portal by ${it.sent_by}, ${it.sent_at}`));
+    if (portal && it.status === "approved") {
+      if (can("send_portal")) {
+        const send = el("button", null, "Send to patient portal");
+        confirmStep(send, "Press again to send it to the patient", async () => {
+          try { await api("/api/outbox/send", { id: it.id }); loadOutbox(); }
+          catch (err) { alert(err.message); }
+        });
+        actions.append(send, el("span", "muted", "The patient sees the approved text exactly as it is above. It can't be taken back."));
+      } else actions.append(el("span", "muted", "Approved. A clinician or nurse sends it to the patient portal."));
+    } else if (it.status === "approved") {
       const copy = el("button", "ghost", "Copy approved text");
       copy.onclick = () => navigator.clipboard.writeText(text.value);
       actions.append(copy, el("span", "muted", "Fill in the [TAGS] and send it yourself through the usual channel."));
@@ -772,20 +963,120 @@ async function decide(id, decision, finalText) {
   catch (err) { alert(err.message); }
 }
 
+// A patient-portal draft is for one patient: pick them before the draft can be asked for.
+const draft = { patient: null };
+const draftForPortal = () => $("draft-group").value === "patient-portal";
+function draftPick(p) {
+  draft.patient = p;
+  $("draft-patient-box").hidden = !draftForPortal();
+  $("draft-patient-results").replaceChildren(); $("draft-patient-q").value = ""; $("draft-patient-q").hidden = !!p;
+  const box = $("draft-picked"); box.hidden = !p;
+  if (p) {
+    const change = el("button", "ghost small-btn", "Change"); change.type = "button";
+    change.onclick = () => { draftPick(null); $("draft-patient-q").focus(); };
+    const txt = el("div"); txt.append(el("strong", null, p.name), el("div", "muted", p.id));
+    box.replaceChildren(txt, change);
+  }
+  $("draft-btn").disabled = draftForPortal() && !p;
+}
+$("draft-group").addEventListener("change", () => draftPick(draft.patient));
+let draftTimer;
+$("draft-patient-q").addEventListener("input", () => {
+  clearTimeout(draftTimer);
+  draftTimer = setTimeout(async () => {
+    const q = $("draft-patient-q").value.trim(); const list = $("draft-patient-results");
+    if (q.length < 2) { list.replaceChildren(); return; }
+    const hits = await api(`/api/patients?q=${encodeURIComponent(q)}`).catch(() => []);
+    list.replaceChildren(...(hits.length ? hits.map((p) => {
+      const b = el("button", "patient-item"); b.type = "button";
+      b.append(el("strong", null, p.name), el("div", "muted", p.id));
+      b.onclick = () => draftPick(p); return b;
+    }) : [el("p", "muted", "No match. Check the spelling.")]));
+  }, 200);
+});
+
 $("draft-form").addEventListener("submit", async (e) => {
   e.preventDefault(); $("draft-error").textContent = "";
-  const btn = e.submitter; btn.disabled = true;
+  const btn = $("draft-btn"); btn.disabled = true;
+  const body = { recipient_group: $("draft-group").value, instructions: $("draft-instructions").value };
+  if (draftForPortal()) body.patient_id = draft.patient.id;
   try {
-    const r = await api("/api/outbox/draft", {
-      recipient_group: $("draft-group").value, instructions: $("draft-instructions").value,
-    });
+    const r = await api("/api/outbox/draft", body);
     if (r.tier === "red" || r.tier === "error") {
       $("draft-error").textContent = `${TIER_LABEL[r.tier]}: ${r.reasons.join(" ")}`;
       refreshCount();
-    } else { $("draft-instructions").value = ""; loadOutbox(); }
+    } else { $("draft-instructions").value = ""; draft.patient = null; loadOutbox(); }  // the next message starts with no patient picked
   } catch (err) { $("draft-error").textContent = err.message; }
-  btn.disabled = false;
+  draftPick(draft.patient);
 });
+
+// ---- patient portal: staff inbox and front desk requests -------------------
+function inboxThread(msgs) {
+  const name = (msgs[0].patient || {}).name || msgs[0].patient_id;
+  const box = el("section", "review"), head = el("div", "row-between");
+  head.append(el("h3", "thread-name", name), el("span", "status", msgs[0].patient_id));
+  box.append(head);
+  msgs.slice().reverse().forEach((m) => {  // oldest first inside a thread, so it reads top to bottom
+    const fromPt = m.direction === "from_patient";
+    box.append(el("div", "label", `${fromPt ? "From the patient" : "To the patient"} · ${m.sender} · ${whenText(m.at)}`));
+    if (m.source === "approved_draft") box.append(el("p", "muted", `AI draft, approved by ${m.approved_by || "a clinician"}`));
+    const q = el("div", `quote${fromPt ? "" : " msg-out"}`);
+    if (m.subject) q.append(el("strong", null, m.subject), document.createTextNode("\n"));
+    q.append(document.createTextNode(m.body)); box.append(q);
+  });
+  // Reply to the newest message from the patient; a thread we started has none, so reply to its newest message.
+  const target = msgs.find((m) => m.direction === "from_patient") || msgs[0];
+  const form = el("form", "composer inbox-reply"), text = el("textarea"), send = el("button", null, "Send reply"), err = el("p", "error");
+  text.rows = 2; text.required = true; text.maxLength = 2000; text.placeholder = `Reply to ${name}`; text.setAttribute("aria-label", `Reply to ${name}`);
+  send.type = "submit"; err.setAttribute("role", "alert"); form.append(text, send);
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault(); err.textContent = ""; send.disabled = true;
+    try { await api("/api/inbox/reply", { message_id: target.id, body: text.value.trim() }); loadInbox(); }
+    catch (x) { err.textContent = x.message; send.disabled = false; }
+  });
+  box.append(form, err); return box;
+}
+async function loadInbox() {
+  $("inbox-error").textContent = "";
+  let msgs;
+  try { msgs = (await api("/api/inbox")).messages || []; }
+  catch (err) { $("inbox-error").textContent = err.message; return; }
+  const threads = new Map();  // messages come newest first, so the Map keeps the newest thread first
+  msgs.forEach((m) => { if (!threads.has(m.patient_id)) threads.set(m.patient_id, []); threads.get(m.patient_id).push(m); });
+  $("inbox-list").replaceChildren(...(threads.size ? [...threads.values()].map(inboxThread)
+    : [emptyLine("No patient messages yet.", "Messages patients send from the patient portal show up here, grouped by patient, with a box to reply.")]));
+}
+$("inbox-refresh").addEventListener("click", loadInbox);
+
+const REQ_KIND = { book: "Wants an appointment", cancel: "Wants to cancel" };
+async function loadPortalRequests() {
+  if (!can("portal_requests")) return;
+  const err = $("portal-req-error"); err.textContent = "";
+  let reqs;
+  try { reqs = (await api("/api/inbox/requests?status=open")).requests || []; }
+  catch (x) { err.textContent = x.message; return; }
+  $("portal-req-n").textContent = reqs.length ? `(${reqs.length})` : "";
+  const clin = (id) => ((sched.data || {}).clinicians || {})[id] || id;
+  $("portal-req-list").replaceChildren(...(reqs.length ? reqs.map((r) => {
+    const box = el("div", "review"), a = r.appointment;
+    box.append(el("strong", null, (r.patient || {}).name || r.patient_id), el("div", "todo-line", REQ_KIND[r.kind] || r.kind));
+    [["Appointment", a && `${a.date} at ${a.time} with ${clin(a.clinician)}${a.status && a.status !== "booked" ? ` (now ${STATUS_WORD[a.status] || a.status})` : ""}`],
+     ["Visit type", r.visit_type], ["Clinician", r.clinician ? clin(r.clinician) : r.kind === "book" && "Any"],
+     ["Preferred times", r.preferred], ["Note", r.note], ["Asked", whenText(r.created_at)],
+    ].filter(([, v]) => v).forEach(([k, v]) => box.append(el("div", "muted", `${k}: ${v}`)));
+    const note = el("input"); note.type = "text"; note.maxLength = 300;
+    note.placeholder = "Note for the patient (optional)"; note.setAttribute("aria-label", note.placeholder);
+    const decideReq = async (status) => {
+      try { await api("/api/inbox/requests/decide", { id: r.id, status, note: note.value.trim() }); loadPortalRequests(); }
+      catch (x) { err.textContent = x.message; }
+    };
+    const done = el("button", null, "Done"), no = el("button", "ghost", "Decline"); done.type = no.type = "button";
+    done.onclick = async () => { done.disabled = true; await decideReq("done"); done.disabled = false; };
+    confirmStep(no, "Press again to decline", () => decideReq("declined"));
+    const actions = el("div", "actions"); actions.append(done, no);
+    box.append(note, actions); return box;
+  }) : [emptyLine("No open requests.", "Appointment and cancellation requests from the patient portal show up here.")]));
+}
 
 // ---- audit log -----------------------------------------------------------
 let auditFocus = null;
@@ -874,6 +1165,7 @@ async function loadSchedule() {
   rows.forEach((a) => body.append(...schedRow(a, d)));
   if (!rows.length) { const tr = el("tr"); const td = el("td", "muted", "Nothing booked for this day yet."); td.colSpan = 6; tr.append(td); body.append(tr); }
   if (can("book")) bookDefaults(d);
+  loadPortalRequests();
 }
 
 function schedRow(a, d) {
@@ -903,7 +1195,8 @@ function schedRow(a, d) {
   else if (can("send_reminder") && !isToday && a.status === "booked") act.append(toggle(a.reminder && a.reminder.sent_at ? "Details" : "Reminder"));
   else if (can("room_patient") && isToday && a.status === "arrived") act.append(step("Start visit", "in_room"));
   else if (can("room_patient") && a.status === "in_room") act.append(step("Finish visit", "done", "ghost small-btn"));
-  tr.append(el("td", "time", a.time), who, el("td", null, a.visit_type), el("td", null, a.clinician_name), st, act);
+  who.className = "who-c"; st.className = "st";
+  tr.append(el("td", "time", a.time), who, el("td", "visit", a.visit_type), el("td", "with", a.clinician_name), st, act);
   const out = [tr];
   if (sched.open === a.id) out.push(detailRow(a, d));
   return out;
@@ -1122,7 +1415,7 @@ function clinEntries(c) {
 
 // The key shows the same tints as the strips, each with its word.
 document.querySelector(".cal-key").replaceChildren(...CAL_ORDER.map((st) => {
-  const k = el("span", "key-item"); k.append(el("span", `key-sw s-${st}`), el("span", null, st === "in_room" ? "In room now" : STATUS_WORD[st])); return k;
+  const k = el("span", "key-item"); k.append(el("span", `key-sw s-${st}`), el("span", null, STATUS_WORD[st])); return k;
 }));
 const calMobile = window.matchMedia("(max-width: 720px)");
 calMobile.addEventListener("change", () => { if (!$("tab-calendar").hidden) loadCalendar(); });
@@ -1257,7 +1550,7 @@ function calMonth(from, byDate) {
 // One column per clinician (day) or per day (week). Strips sit at their start time, 2.4px a minute,
 // so one 20-minute slot is 48px. Status is a tint AND a word on every strip.
 const BOARD_PX = 2.4;
-const STRIP_WORD = { ...STATUS_WORD, in_room: "In room now" };
+const STRIP_WORD = { ...STATUS_WORD };
 const toMin = (hhmm) => { const [h, m] = String(hhmm).split(":").map(Number); return h * 60 + m; };
 const hhmm = (m) => `${pad2(Math.floor(m / 60))}:${pad2(m % 60)}`;
 const nowMin = () => { const d = new Date(); return d.getHours() * 60 + d.getMinutes(); };
@@ -1534,6 +1827,14 @@ const conv = { items: [], users: new Set(), patients: new Set(), names: {}, open
 const CONV_TIER = { green: "Ready to read", amber: "Check first", red: "Stopped", error: "Not sent", redirect: "Redirected" };
 fillSelect($("conv-tier"), [["", "Any result"], ...Object.entries(CONV_TIER)]);
 const convTier = (t) => el("span", `tier ${t === "redirect" ? "amber" : t}`, CONV_TIER[t] || t || "unknown");
+// Result column: the final label, and under it what the reviewer said before / after the model.
+function convResult(c) {
+  const box = el("span", "conv-result"); box.append(convTier(c.tier));
+  const rv = c.reviewer_pre_tier || c.reviewer_post_tier
+    ? `Reviewer ${c.reviewer_pre_tier || "-"} / ${c.reviewer_post_tier || "-"}${c.reviewer_ok === false ? " (unavailable)" : ""}`
+    : "Reviewer off";
+  box.append(el("span", "conv-rv", rv)); return box;
+}
 const shortWhen = (iso) => (iso ? iso.replace("T", " ").slice(0, 16) : "");
 
 async function loadConversations() {
@@ -1574,7 +1875,7 @@ function drawConversations() {
     b.append(el("span", "conv-when", shortWhen(c.at)),
       el("span", "conv-who", `${c.user || "?"}${c.role ? ` · ${c.role.replace("_", " ")}` : ""}`),
       el("span", `conv-pt${pname ? "" : " none"}`, pname || "General"),
-      el("span", "conv-q", c.question || ""), convTier(c.tier));
+      el("span", "conv-q", c.question || ""), convResult(c));
     b.onclick = () => { conv.open = conv.open === c.id ? null : c.id; drawConversations(); };
     box.append(b);
     if (conv.open === c.id) box.append(convDetail(c));
@@ -1595,6 +1896,10 @@ function convDetail(c) {
   fact("Model", c.model);
   if (typeof c.duration_ms === "number") fact("Time taken", c.duration_ms >= 1000 ? `${(c.duration_ms / 1000).toFixed(1)} s` : `${c.duration_ms} ms`);
   fact("What the model was given", c.context_summary);
+  if (c.reviewer_pre_tier || c.reviewer_post_tier)
+    fact("Reviewer (Nemotron)", `before model: ${c.reviewer_pre_tier || "not run"} · after model: ${c.reviewer_post_tier || "not run"}`
+      + (c.reviewer_ok === false ? " · unavailable, held" : ""));
+  else fact("Reviewer (Nemotron)", "not checked (off)");
   d.append(el("div", "label", "Details"), facts);
   d.append(el("div", "label", "Changes made after this answer"));
   const ch = c.changes || [];
@@ -1728,91 +2033,6 @@ function netDiagram(nodes, edges) {
 }
 $("net-refresh").addEventListener("click", loadNetwork);
 setInterval(() => { if (me && !document.hidden && !$("tab-network").hidden) loadNetwork(); }, 10000);
-
-// ---- Leash tab (integrated mode): every record comes through the Leash gateway ----
-function leashReasoner(d) {
-  const box = el("div", "leash-box");
-  if (d.reasons && d.reasons.length) {
-    const ul = el("ul", "reasons");
-    d.reasons.forEach((r) => ul.append(el("li", null, `${r.code} (${r.stage}): ${r.detail}`)));
-    box.append(el("h3", null, "Reasons"), ul);
-  }
-  const x = d.reasoner;
-  if (x) {
-    box.append(el("h3", null, "Leash's explanation (advisory: a reviewer makes the final call)"), el("p", null, x.explanation),
-      el("p", "muted", `Risk: ${x.risk_level}`), el("p", "muted", `Recommended: ${x.recommended_action}`),
-      el("p", "muted", `Rules: ${(x.policy_rule_ids || []).join(", ")}`), el("p", "muted", `Source: ${x.served_by}`));
-  }
-  return box;
-}
-
-function leashShow(d) {
-  const out = $("leash-result"); out.replaceChildren();
-  out.append(el("p", "muted", `Request id: ${d.call_id}`));
-  if (d.state === "allow") {
-    out.append(el("span", "tier green", "Allowed by Leash"), el("p", null, d.view === "full" ? "Full chart" : "Scheduling view"));
-    Object.entries((d.result && d.result.resources) || {}).forEach(([type, list]) => {
-      out.append(el("h3", null, `${type} (${list.length})`), el("pre", "leash-pre", JSON.stringify(list, null, 2)));
-    });
-    out.append(el("h3", null, "Removed by Leash"));
-    if (d.redactions && d.redactions.length) {
-      const ul = el("ul", "reasons");
-      d.redactions.forEach((r) => ul.append(el("li", null, `${r.path} (${r.kind}, ${r.source})`)));
-      out.append(ul);
-    } else out.append(el("p", "muted", "Nothing removed"));
-    return;
-  }
-  const wait = d.state === "escalate";
-  const box = leashReasoner(d); box.classList.add(wait ? "wait" : "blocked");
-  out.append(el("span", `tier ${wait ? "amber" : "red"}`, wait ? "Waiting for review in Leash" : "Blocked by Leash"));
-  if (wait) {
-    out.append(el("p", null, `Queue id: ${d.queue_id}`));
-    const p = el("p", null, "Approve or deny it in the Leash dashboard at ");
-    const a = el("a", null, d.dashboard_url); a.href = d.dashboard_url; a.target = "_blank"; a.rel = "noopener";
-    p.append(a); out.append(p);
-  }
-  out.append(box);
-}
-
-async function leashCall(path, body) {
-  $("leash-error").textContent = "";
-  try { return await api(path, body); }
-  catch (err) { $("leash-error").textContent = err.message; $("leash-result").replaceChildren(); return null; }
-}
-
-async function leashOpen(id, view) {
-  $("leash-result").replaceChildren();
-  const d = await leashCall("/api/leash/open", { patient_id: id, view });
-  if (d) leashShow(d);
-}
-
-[["leash-open-sched", "scheduling"], ["leash-open-full", "full"]].forEach(([id, view]) => $(id).addEventListener("click", () => {
-  const pid = $("leash-pid").value.trim();
-  if (!/^pt-\d{4}$/.test(pid)) {
-    $("leash-error").textContent = "Enter a patient id like pt-0042."; $("leash-result").replaceChildren(); return;
-  }
-  leashOpen(pid, view);
-}));
-
-$("leash-search-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const list = $("leash-results"); list.replaceChildren(); $("leash-result").replaceChildren();
-  const d = await leashCall("/api/leash/search", { q: $("leash-q").value });
-  if (!d) return;
-  if (d.state !== "allow") return leashShow(d);
-  const pts = (d.result && d.result.patients) || [];
-  if (!pts.length) list.append(el("li", "muted", "No patients found."));
-  pts.forEach((p) => {
-    const n = (p.name && p.name[0]) || null;
-    const name = n ? `${(n.given || []).join(" ")} ${n.family || ""}`.trim() : p.id;
-    const li = el("li", "row"), t = el("div", "row-text"), btns = el("div", "leash-btns");
-    t.append(el("strong", null, name || p.id), el("span", "muted", p.id));
-    [["Scheduling view", "scheduling"], ["Full chart (Leash will block)", "full"]].forEach(([label, view]) => {
-      const b = el("button", "ghost small-btn", label); b.type = "button"; b.onclick = () => leashOpen(p.id, view); btns.append(b);
-    });
-    li.append(t, btns); list.append(li);
-  });
-});
 
 // ---- live: other people's changes show up without a reload -----------------
 setInterval(() => {
