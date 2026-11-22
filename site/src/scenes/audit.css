@@ -1,3 +1,7 @@
+.scene-audit .scene__plate { display: flex; flex-direction: column; }
+.scene-audit .audit-view { flex: 1 1 auto; min-height: 0; }
+.scene-audit .audit-strip { flex: none; min-height: 3.5rem; padding: var(--space-2) var(--space-4) var(--space-3); }
+.scene-audit .audit-fail { margin: 0; color: var(--ink); white-space: pre-wrap; overflow-wrap: break-word; }
 .scene-audit .audit-world {
   display: flex;
   min-width: 0;
@@ -120,19 +124,7 @@
 
 .scene-audit .audit-side { position: relative; min-width: 0; }
 .scene-audit .audit-caption { margin: 0; color: var(--ink-2); line-height: 1.4; }
-.scene-audit .audit-mismatch {
-  position: absolute;
-  left: 0;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--block-ink);
-  font-size: 1.1em;
-  font-weight: 700;
-  opacity: 0;
-}
-.scene-audit .audit-slot { position: absolute; left: 0; right: 0; top: 58%; height: 10%; pointer-events: none; }
+.scene-audit .audit-slot { position: absolute; left: 0; right: 0; top: 70%; height: 8%; pointer-events: none; }
 .scene-audit .audit-quotes { position: absolute; left: 0; right: 0; bottom: 0; }
 .scene-audit .audit-quote {
   position: absolute;
